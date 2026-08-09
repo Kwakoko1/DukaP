@@ -370,13 +370,6 @@ export const Dashboard: React.FC = () => {
       { title: 'Expiring Contracts',    value: '3 expiring',    desc: 'Renewals pending review',          icon: <AlertTriangle className="h-5 w-5"/>,accent: '#ef4444' },
     ];
 
-    if (isCleanTenant) return [
-      { title: "Today's Sales",          value: 'Tsh 0',           desc: 'No sales yet today',              icon: <DollarSign className="h-5 w-5"/>,  accent: '#3b82f6' },
-      { title: 'Inventory Valuation',    value: 'Tsh 0',           desc: 'Add products to track value',     icon: <Package className="h-5 w-5"/>,     accent: '#f59e0b' },
-      { title: 'Customers',              value: '0',               desc: 'No customers registered yet',     icon: <Users className="h-5 w-5"/>,       accent: '#6366f1' },
-      { title: 'Suppliers',              value: '0 active',        desc: 'No suppliers added yet',          icon: <Truck className="h-5 w-5"/>,       accent: '#f97316' },
-    ];
-
     switch (activeModule) {
       case 'Retail':
         return [
@@ -439,7 +432,7 @@ export const Dashboard: React.FC = () => {
           { title: 'System Alerts',        value: stats.lowStockCount,         desc: 'Items on restock warning list',    icon: <AlertTriangle className="h-5 w-5"/>, accent: '#f59e0b' },
         ];
     }
-  }, [activeModule, isCleanTenant, stats, products, productVariants]);
+  }, [activeModule, stats, products, productVariants]);
 
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -490,12 +483,10 @@ export const Dashboard: React.FC = () => {
         ))}
       </div>
 
-      {/* ── Onboarding or Analytics ─────────────────────────────────────────── */}
-      {isCleanTenant ? (
-        renderOnboarding()
-      ) : (
-        <>
-          {/* ── Charts Row ─────────────────────────────────────────────────── */}
+      {/* ── Onboarding Banner (When workspace has no products/sales yet) ── */}
+      {isCleanTenant && renderOnboarding()}
+
+      {/* ── Charts Row ─────────────────────────────────────────────────── */}
           <div className="grid gap-5 lg:grid-cols-3">
 
             {/* Main Revenue / Trend Chart */}
@@ -694,8 +685,6 @@ export const Dashboard: React.FC = () => {
               </CardContent>
             </Card>
           </div>
-        </>
-      )}
     </div>
   );
 };
