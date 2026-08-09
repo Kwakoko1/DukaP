@@ -141,6 +141,8 @@ export const TenantManagement: React.FC = () => {
   const [pgTenants, setPgTenants] = useState<any[]>([]);
   const [isFetchingPg, setIsFetchingPg] = useState(false);
 
+  const [deletedTenantIds, setDeletedTenantIds] = useState<Set<string>>(() => new Set());
+
   const fetchPgTenants = React.useCallback(async () => {
     setIsFetchingPg(true);
     try {
@@ -199,42 +201,36 @@ export const TenantManagement: React.FC = () => {
             business_type: curT.business_type || 'Retail',
             email: curT.email || 'owner@dukapos.com',
             created_at: curT.created_at || Date.now(),
+            updated_at: Date.now()
           } as any).catch(console.warn);
         }
-      });
+      }).catch(console.warn);
 
       // 2. Sync to cloudDb.cloud_tenants
       cloudDb.cloud_tenants.get(curT.id).then(existing => {
         if (!existing) {
-          cloudDb.cloud_tenants.put(tenantData).catch(console.warn);
+          cloudDb.cloud_tenants.put(tenantData as any).catch(console.warn);
         }
-      });
+      }).catch(console.warn);
     }
   }, [currentTenant]);
 
-  // Live Central Production Database Queries (cloudDb - Source of Truth)
-  const cloudTenants = useLiveQuery(() => cloudDb.cloud_tenants.filter((t: any) => !t.deleted_at).toArray(), []) || [];
+  // Live queries for auxiliary tenant counts and local Dexie tenant registry
+  const cloudTenants = useLiveQuery(() => cloudDb.cloud_tenants.toArray(), []) || [];
   const cloudBranches = useLiveQuery(() => cloudDb.cloud_branches.toArray(), []) || [];
   const cloudUsers = useLiveQuery(() => cloudDb.cloud_users.toArray(), []) || [];
-  const cloudSubs = useLiveQuery(() => cloudDb.cloud_subscriptions.toArray(), []) || [];
   const cloudPlans = useLiveQuery(() => cloudDb.cloud_subscription_plans.toArray(), []) || [];
-  const localPlans = useLiveQuery(() => db.subscriptionPlans.toArray(), []) || [];
-  const dbTenants = useLiveQuery(() => db.tenants.toArray(), []) || [];
+  const cloudSubs = useLiveQuery(() => cloudDb.cloud_subscriptions.toArray(), []) || [];
 
+  // Local Dexie tenants live query (preserves tenant management when offline)
+  const dbTenants = useLiveQuery(() => db.tenants.toArray(), []) || [];
+  const localPlans = useLiveQuery(() => db.subscriptionPlans.toArray(), []) || [];
+
+  // Subscription plans list
   const availablePlans = useMemo(() => {
-    const map = new Map<string, any>();
-    for (const p of localPlans) {
-      map.set(p.id, p);
-      if (p.name) map.set(p.name, p);
-    }
-    for (const p of cloudPlans) {
-      map.set(p.id, p);
-      if (p.name) map.set(p.name, p);
-    }
-    const list = Array.from(new Set(map.values()));
-    if (list.length === 0) {
+    const list = cloudPlans.length > 0 ? cloudPlans : localPlans;
+    if (!list || list.length === 0) {
       return [
-        { id: 'plan-trial', name: 'Free Trial', price: 0 },
         { id: 'plan-starter', name: 'Starter Plan', price: 12000 },
         { id: 'plan-business', name: 'Business Plan', price: 16000 },
         { id: 'plan-enterprise', name: 'Enterprise Plan', price: 30000 }
@@ -249,7 +245,7 @@ export const TenantManagement: React.FC = () => {
 
     // 1. PostgreSQL live records — primary source of truth for online registrations
     for (const pg of pgTenants) {
-      if (pg.deleted_at) continue;
+      if (pg.deleted_at || pg.status === 'Deleted' || pg.status === 'Archived' || deletedTenantIds.has(pg.id)) continue;
       map.set(pg.id, {
         id: pg.id,
         name: pg.name,
@@ -274,6 +270,7 @@ export const TenantManagement: React.FC = () => {
 
     // 2. Dexie cloudDb cache — fills gaps for tenants provisioned locally
     for (const ct of cloudTenants) {
+      if (ct.deleted_at || ct.status === 'Deleted' || ct.status === 'Archived' || deletedTenantIds.has(ct.id)) continue;
       if (!map.has(ct.id)) {
         map.set(ct.id, {
           id: ct.id,
@@ -301,6 +298,7 @@ export const TenantManagement: React.FC = () => {
 
     // 3. Local Dexie tenants
     for (const dt of dbTenants) {
+      if ((dt as any).deleted_at || dt.status === 'Deleted' || dt.status === 'Archived' || deletedTenantIds.has(dt.id)) continue;
       if (!map.has(dt.id)) {
         map.set(dt.id, {
           ...dt,
@@ -317,7 +315,7 @@ export const TenantManagement: React.FC = () => {
 
     // 4. Current session tenant as fallback
     const curT = currentTenant as any;
-    if (curT && curT.id && !map.has(curT.id)) {
+    if (curT && curT.id && !map.has(curT.id) && !deletedTenantIds.has(curT.id)) {
       map.set(curT.id, {
         id: curT.id,
         name: curT.name || 'Current Tenant',
@@ -340,7 +338,7 @@ export const TenantManagement: React.FC = () => {
     }
 
     return Array.from(map.values());
-  }, [pgTenants, cloudTenants, dbTenants, currentTenant]);
+  }, [pgTenants, cloudTenants, dbTenants, currentTenant, deletedTenantIds]);
 
   // Enriched Tenants with meta counts
   const enrichedTenants = useMemo(() => {
@@ -693,12 +691,24 @@ export const TenantManagement: React.FC = () => {
     }
 
     try {
+      // 1. Instantly hide tenant from UI in state
+      setDeletedTenantIds(prev => new Set(prev).add(tenant.id));
+      setPgTenants(prev => prev.filter(t => t.id !== tenant.id));
+
+      // 2. Perform deep database purge across IndexedDB & Cloud DB
       await SuperAdminService.purgeTenantData(tenant.id);
+
+      // 3. Mark soft deleted in local db.tenants
+      try {
+        await db.tenants.update(tenant.id, { status: 'Deleted', deleted_at: Date.now() } as any);
+      } catch (_) {}
+
+      // 4. Send API DELETE call
       await fetch(`/api/tenants/${tenant.id}`, {
         method: 'DELETE',
         headers: { 'x-tenant-id': 'tenant-admin-system' }
       }).catch(console.warn);
-      await fetchPgTenants();
+
       toast.success('Tenant Purged', `"${tenant.name}" and all associated workspace data have been permanently removed.`);
     } catch (err: any) {
       toast.error('Deletion Error', err.message || 'Failed to delete tenant workspace.');
