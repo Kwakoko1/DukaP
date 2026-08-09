@@ -92,16 +92,51 @@ export const UsersRoles: React.FC = () => {
   const [activeSubTab, setActiveSubTab] = useState('Users Directory');
 
   // ── DB Live Queries ────────────────────────────────────────────────────────
+  // ── DB Live Queries ────────────────────────────────────────────────────────
   const cloudUsersList = useLiveQuery(() => cloudDb.cloud_users.toArray(), []) || [];
   const localDbUsers = useLiveQuery(() => db.users.toArray(), []) || [];
+  const cloudTenantsList = useLiveQuery(() => cloudDb.cloud_tenants.toArray(), []) || [];
+  const dbTenantsList = useLiveQuery(() => db.tenants.toArray(), []) || [];
+
   const tenantUsers = useLiveQuery(() =>
     db.tenantUsers.where('tenant_id').equals(currentTenant.id).toArray()
   ) || [];
 
+  const activeTenantIds = useMemo(() => {
+    const ids = new Set<string>();
+    ids.add('tenant-admin-system');
+    ids.add('tenant-system');
+    for (const t of cloudTenantsList) {
+      if (!t.deleted_at && t.status !== 'Archived' && t.status !== 'Deleted') {
+        ids.add(t.id);
+      }
+    }
+    for (const t of dbTenantsList) {
+      if (!(t as any).deleted_at && t.status !== 'Archived' && t.status !== 'Deleted') {
+        ids.add(t.id);
+      }
+    }
+    return ids;
+  }, [cloudTenantsList, dbTenantsList]);
+
   const allUsers = useMemo(() => {
     const map = new Map<string, any>();
+
+    const checkUserValid = (u: any) => {
+      if (u.deleted_at || u.status === 'Deleted') return false;
+      if (!isSuperAdminView) {
+        // Tenant View: ONLY show users for current tenant, hide Super Admin platform accounts
+        if (u.tenant_id !== currentTenant.id) return false;
+        if (u.is_super_admin || u.role === 'Super Admin') return false;
+        return true;
+      }
+      // Super Admin View: Only show users of active non-deleted tenants or platform staff
+      if (u.tenant_id && !activeTenantIds.has(u.tenant_id)) return false;
+      return true;
+    };
+
     for (const cu of cloudUsersList) {
-      if (isSuperAdminView || role === 'Super Admin' || cu.tenant_id === currentTenant.id) {
+      if (checkUserValid(cu)) {
         map.set(cu.id, {
           ...cu,
           created_at: cu.created_at || Date.now()
@@ -109,14 +144,14 @@ export const UsersRoles: React.FC = () => {
       }
     }
     for (const lu of localDbUsers) {
-      if (isSuperAdminView || role === 'Super Admin' || lu.tenant_id === currentTenant.id) {
+      if (checkUserValid(lu)) {
         if (!map.has(lu.id)) {
           map.set(lu.id, lu);
         }
       }
     }
     return Array.from(map.values());
-  }, [cloudUsersList, localDbUsers, currentTenant?.id, isSuperAdminView, role]);
+  }, [cloudUsersList, localDbUsers, currentTenant?.id, isSuperAdminView, activeTenantIds]);
   const allRoles = useLiveQuery(async () => {
     const list = await db.roles.toArray();
     return list.filter(r => r.tenant_id === null || r.tenant_id === currentTenant.id);
@@ -154,7 +189,10 @@ export const UsersRoles: React.FC = () => {
     } catch (e) { console.error('Audit log error:', e); }
   };
 
-  // ── Add User State ─────────────────────────────────────────────────────────
+  // ── Account Category Filter (Platform Staff vs Tenant Users) ─────────────
+  const [accountCategoryFilter, setAccountCategoryFilter] = useState<'PLATFORM_STAFF' | 'TENANT_USERS' | 'ALL'>(
+    isSuperAdminView ? 'PLATFORM_STAFF' : 'ALL'
+  );
   const [showAddModal, setShowAddModal] = useState(false);
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -888,10 +926,19 @@ export const UsersRoles: React.FC = () => {
         if (vStatus !== verificationFilter) return false;
       }
 
+      // 5. Account Category Filter (Platform Staff vs Tenant Users)
+      if (accountCategoryFilter === 'PLATFORM_STAFF') {
+        const isPlatform = dbUser?.is_super_admin || dbUser?.role === 'Super Admin' || tu.job_title === 'Super Admin' || tu.tenant_id === 'tenant-admin-system';
+        if (!isPlatform) return false;
+      } else if (accountCategoryFilter === 'TENANT_USERS') {
+        const isPlatform = dbUser?.is_super_admin || dbUser?.role === 'Super Admin' || tu.job_title === 'Super Admin' || tu.tenant_id === 'tenant-admin-system';
+        if (isPlatform) return false;
+      }
+
       return true;
     });
 
-    // 5. Sorting by created_at timestamp
+    // 6. Sorting by created_at timestamp
     return result.sort((a, b) => {
       const uA = usersMap.get(a.user_id);
       const uB = usersMap.get(b.user_id);
@@ -899,7 +946,7 @@ export const UsersRoles: React.FC = () => {
       const tsB = uB?.created_at || b.joined_at || 0;
       return sortDirection === 'DESC' ? tsB - tsA : tsA - tsB;
     });
-  }, [tenantUsers, allUsers, usersMap, userSearch, dateRangePreset, customStartDate, customEndDate, sourceFilter, verificationFilter, sortDirection, currentTenant?.id]);
+  }, [tenantUsers, allUsers, usersMap, userSearch, dateRangePreset, customStartDate, customEndDate, sourceFilter, verificationFilter, accountCategoryFilter, sortDirection, currentTenant?.id]);
 
   const groupedPermissions = useMemo(() => {
     return allPermissions.reduce((acc, p) => {
@@ -988,6 +1035,42 @@ export const UsersRoles: React.FC = () => {
       ══════════════════════════════════════════════════════════════════════ */}
       {activeSubTab === 'Users Directory' && (
         <div className="space-y-4">
+          {/* Account Category Selector for Super Admin Console */}
+          {isSuperAdminView && (
+            <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-darkbg p-1 rounded-2xl border border-slate-200 dark:border-darkbg-border text-xs font-bold w-fit">
+              <button
+                onClick={() => setAccountCategoryFilter('PLATFORM_STAFF')}
+                className={`px-3 py-1.5 rounded-xl transition-all ${
+                  accountCategoryFilter === 'PLATFORM_STAFF'
+                    ? 'bg-blue-600 text-white shadow-sm font-extrabold'
+                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
+                }`}
+              >
+                🛡️ Platform Staff (Super Admins)
+              </button>
+              <button
+                onClick={() => setAccountCategoryFilter('TENANT_USERS')}
+                className={`px-3 py-1.5 rounded-xl transition-all ${
+                  accountCategoryFilter === 'TENANT_USERS'
+                    ? 'bg-blue-600 text-white shadow-sm font-extrabold'
+                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
+                }`}
+              >
+                🏢 Tenant Owners &amp; Staff
+              </button>
+              <button
+                onClick={() => setAccountCategoryFilter('ALL')}
+                className={`px-3 py-1.5 rounded-xl transition-all ${
+                  accountCategoryFilter === 'ALL'
+                    ? 'bg-blue-600 text-white shadow-sm font-extrabold'
+                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
+                }`}
+              >
+                All Accounts
+              </button>
+            </div>
+          )}
+
           {/* Advanced Registration Date & Filter Bar */}
           <div className="bg-white dark:bg-darkbg-card p-4 rounded-2xl border border-slate-200 dark:border-darkbg-border shadow-sm space-y-3">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
