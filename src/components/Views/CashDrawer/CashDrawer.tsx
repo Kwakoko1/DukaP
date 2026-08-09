@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../../context/AuthContext';
+import { useToast } from '../../UI/Toast';
 import { useModule } from '../../../context/ModuleContext';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../../../db/dexie';
@@ -26,6 +27,7 @@ export const CashDrawer: React.FC<CashDrawerProps> = ({ initialTab = 'shift' }) 
   const [activeTab, setActiveTab] = useState<'shift' | 'ledger' | 'reconciliation' | 'transfers' | 'events' | 'reports' | 'security' | 'ai'>(initialTab);
   const [isProcessing, setIsProcessing] = useState(false);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const toast = useToast();
 
   // Safely ensure default drawer exists in background side-effect
   useEffect(() => {
@@ -211,7 +213,7 @@ export const CashDrawer: React.FC<CashDrawerProps> = ({ initialTab = 'shift' }) 
       setShowOpenShiftModal(false);
       resetDenominationsToZero();
     } catch (err: any) {
-      alert(`Failed to open shift: ${err.message}`);
+      toast.error('Shift open failed', err.message);
     } finally {
       setIsProcessing(false);
     }
@@ -236,7 +238,7 @@ export const CashDrawer: React.FC<CashDrawerProps> = ({ initialTab = 'shift' }) 
       setShowCloseShiftModal(false);
       resetDenominationsToZero();
     } catch (err: any) {
-      alert(`Failed to close shift: ${err.message}`);
+      toast.error('Shift close failed', err.message);
     } finally {
       setIsProcessing(false);
     }
@@ -262,7 +264,7 @@ export const CashDrawer: React.FC<CashDrawerProps> = ({ initialTab = 'shift' }) 
       setAmountInput('');
       setReasonInput('');
     } catch (err: any) {
-      alert(`Cash in failed: ${err.message}`);
+      toast.error('Cash in failed', err.message);
     } finally {
       setIsProcessing(false);
     }
@@ -288,7 +290,7 @@ export const CashDrawer: React.FC<CashDrawerProps> = ({ initialTab = 'shift' }) 
       setAmountInput('');
       setReasonInput('');
     } catch (err: any) {
-      alert(`Cash out failed: ${err.message}`);
+      toast.error('Cash out failed', err.message);
     } finally {
       setIsProcessing(false);
     }

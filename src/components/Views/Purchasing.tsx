@@ -11,6 +11,8 @@ import {
   Card, CardHeader, CardTitle, CardDescription, CardContent,
   Button, Badge, Dialog, Input
 } from '../UI/custom-ui';
+import { useToast } from '../UI/Toast';
+
 import {
   Truck, ShoppingCart, Warehouse as WarehouseIcon, Plus, Edit3,
   Search, CheckCircle, Clock, XCircle,
@@ -77,6 +79,7 @@ const validateVrn = (vrn?: string): { valid: boolean; text: string; color: strin
 
 const SuppliersTab: React.FC = () => {
   const { currentTenant, currentBranch } = useAuth();
+  const toast = useToast();
   const suppliers = useLiveQuery(
     () => currentTenant?.id ? db.suppliers.where('tenant_id').equals(currentTenant.id).toArray() : [],
     [currentTenant?.id]
@@ -219,7 +222,13 @@ const SuppliersTab: React.FC = () => {
 
   const handleDeactivate = async (supplier: Supplier, newStatus: Supplier['status']) => {
     const statusText = newStatus === 'Active' ? 'reactivate' : newStatus.toLowerCase();
-    if (window.confirm(`Are you sure you want to ${statusText} "${supplier.name}"?`)) {
+    const confirmed = await toast.confirm({
+      title: `${statusText.charAt(0).toUpperCase() + statusText.slice(1)} supplier?`,
+      message: `Are you sure you want to ${statusText} "${supplier.name}"?`,
+      confirmLabel: statusText.charAt(0).toUpperCase() + statusText.slice(1),
+      variant: newStatus === 'Active' ? 'primary' : 'warning'
+    });
+    if (confirmed) {
       await db.suppliers.update(supplier.id, { status: newStatus, updated_at: Date.now() });
     }
   };
@@ -717,6 +726,7 @@ const SuppliersTab: React.FC = () => {
 
 const PurchaseOrdersTab: React.FC<{ onViewGRNRequest: (po: PurchaseOrder) => void }> = ({ onViewGRNRequest }) => {
   const { currentTenant, currentBranch } = useAuth();
+  const toast = useToast();
   const allPOs = useLiveQuery(
     () => currentTenant?.id ? db.purchaseOrders.where('tenant_id').equals(currentTenant.id).toArray() : [],
     [currentTenant?.id]
@@ -862,7 +872,13 @@ const PurchaseOrdersTab: React.FC<{ onViewGRNRequest: (po: PurchaseOrder) => voi
   };
 
   const cancelPO = async (id: string) => {
-    if (window.confirm('Cancel this purchase order?')) {
+    const confirmed = await toast.confirm({
+      title: 'Cancel purchase order?',
+      message: 'This purchase order will be marked as cancelled. Stock will not be adjusted.',
+      confirmLabel: 'Cancel Order',
+      variant: 'warning'
+    });
+    if (confirmed) {
       await db.purchaseOrders.update(id, { status: 'Cancelled' });
     }
   };

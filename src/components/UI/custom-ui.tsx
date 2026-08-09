@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 
 // Reusable Button component
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: 'primary' | 'secondary' | 'outline' | 'danger' | 'ghost';
   size?: 'xs' | 'sm' | 'md' | 'lg' | 'icon';
+  isLoading?: boolean;
 }
 
 export const Button: React.FC<ButtonProps> = ({
@@ -11,15 +12,17 @@ export const Button: React.FC<ButtonProps> = ({
   variant = 'primary',
   size = 'md',
   className = '',
+  isLoading = false,
+  disabled,
   ...props
 }) => {
-  const baseStyle = 'inline-flex items-center justify-center font-medium rounded-lg transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed';
+  const baseStyle = 'inline-flex items-center justify-center font-medium rounded-lg transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.97]';
   
   const variants = {
-    primary: 'bg-primary text-white hover:bg-primary-hover active:scale-95 shadow-sm',
-    secondary: 'bg-slate-200 text-slate-800 hover:bg-slate-300 dark:bg-darkbg-border dark:text-slate-200 dark:hover:bg-slate-700 active:scale-95',
-    outline: 'border border-slate-300 text-slate-700 hover:bg-slate-100 dark:border-darkbg-border dark:text-slate-300 dark:hover:bg-slate-800 active:scale-95',
-    danger: 'bg-danger text-white hover:bg-danger-hover active:scale-95 shadow-sm',
+    primary: 'bg-primary text-white hover:bg-primary-hover shadow-sm shadow-primary/20',
+    secondary: 'bg-slate-200 text-slate-800 hover:bg-slate-300 dark:bg-darkbg-border dark:text-slate-200 dark:hover:bg-slate-700',
+    outline: 'border border-slate-300 text-slate-700 hover:bg-slate-100 dark:border-darkbg-border dark:text-slate-300 dark:hover:bg-slate-800',
+    danger: 'bg-danger text-white hover:bg-danger-hover shadow-sm shadow-danger/20',
     ghost: 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white',
   };
 
@@ -34,12 +37,22 @@ export const Button: React.FC<ButtonProps> = ({
   return (
     <button
       className={`${baseStyle} ${variants[variant]} ${sizes[size]} ${className}`}
+      disabled={disabled || isLoading}
       {...props}
     >
+      {isLoading && (
+        <svg className="animate-spin -ml-0.5 mr-1.5 h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+        </svg>
+      )}
       {children}
     </button>
   );
 };
+
+// LoadingButton — convenience alias with explicit loading state
+export const LoadingButton: React.FC<ButtonProps & { isLoading: boolean }> = (props) => <Button {...props} />;
 
 // Reusable Card components
 export const Card: React.FC<React.HTMLAttributes<HTMLDivElement>> = ({ children, className = '', ...props }) => (
@@ -147,6 +160,21 @@ export const Dialog: React.FC<DialogProps> = ({
   footer,
   size = 'md',
 }) => {
+  const firstFocusableRef = useRef<HTMLButtonElement>(null);
+
+  // Escape key + body scroll lock
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', handleKey);
+    document.body.style.overflow = 'hidden';
+    firstFocusableRef.current?.focus();
+    return () => {
+      document.removeEventListener('keydown', handleKey);
+      document.body.style.overflow = '';
+    };
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const sizes = {
@@ -160,17 +188,19 @@ export const Dialog: React.FC<DialogProps> = ({
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-8 overflow-y-auto">
       {/* Backdrop */}
-      <div 
-        className="fixed inset-0 bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-sm transition-opacity"
+      <div
+        className="fixed inset-0 bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-sm animate-fade-in"
+        onClick={onClose}
       />
       
       {/* Modal box */}
-      <div className={`relative w-full ${sizes[size]} transform rounded-xl bg-white dark:bg-darkbg-card border border-slate-200 dark:border-darkbg-border p-6 shadow-xl transition-all z-10 animate-in fade-in zoom-in-95 duration-200 mb-8`}>
+      <div className={`relative w-full ${sizes[size]} transform rounded-2xl bg-white dark:bg-darkbg-card border border-slate-200 dark:border-darkbg-border p-6 shadow-2xl z-10 animate-scale-in mb-8`}>
         {/* Header */}
         <div className="mb-4">
           <div className="flex items-center justify-between">
             <h3 className="text-base font-bold text-slate-900 dark:text-white">{title}</h3>
-            <button 
+            <button
+              ref={firstFocusableRef}
               onClick={onClose}
               className="rounded-lg p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
             >

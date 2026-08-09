@@ -9,6 +9,8 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { TopBar } from './components/Layout/TopBar';
 import { Sidebar } from './components/Layout/Sidebar';
 import { BottomNav } from './components/Layout/BottomNav';
+import { ToastProvider } from './components/UI/Toast';
+import { EmptyState } from './components/UI/EmptyState';
 
 const Dashboard = lazy(() => import('./components/Views/Dashboard').then(m => ({ default: m.Dashboard })));
 const POS = lazy(() => import('./components/Views/POS').then(m => ({ default: m.POS })));
@@ -40,6 +42,7 @@ const DukaPosAppContent: React.FC = () => {
 
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
   const [searchVal, setSearchVal] = useState('');
+  const [searchSelectedIdx, setSearchSelectedIdx] = useState(0);
 
   // Initialize production database on mount (idempotent — safe to call multiple times)
   useEffect(() => {
@@ -72,6 +75,9 @@ const DukaPosAppContent: React.FC = () => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
+
+  // Reset selection index when search results change
+  useEffect(() => { setSearchSelectedIdx(0); }, [searchVal]);
 
 
   // --- IndexedDB Queries for Global Search ---
@@ -642,11 +648,13 @@ const DukaPosAppContent: React.FC = () => {
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 pb-24 md:pb-6 scrollbar-thin">
           <Suspense fallback={
             <div className="flex flex-col items-center justify-center min-h-[50vh] text-slate-400 dark:text-slate-500 font-sans">
-              <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent mb-3"></div>
-              <p className="text-[10px] font-bold uppercase tracking-wider animate-pulse">Loading View...</p>
+              <div className="h-7 w-7 animate-spin rounded-full border-[3px] border-primary border-t-transparent mb-3"></div>
+              <p className="text-[10px] font-bold uppercase tracking-wider animate-pulse-soft">Loading...</p>
             </div>
           }>
-            {renderActiveView()}
+            <div key={activeTab} className="animate-page-enter">
+              {renderActiveView()}
+            </div>
           </Suspense>
         </main>
       </div>
@@ -693,7 +701,11 @@ const DukaPosAppContent: React.FC = () => {
                         <button
                           key={idx}
                           onClick={cmd.action}
-                          className="w-full text-left rounded-lg bg-slate-50 dark:bg-darkbg-card border border-slate-100 dark:border-darkbg-border p-2 text-xs font-bold text-primary dark:text-primary-dark hover:bg-primary/5 transition flex items-center justify-between"
+                          className={`w-full text-left rounded-lg border p-2 text-xs font-bold text-primary dark:text-primary-dark flex items-center justify-between transition ${
+                            idx === searchSelectedIdx
+                              ? 'bg-primary/10 border-primary/30 dark:bg-primary-dark/10'
+                              : 'bg-slate-50 dark:bg-darkbg-card border-slate-100 dark:border-darkbg-border hover:bg-primary/5'
+                          }`}
                         >
                           <span>⚡ {cmd.name}</span>
                           <span className="text-[9px] bg-primary/10 px-1.5 py-0.5 rounded font-semibold text-primary">Shortcut</span>
@@ -751,7 +763,12 @@ const DukaPosAppContent: React.FC = () => {
                 )}
 
                 {searchResults.products.length === 0 && searchResults.customers.length === 0 && searchResults.commands.length === 0 && (
-                  <p className="text-xs text-slate-400 text-center py-6 italic">No results found for "{searchVal}"</p>
+                  <EmptyState
+                    variant="no-results"
+                    title={`No results for "${searchVal}"`}
+                    description="Try a different keyword — product name, customer, or action."
+                    className="py-8"
+                  />
                 )}
               </>
             )}
@@ -764,13 +781,15 @@ const DukaPosAppContent: React.FC = () => {
 
 function App() {
   return (
-    <AuthProvider>
-      <ModuleProvider>
-        <SyncProvider>
-          <DukaPosAppContent />
-        </SyncProvider>
-      </ModuleProvider>
-    </AuthProvider>
+    <ToastProvider>
+      <AuthProvider>
+        <ModuleProvider>
+          <SyncProvider>
+            <DukaPosAppContent />
+          </SyncProvider>
+        </ModuleProvider>
+      </AuthProvider>
+    </ToastProvider>
   );
 }
 

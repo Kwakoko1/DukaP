@@ -5,6 +5,8 @@ import { useSyncState } from '../../context/SyncContext';
 import { db, type Customer } from '../../db/dexie';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Card, CardContent, Button, Input, Dialog, Badge } from '../UI/custom-ui';
+import { useToast } from '../UI/Toast';
+
 import { 
   User, Phone, Mail, Award, DollarSign, Search, Coins, Edit2, Trash2, 
   UserPlus, Sparkles 
@@ -14,6 +16,7 @@ export const Customers: React.FC = () => {
   const { activeModule } = useModule();
   const { hasPermission, currentTenant, currentBranch, user } = useAuth();
   const { queueOperation } = useSyncState();
+  const toast = useToast();
 
   // --- Industry specific configuration ---
   const typeMap: Record<string, string> = useMemo(() => ({
@@ -175,14 +178,22 @@ export const Customers: React.FC = () => {
   // Delete customer profile
   const handleDeleteCustomer = async (c: Customer) => {
     if (c.outstandingBalance > 0) {
-      alert(`Cannot delete profile because this ${targetType.toLowerCase()} has an outstanding debt of ${fmtCcy(c.outstandingBalance)}.`);
+      toast.error(
+        'Cannot delete',
+        `This ${targetType.toLowerCase()} has an outstanding debt of ${fmtCcy(c.outstandingBalance)}.`
+      );
       return;
     }
-    const confirmDelete = window.confirm(`Are you sure you want to permanently delete the profile for ${c.name}? This action is irreversible.`);
-    if (!confirmDelete) return;
+    const confirmed = await toast.confirm({
+      title: `Delete ${targetType}?`,
+      message: `Permanently delete the profile for "${c.name}"? This action is irreversible.`,
+      confirmLabel: 'Delete',
+      variant: 'danger'
+    });
+    if (!confirmed) return;
 
     await queueOperation('DELETE', 'customers', c);
-    alert(`Profile for ${c.name} has been removed.`);
+    toast.success('Profile removed', `${c.name}'s profile has been deleted.`);
   };
 
   // Record payment against outstanding balance

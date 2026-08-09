@@ -1,4 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { useToast } from '../UI/Toast';
+import { EmptyTableRow } from '../UI/EmptyState';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../../db/dexie';
 import { cloudDb } from '../../db/supabaseMock';
@@ -120,6 +122,7 @@ export const TenantManagement: React.FC = () => {
 
   // Form & Search States
   const [form, setForm] = useState<TenantFormState>(emptyForm);
+  const toast = useToast();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('ALL');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -562,7 +565,10 @@ export const TenantManagement: React.FC = () => {
         // 6. Refresh live PostgreSQL list
         await fetchPgTenants();
 
-        alert(`✅ Tenant "${form.businessName}" (${form.businessType}) provisioned and registered in PostgreSQL!`);
+        toast.success(
+          `Tenant provisioned`,
+          `"${form.businessName}" (${form.businessType}) is registered in PostgreSQL.`
+        );
       } else if (panelMode === 'edit' && selectedTenant) {
         // Update PostgreSQL
         await fetch(`/api/tenants/${selectedTenant.id}`, {
@@ -590,11 +596,11 @@ export const TenantManagement: React.FC = () => {
         }
 
         await fetchPgTenants();
-        alert(`✅ Tenant "${form.businessName}" updated in PostgreSQL!`);
+        toast.success('Tenant updated', `"${form.businessName}" saved to PostgreSQL.`);
       }
       closePanel();
     } catch (err: any) {
-      alert(`Error: ${err.message || 'Failed to save tenant.'}`);
+      toast.error('Save failed', err.message || 'Failed to save tenant.');
     } finally {
       setIsSubmitting(false);
     }
@@ -639,10 +645,10 @@ export const TenantManagement: React.FC = () => {
         status: form.status === 'TRIAL' ? 'Trial' : form.status === 'SUSPENDED' ? 'Suspended' : 'Active'
       });
 
-      alert(`✅ Subscription plan for "${selectedTenant.name}" updated in central PostgreSQL database!`);
+      toast.success('Subscription updated', `"${selectedTenant.name}" is now on the ${form.planName} plan.`);
       closePanel();
     } catch (err: any) {
-      alert(`Error: ${err.message || 'Failed to update subscription.'}`);
+      toast.error('Update failed', err.message || 'Failed to update subscription.');
     } finally {
       setIsSubmitting(false);
     }
@@ -659,7 +665,13 @@ export const TenantManagement: React.FC = () => {
       role: 'Super Admin' as const
     };
 
-    if (window.confirm(`${isSuspended ? 'Activate' : 'Suspend'} tenant "${tenant.name}"?`)) {
+    const confirmed = await toast.confirm({
+      title: `${isSuspended ? 'Activate' : 'Suspend'} tenant?`,
+      message: `Are you sure you want to ${isSuspended ? 'reactivate' : 'suspend'} "${tenant.name}"?`,
+      confirmLabel: isSuspended ? 'Activate' : 'Suspend',
+      variant: isSuspended ? 'primary' : 'warning'
+    });
+    if (confirmed) {
       await SuperAdminService.updateTenantStatus(tenant.id, nextStatus as any, adminContext);
       await db.tenants.update(tenant.id, { status: nextStatus as any });
       // Sync to PostgreSQL
@@ -669,7 +681,7 @@ export const TenantManagement: React.FC = () => {
         body: JSON.stringify({ status: nextStatus })
       }).catch(console.warn);
       await fetchPgTenants();
-      alert(`✅ Tenant status updated to ${nextStatus} in PostgreSQL.`);
+      toast.success('Status updated', `"${tenant.name}" is now ${nextStatus}.`);
     }
   };
 
@@ -682,16 +694,21 @@ export const TenantManagement: React.FC = () => {
       role: 'Super Admin' as const
     };
 
-    if (window.confirm(`⚠️ CONFIRM DELETION\nSoft delete organization "${tenant.name}" in central database?`)) {
+    const confirmed = await toast.confirm({
+      title: 'Delete tenant?',
+      message: `Soft delete "${tenant.name}" from the central database? This action is logged and reversible.`,
+      confirmLabel: 'Delete',
+      variant: 'danger'
+    });
+    if (confirmed) {
       await SuperAdminService.softDeleteTenant(tenant.id, adminContext);
       await db.tenants.delete(tenant.id);
-      // Soft delete in PostgreSQL
       await fetch(`/api/tenants/${tenant.id}`, {
         method: 'DELETE',
         headers: { 'x-tenant-id': 'tenant-admin-system' }
       }).catch(console.warn);
       await fetchPgTenants();
-      alert(`✅ Tenant "${tenant.name}" soft deleted with audit trail in PostgreSQL.`);
+      toast.success('Tenant deleted', `"${tenant.name}" soft deleted with audit trail.`);
     }
   };
 
@@ -1137,11 +1154,12 @@ export const TenantManagement: React.FC = () => {
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-darkbg-border/40">
                 {filteredTenants.length === 0 ? (
-                  <tr>
-                    <td colSpan={10} className="p-8 text-center text-slate-400 italic text-xs">
-                      No tenants match your selected date or registration audit filters.
-                    </td>
-                  </tr>
+                  <EmptyTableRow
+                    colSpan={10}
+                    variant={searchTerm || selectedCategoryFilter !== 'ALL' || sourceFilter !== 'ALL' || verificationFilter !== 'ALL' ? 'no-results' : 'no-tenants'}
+                    title={searchTerm ? `No results for "${searchTerm}"` : 'No tenants registered yet'}
+                    description={searchTerm ? 'Try adjusting your search or filters.' : 'Tenants who register online or are provisioned here will appear automatically.'}
+                  />
                 ) : (
                   filteredTenants.map(t => {
                     const regDate = formatTenantRegistrationDate(t.created_at);
