@@ -57,12 +57,12 @@ export const MODULE_MANIFESTS: Record<IndustryModule, ModuleManifest> = {
     sidebar: [
       'Dashboard',
       { name: 'POS', subItems: ['New Sale', 'Sales History', 'Returns'] },
-      { name: 'Inventory', subItems: ['Products', 'Categories', 'Stock Adjustment', 'Stock Transfer', 'Stock Alerts'] },
+      { name: 'Inventory', subItems: ['Inventory Overview', 'Products', 'Categories & Brands', 'Stock Adjustment', 'Stock Transfer', 'Stock Alerts', 'Stock Sync Engine', 'Product Bundles & Kits', 'Stock Count', 'Ledger Drilldown', 'Inventory Reports'] },
       { name: 'Receipts', subItems: ['Receipt History', 'Receipt Templates', 'Receipt Analytics', 'Receipt Verification', 'Receipt Archive'] },
       'Customers',
       { name: 'Purchasing', subItems: ['Suppliers', 'Purchase Orders', 'Goods Received', 'Supplier Ledgers', 'Warehouses'] },
       'Expenses',
-      { name: 'Reports', subItems: ['Sales', 'Profit', 'Inventory', 'Tax'] },
+      { name: 'Reports', subItems: ['Sales', 'Profit', 'Inventory Valuation', 'Tax', 'Customers Report', 'Expenses Report', 'Payment Methods', 'Stock Movement', 'Purchasing Report', 'Discounts', 'Returns & Refunds', 'Branch Comparison', 'Cashier Performance', 'Receivables Aging'] },
       'Employees',
       'Settings'
     ],

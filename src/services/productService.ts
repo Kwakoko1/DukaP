@@ -968,6 +968,159 @@ export async function deleteBrand(id: string): Promise<void> {
     });
   }
 }
+// ═══════════════════════════════════════════════════════════════════════════
+// ENTERPRISE CATEGORY & BRAND HYGIENE & PRESETS SERVICE
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const INDUSTRY_CATEGORY_PRESETS: Record<string, { name: string; description: string; default_tax_rate?: string; target_margin_pct?: number }[]> = {
+  Retail: [
+    { name: 'Grocery & Food', description: 'Packaged grains, spices, oils & dry food items', default_tax_rate: '0% (Exempt)', target_margin_pct: 20 },
+    { name: 'Soft Drinks & Juices', description: 'Carbonated beverages, bottled water & fresh juices', default_tax_rate: '18% VAT', target_margin_pct: 25 },
+    { name: 'Alcoholic Beverages', description: 'Beers, spirits, wines & ciders', default_tax_rate: '18% VAT', target_margin_pct: 30 },
+    { name: 'Personal Care & Hygiene', description: 'Soaps, shampoos, toothpaste & cosmetics', default_tax_rate: '18% VAT', target_margin_pct: 25 },
+    { name: 'Household & Cleaning', description: 'Detergents, disinfectants & trash bags', default_tax_rate: '18% VAT', target_margin_pct: 22 },
+    { name: 'Bakery & Snacks', description: 'Fresh bread, cakes, biscuits & crisps', default_tax_rate: '0% (Exempt)', target_margin_pct: 30 },
+    { name: 'Electronics & Accessories', description: 'Batteries, cables, bulbs & small appliances', default_tax_rate: '18% VAT', target_margin_pct: 35 },
+  ],
+  Pharmacy: [
+    { name: 'Prescription Antibiotics', description: 'POM regulated antibiotic medications', default_tax_rate: '0% (Exempt)', target_margin_pct: 30 },
+    { name: 'Pain Relievers & OTC', description: 'Over-the-counter painkillers & cold remedies', default_tax_rate: '0% (Exempt)', target_margin_pct: 35 },
+    { name: 'Chronic Care & Diabetes', description: 'Hypertension, insulin & cardiac medications', default_tax_rate: '0% (Exempt)', target_margin_pct: 25 },
+    { name: 'Vitamins & Supplements', description: 'Multivitamins, minerals & health supplements', default_tax_rate: '18% VAT', target_margin_pct: 40 },
+    { name: 'First Aid & Surgical', description: 'Bandages, syringes, gloves & antiseptic', default_tax_rate: '0% (Exempt)', target_margin_pct: 30 },
+    { name: 'Baby & Child Health', description: 'Baby formula, diapers & infant medicines', default_tax_rate: '0% (Exempt)', target_margin_pct: 20 },
+  ],
+  Restaurant: [
+    { name: 'Starters & Appetizers', description: 'Soups, salads & finger food appetizers', default_tax_rate: '18% VAT', target_margin_pct: 50 },
+    { name: 'Main Courses & Grills', description: 'Steaks, chicken, fish & rice platters', default_tax_rate: '18% VAT', target_margin_pct: 45 },
+    { name: 'Desserts & Sweets', description: 'Ice cream, cakes & sweet pastries', default_tax_rate: '18% VAT', target_margin_pct: 55 },
+    { name: 'Fresh Juices & Cocktails', description: 'Fresh fruit smoothies & house cocktails', default_tax_rate: '18% VAT', target_margin_pct: 60 },
+    { name: 'Hot Beverages & Tea', description: 'Coffee, chai, espresso & tea pots', default_tax_rate: '18% VAT', target_margin_pct: 65 },
+  ],
+  Hardware: [
+    { name: 'Cement & Aggregates', description: 'Portland cement, sand, gravel & ballast', default_tax_rate: '18% VAT', target_margin_pct: 15 },
+    { name: 'Steel & Iron Bars', description: 'Deformed TMT bars, BRC mesh & wire', default_tax_rate: '18% VAT', target_margin_pct: 18 },
+    { name: 'Plumbing & PVC Pipes', description: 'Pipes, fittings, valves & water tanks', default_tax_rate: '18% VAT', target_margin_pct: 25 },
+    { name: 'Electrical & Wiring', description: 'Cables, switches, breakers & conduits', default_tax_rate: '18% VAT', target_margin_pct: 28 },
+    { name: 'Paints & Sealants', description: 'Emulsion paint, primer, thinner & silicone', default_tax_rate: '18% VAT', target_margin_pct: 30 },
+    { name: 'Hand & Power Tools', description: 'Hammers, drills, saws & safety gear', default_tax_rate: '18% VAT', target_margin_pct: 35 },
+  ],
+  Bar: [
+    { name: 'Beers & Ciders', description: 'Lagers, stouts, draft & craft beers', default_tax_rate: '18% VAT', target_margin_pct: 35 },
+    { name: 'Spirits & Whiskies', description: 'Vodka, gin, rum, scotch & cognac', default_tax_rate: '18% VAT', target_margin_pct: 50 },
+    { name: 'Wines & Champagne', description: 'Red, white, sparkling & dessert wines', default_tax_rate: '18% VAT', target_margin_pct: 45 },
+    { name: 'House Cocktails', description: 'Signature mixed drinks & shooters', default_tax_rate: '18% VAT', target_margin_pct: 65 },
+    { name: 'Energy Drinks & Mixers', description: 'Tonic, soda water, ginger ale & Red Bull', default_tax_rate: '18% VAT', target_margin_pct: 40 },
+  ],
+};
+
+export async function seedIndustryCategoryPresets(tenantId: string, moduleName: string): Promise<number> {
+  const presets = INDUSTRY_CATEGORY_PRESETS[moduleName] || INDUSTRY_CATEGORY_PRESETS.Retail;
+  let count = 0;
+  for (const p of presets) {
+    const existing = await db.categories.where('tenant_id').equals(tenantId).filter(c => Boolean(c.name && c.name.toLowerCase() === p.name.toLowerCase())).first();
+    if (!existing) {
+      await createCategory({
+        name: p.name,
+        description: p.description,
+        tenant_id: tenantId,
+        default_tax_rate: p.default_tax_rate,
+        target_margin_pct: p.target_margin_pct,
+        module: moduleName,
+      }, tenantId);
+      count++;
+    }
+  }
+  return count;
+}
+
+export async function mergeDuplicateCategories(tenantId: string): Promise<{ mergedCount: number; updatedProductsCount: number }> {
+  const allCats = await db.categories.where('tenant_id').equals(tenantId).toArray();
+  const prods = await db.products.where('tenant_id').equals(tenantId).toArray();
+  
+  const nameGroups = new Map<string, Category[]>();
+  for (const c of allCats) {
+    const norm = (c.name || '').trim().toLowerCase();
+    if (!norm) continue;
+    if (!nameGroups.has(norm)) nameGroups.set(norm, []);
+    nameGroups.get(norm)!.push(c);
+  }
+
+  let mergedCount = 0;
+  let updatedProductsCount = 0;
+
+  for (const [, group] of nameGroups) {
+    if (group.length > 1) {
+      const canonical = group.sort((a, b) => (b.created_at || 0) - (a.created_at || 0))[0];
+      const dupes = group.filter(c => c.id !== canonical.id);
+      const dupeNames = new Set(dupes.map(d => d.name));
+
+      for (const p of prods) {
+        if (p.category && dupeNames.has(p.category)) {
+          await db.products.update(p.id, { category: canonical.name });
+          updatedProductsCount++;
+        }
+      }
+
+      for (const d of dupes) {
+        await deleteCategory(d.id);
+        mergedCount++;
+      }
+    }
+  }
+
+  return { mergedCount, updatedProductsCount };
+}
+
+export async function mergeDuplicateBrands(tenantId: string): Promise<{ mergedCount: number; updatedProductsCount: number }> {
+  const allBrandsList = await db.brands.where('tenant_id').equals(tenantId).toArray();
+  const prods = await db.products.where('tenant_id').equals(tenantId).toArray();
+
+  const nameGroups = new Map<string, Brand[]>();
+  for (const b of allBrandsList) {
+    const norm = (b.name || '').trim().toLowerCase();
+    if (!norm) continue;
+    if (!nameGroups.has(norm)) nameGroups.set(norm, []);
+    nameGroups.get(norm)!.push(b);
+  }
+
+  let mergedCount = 0;
+  let updatedProductsCount = 0;
+
+  for (const [, group] of nameGroups) {
+    if (group.length > 1) {
+      const canonical = group.sort((a, b) => (b.created_at || 0) - (a.created_at || 0))[0];
+      const dupes = group.filter(b => b.id !== canonical.id);
+      const dupeNames = new Set(dupes.map(d => d.name));
+
+      for (const p of prods) {
+        if (p.brand && dupeNames.has(p.brand)) {
+          await db.products.update(p.id, { brand: canonical.name });
+          updatedProductsCount++;
+        }
+      }
+
+      for (const d of dupes) {
+        await deleteBrand(d.id);
+        mergedCount++;
+      }
+    }
+  }
+
+  return { mergedCount, updatedProductsCount };
+}
+
+export async function reassignCategoryProducts(tenantId: string, fromCategory: string, toCategory: string): Promise<number> {
+  const prods = await db.products.where('tenant_id').equals(tenantId).filter(p => p.category === fromCategory).toArray();
+  for (const p of prods) {
+    await db.products.update(p.id, { category: toCategory });
+  }
+  const catRec = await db.categories.where('tenant_id').equals(tenantId).filter(c => c.name === fromCategory).first();
+  if (catRec) {
+    await deleteCategory(catRec.id);
+  }
+  return prods.length;
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // UN-SYNCED PRODUCT RECOVERY ROUTINE (Dual-Layer Sync & Reconciliation)

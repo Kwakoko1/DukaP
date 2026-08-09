@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useAuth, type UserRole } from '../../context/AuthContext';
+import { getSyncRealClientIp } from '../../services/clientIpService';
 import { db, type TenantUser, type Role, type Permission } from '../../db/dexie';
 import { cloudDb } from '../../db/supabaseMock';
 import { supabase } from '../../db/supabaseClient';
@@ -36,30 +37,54 @@ const timeAgo = (ts: number): string => {
   return 'Just now';
 };
 
-const formatRegistrationDate = (ts?: number) => {
-  if (!ts) return { formatted: 'N/A', relative: 'Unknown', iso: 'N/A' };
-  const d = new Date(ts);
-  const formatted = d.toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false
-  });
-  
-  const diff = Math.max(0, Date.now() - ts);
-  const mins = Math.floor(diff / 60000);
-  const hrs = Math.floor(diff / 3600000);
-  const days = Math.floor(diff / 86400000);
-  
-  let relative = 'Just now';
-  if (days > 0) relative = `${days}d ago`;
-  else if (hrs > 0) relative = `${hrs}h ago`;
-  else if (mins > 0) relative = `${mins}m ago`;
-
-  return { formatted, relative, iso: d.toISOString() };
+const parseTimestamp = (val?: any): number => {
+  if (!val) return 0;
+  if (typeof val === 'number') {
+    return val < 1e11 ? val * 1000 : val;
+  }
+  if (typeof val === 'string') {
+    const num = Number(val);
+    if (!isNaN(num) && num > 0) return num < 1e11 ? num * 1000 : num;
+    const parsed = new Date(val).getTime();
+    return isNaN(parsed) ? 0 : parsed;
+  }
+  if (val instanceof Date) return isNaN(val.getTime()) ? 0 : val.getTime();
+  return 0;
 };
+
+const formatRegistrationDate = (ts?: any) => {
+  const timeMs = parseTimestamp(ts);
+  if (!timeMs) return { formatted: 'N/A', relative: 'Unknown', iso: 'N/A' };
+
+  const d = new Date(timeMs);
+  if (isNaN(d.getTime())) return { formatted: 'N/A', relative: 'Unknown', iso: 'N/A' };
+
+  try {
+    const formatted = d.toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    });
+
+    const diff = Math.max(0, Date.now() - timeMs);
+    const mins = Math.floor(diff / 60000);
+    const hrs = Math.floor(diff / 3600000);
+    const days = Math.floor(diff / 86400000);
+
+    let relative = 'Just now';
+    if (days > 0) relative = `${days}d ago`;
+    else if (hrs > 0) relative = `${hrs}h ago`;
+    else if (mins > 0) relative = `${mins}m ago`;
+
+    return { formatted, relative, iso: d.toISOString() };
+  } catch {
+    return { formatted: 'N/A', relative: 'Unknown', iso: 'N/A' };
+  }
+};
+
 
 export const UsersRoles: React.FC = () => {
   const { currentTenant, user: currentUser, switchContext, verifyPin, role, hasPermission, isSuperAdminView } = useAuth();
@@ -248,7 +273,7 @@ export const UsersRoles: React.FC = () => {
         updated_at: Date.now(),
         registration_source: 'ADMIN_PROVISIONED',
         created_by: currentUser?.name || currentUser?.id || 'Business Administrator',
-        registration_ip: '197.250.4.15',
+        registration_ip: getSyncRealClientIp(),
         registration_device: typeof navigator !== 'undefined' ? navigator.userAgent : 'Chrome 126.0 (Windows)',
         verification_status: 'VERIFIED'
       });
@@ -812,7 +837,7 @@ export const UsersRoles: React.FC = () => {
 
     let result = baseList.filter(tu => {
       const dbUser = usersMap.get(tu.user_id);
-      const createdAt = dbUser?.created_at || tu.joined_at || 0;
+      const createdAt = parseTimestamp(dbUser?.created_at || tu.joined_at);
 
       // 1. Text Search Filter
       if (userSearch.trim()) {
@@ -1122,10 +1147,19 @@ export const UsersRoles: React.FC = () => {
                       </tr>
                     ) : filteredTenantUsers.map(tu => {
                       const dbUser = usersMap.get(tu.user_id);
-                      const primaryAlloc = tenantUserBranches.find(tub => tub.user_id === tu.user_id && tub.is_primary);
+                      const isSuperAdminUser = isSuperAdminView || dbUser?.role === 'Super Admin' || (dbUser?.id || '').includes('super');
+                      const primaryAlloc = tenantUserBranches.find(tub => tub.user_id === tu.user_id && tub.is_primary) || tenantUserBranches.find(tub => tub.user_id === tu.user_id);
                       const branchObj = dbBranches.find(b => b.id === primaryAlloc?.branch_id);
                       const roleObj = rolesMap.get(primaryAlloc?.role_id || 'role-cashier');
                       const initials = (dbUser?.name || '??').split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase();
+
+                      const branchName = (primaryAlloc && branchObj?.name)
+                        ? branchObj.name
+                        : (isSuperAdminUser ? 'HQ' : (dbBranches[0]?.name || 'Default HQ'));
+
+                      const branchLocation = (primaryAlloc && branchObj?.location)
+                        ? branchObj.location
+                        : (isSuperAdminUser ? 'Platform Central HQ' : (dbBranches[0]?.location || 'Main Outlet'));
 
                       const regDate = formatRegistrationDate(dbUser?.created_at || tu.joined_at);
                       const regSource = dbUser?.registration_source || 'SYSTEM_SEED';
@@ -1158,8 +1192,8 @@ export const UsersRoles: React.FC = () => {
                             </Badge>
                           </td>
                           <td className="p-3.5">
-                            <p className="font-semibold text-slate-600 dark:text-slate-400">{branchObj?.name || '—'}</p>
-                            <p className="text-[10px] text-slate-400">{branchObj?.location}</p>
+                            <p className="font-semibold text-slate-600 dark:text-slate-400">{branchName}</p>
+                            <p className="text-[10px] text-slate-400">{branchLocation}</p>
                           </td>
                           <td className="p-3.5">
                             <div className="flex flex-col space-y-0.5">
@@ -2406,7 +2440,7 @@ export const UsersRoles: React.FC = () => {
                     </div>
                   </div>
                   <span className="font-mono text-[10px] font-bold px-2 py-0.5 bg-slate-100 dark:bg-darkbg rounded text-slate-600">
-                    {selectedAuditUser.dbUser?.registration_ip || '197.250.4.15'}
+                    {selectedAuditUser.dbUser?.registration_ip && selectedAuditUser.dbUser.registration_ip !== '197.250.4.15' ? selectedAuditUser.dbUser.registration_ip : getSyncRealClientIp()}
                   </span>
                 </div>
 

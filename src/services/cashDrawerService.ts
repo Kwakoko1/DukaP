@@ -849,6 +849,43 @@ export const cashDrawerService = {
     }
 
     return insights;
+  },
+
+  // ─── 10. THERMAL Z-REPORT GENERATOR ────────────────────────────────────────
+  formatZReportSlip(session: CashDrawerSession, reconciliation?: CashReconciliation): string {
+    const divider = '========================================';
+    const subDivider = '----------------------------------------';
+    const openDate = new Date(session.opening_time).toLocaleString();
+    const closeDate = session.closing_time ? new Date(session.closing_time).toLocaleString() : 'Active Shift';
+
+    const fmt = (amt: number) => `TZS ${amt.toLocaleString()}`;
+
+    let text = `${divider}\n`;
+    text += `          OFFICIAL Z-REPORT SLIP         \n`;
+    text += `         DUKAPOS FINANCIAL CONTROL       \n`;
+    text += `${divider}\n`;
+    text += `Terminal ID: ${session.terminal_id}\n`;
+    text += `Session ID : ${session.id}\n`;
+    text += `Cashier    : ${session.cashier_name}\n`;
+    text += `Shift Type : ${session.shift_type || 'General'}\n`;
+    text += `Opened At  : ${openDate}\n`;
+    text += `Closed At  : ${closeDate}\n`;
+    text += `${subDivider}\n`;
+    text += `Opening Float Cash   : ${fmt(session.opening_float)}\n`;
+    if (reconciliation) {
+      text += `Cash Sales Total     : ${fmt(reconciliation.total_cash_sales)}\n`;
+      text += `Cash In (Refills)    : +${fmt(reconciliation.total_cash_in)}\n`;
+      text += `Cash Out (Payouts)   : -${fmt(reconciliation.total_cash_out + reconciliation.total_expenses)}\n`;
+      text += `${subDivider}\n`;
+      text += `EXPECTED CASH        : ${fmt(reconciliation.expected_cash)}\n`;
+      text += `ACTUAL CASH COUNTED  : ${fmt(reconciliation.actual_counted_cash)}\n`;
+      text += `VARIANCE / DIFFERENCE: ${fmt(reconciliation.variance_amount)} (${reconciliation.variance_status})\n`;
+    }
+    text += `${divider}\n`;
+    text += `Printed via DukaPOS Cash Drawer Engine\n`;
+    text += `${divider}\n`;
+
+    return text;
   }
 
 };

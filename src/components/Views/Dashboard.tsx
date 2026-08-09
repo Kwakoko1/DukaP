@@ -32,15 +32,22 @@ const fmtDate = (ts: number) =>
 const CustomTooltip = ({ active, payload, label }: any) => {
   if (!active || !payload?.length) return null;
   return (
-    <div className="bg-white dark:bg-darkbg-card border border-slate-200 dark:border-darkbg-border rounded-xl shadow-lg p-3 text-xs">
-      <p className="font-bold text-slate-700 dark:text-slate-200 mb-1">{label}</p>
-      {payload.map((p: any, i: number) => (
-        <p key={i} style={{ color: p.color }} className="font-semibold">
-          {p.name}: {p.name === 'Revenue' || p.name === 'Profit' || p.name === 'Savings' || p.name === 'Loans'
-            ? fmtCcy(p.value)
-            : p.value}
-        </p>
-      ))}
+    <div className="bg-white dark:bg-darkbg-card border border-slate-200 dark:border-darkbg-border rounded-xl shadow-xl p-3 text-xs min-w-[150px] space-y-1.5">
+      <p className="font-black text-slate-800 dark:text-slate-100 pb-1 border-b border-slate-100 dark:border-darkbg-border">{label}</p>
+      {payload.map((p: any, i: number) => {
+        const isMoney = ['Revenue', 'Profit', 'Savings', 'Loans', 'Cost'].includes(p.name);
+        return (
+          <div key={i} className="flex items-center justify-between gap-3 font-semibold text-[11px]">
+            <span style={{ color: p.color }} className="flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full inline-block shrink-0" style={{ background: p.color }} />
+              {p.name}
+            </span>
+            <span className="font-extrabold text-slate-900 dark:text-white">
+              {isMoney ? fmtCcy(p.value) : p.value}
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 };
@@ -155,7 +162,35 @@ export const Dashboard: React.FC = () => {
 
   const isCleanTenant = products.length === 0 && orders.length === 0 && customers.length === 0 && suppliers.length === 0;
 
+  // Stable product cost lookup helper for real revenue and profit calculations
+  const costLookup = useMemo(() => {
+    const prodMap = new Map<string, number>();
+    const varMap = new Map<string, number>();
+    
+    products.forEach(p => {
+      prodMap.set(p.id, p.buyingPrice || 0);
+    });
+    productVariants.forEach(v => {
+      const parentCost = prodMap.get(v.productId) || 0;
+      varMap.set(v.id, v.buyingPrice !== undefined ? v.buyingPrice : parentCost);
+    });
+
+    return {
+      getProductCost: (productId: string) => prodMap.get(productId) || 0,
+      getVariantCost: (variantId: string | undefined, productId: string) => 
+        (variantId ? varMap.get(variantId) : undefined) ?? prodMap.get(productId) ?? 0,
+      getItemCOGS: (item: { productId: string; variantId?: string; price: number; quantity: number }) => {
+        const unitCost = (item.variantId ? varMap.get(item.variantId) : undefined) ?? prodMap.get(item.productId) ?? 0;
+        return (unitCost > 0 ? unitCost : item.price * 0.70) * item.quantity;
+      }
+    };
+  }, [products, productVariants]);
+
   // ── KPI Stats ─────────────────────────────────────────────────────────────
+
+  const validOrders = useMemo(() => {
+    return orders.filter(o => o.status !== 'Cancelled' && o.status !== 'Voided' && o.status !== 'Refunded');
+  }, [orders]);
 
   const stats = useMemo(() => {
     const now = Date.now();
@@ -166,12 +201,12 @@ export const Dashboard: React.FC = () => {
     const yesterdayStart = new Date(todayStart); yesterdayStart.setDate(yesterdayStart.getDate() - 1);
     const yesterdayTs = yesterdayStart.getTime();
 
-    const todayOrders     = orders.filter(o => o.timestamp >= todayTs);
-    const yesterdayOrders = orders.filter(o => o.timestamp >= yesterdayTs && o.timestamp < todayTs);
+    const todayOrders     = validOrders.filter(o => o.timestamp >= todayTs);
+    const yesterdayOrders = validOrders.filter(o => o.timestamp >= yesterdayTs && o.timestamp < todayTs);
 
     const totalSales     = todayOrders.reduce((sum, o) => sum + o.total, 0);
     const yesterdaySales = yesterdayOrders.reduce((sum, o) => sum + o.total, 0);
-    const allSales       = orders.reduce((sum, o) => sum + o.total, 0);
+    const allSales       = validOrders.reduce((sum, o) => sum + o.total, 0);
 
     // Real % change vs yesterday — null when no baseline exists
     const salesTrend: 'up' | 'down' | null =
@@ -184,8 +219,8 @@ export const Dashboard: React.FC = () => {
       return `${salesTrend === 'up' ? '+' : '−'}${pct}% vs yesterday`;
     })();
 
-    const completedOrders = orders.filter(o => o.status === 'Completed').length;
-    const pendingOrders   = orders.filter(o => o.status === 'Pending').length;
+    const completedOrders = validOrders.filter(o => o.status === 'Completed').length;
+    const pendingOrders   = validOrders.filter(o => o.status === 'Pending').length;
 
     // Restaurant: pending orders = kitchen queue; unique customers today = active sittings proxy
     const todayPendingOrders = todayOrders.filter(o => o.status === 'Pending').length;
@@ -193,23 +228,37 @@ export const Dashboard: React.FC = () => {
     // Active tables proxy: count today's distinct table/order sessions (pending + recently completed)
     const activeTables = todayOrders.filter(o => o.status === 'Pending' || (now - o.timestamp) < 2 * 60 * 60 * 1000).length;
 
+    const validProductIds = new Set(products.map(p => p.id));
+    const activeProductVariants = products.length === 0 ? [] : productVariants.filter(v => validProductIds.has(v.productId));
+
     const inventoryVal = products.reduce((sum, p) => sum + ((p.price || p.sellingPrice || 0) * (p.stock || 0)), 0);
 
     const simpleLowStock  = products.filter(p => !p.hasVariants && p.stock < 10 && p.stock >= 0).length;
-    const variantLowStock = productVariants.filter(v => v.stock < (v.reorderLevel ?? 5) && v.stock >= 0).length;
-    const lowStockCount   = simpleLowStock + variantLowStock;
+    const variantLowStock = activeProductVariants.filter(v => v.stock < (v.reorderLevel ?? 5) && v.stock >= 0).length;
+    const lowStockCount   = products.length === 0 ? 0 : (simpleLowStock + variantLowStock);
 
-    const outOfStockCount = products.filter(p => !p.hasVariants && p.stock <= 0).length +
-                            productVariants.filter(v => v.stock <= 0).length;
+    const outOfStockCount = products.length === 0 ? 0 : (
+      products.filter(p => !p.hasVariants && p.stock <= 0).length +
+      activeProductVariants.filter(v => v.stock <= 0).length
+    );
 
-    const nearExpiryCount = products.filter(p => {
+    let todayCOGS = 0;
+    todayOrders.forEach(o => {
+      o.items.forEach(item => {
+        todayCOGS += costLookup.getItemCOGS(item);
+      });
+    });
+    const todayGrossProfit = Math.max(0, totalSales - todayCOGS);
+    const todayMargin = totalSales > 0 ? ((todayGrossProfit / totalSales) * 100).toFixed(1) : '0.0';
+
+    const nearExpiryCount = products.length === 0 ? 0 : products.filter(p => {
       if (!p.expiryDate) return false;
       return (new Date(p.expiryDate).getTime() - now) < 90 * 24 * 60 * 60 * 1000;
     }).length;
 
     const totalSavings  = products.filter(p => p.category === 'Savings').reduce((sum, p) => sum + (p.stock * p.price), 0) / 10;
     const totalLoans    = customers.reduce((sum, c) => sum + (c.outstandingBalance || 0), 0);
-    const unsyncedCount = orders.filter(o => o.syncStatus !== 'Synced').length;
+    const unsyncedCount = validOrders.filter(o => o.syncStatus !== 'Synced').length;
 
     // SACCO: member growth vs last month
     const lastMonthStart = new Date(now); lastMonthStart.setMonth(lastMonthStart.getMonth() - 1); lastMonthStart.setDate(1); lastMonthStart.setHours(0,0,0,0);
@@ -225,7 +274,7 @@ export const Dashboard: React.FC = () => {
 
     const topProduct = (() => {
       const map: Record<string, { name: string; qty: number; rev: number }> = {};
-      for (const o of orders) {
+      for (const o of validOrders) {
         for (const item of o.items) {
           if (!map[item.productId]) map[item.productId] = { name: item.name, qty: 0, rev: 0 };
           map[item.productId].qty += item.quantity;
@@ -235,19 +284,22 @@ export const Dashboard: React.FC = () => {
       return Object.values(map).sort((a, b) => b.rev - a.rev)[0] || null;
     })();
 
+
     return {
       totalSales, yesterdaySales, allSales,
       salesTrend, salesTrendPct,
       completedOrders, pendingOrders,
       todayPendingOrders, activeTables, todayUniqueCustomers,
       inventoryVal, lowStockCount, outOfStockCount,
+      activeVariantCount: activeProductVariants.length,
+      todayCOGS, todayGrossProfit, todayMargin,
       nearExpiryCount, totalSavings, totalLoans,
       customerCount: customers.length, supplierCount: suppliers.length,
       customerTrend, customerTrendPct,
       unsyncedCount, topProduct,
       todayOrderCount: todayOrders.length,
     };
-  }, [products, productVariants, orders, customers, suppliers]);
+  }, [products, productVariants, orders, customers, suppliers, costLookup]);
 
   // ── Chart Data ─────────────────────────────────────────────────────────────
 
@@ -259,7 +311,7 @@ export const Dashboard: React.FC = () => {
     if (activeModule === 'SACCO') {
       return Array.from({ length: 6 }, (_, i) => {
         const d = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1);
-        const mOrders = orders.filter(o => {
+        const mOrders = validOrders.filter(o => {
           const od = new Date(o.timestamp);
           return od.getFullYear() === d.getFullYear() && od.getMonth() === d.getMonth();
         });
@@ -271,19 +323,25 @@ export const Dashboard: React.FC = () => {
     return Array.from({ length: 7 }, (_, i) => {
       const d = new Date(now);
       d.setDate(now.getDate() - (6 - i));
-      const dayOrders = orders.filter(o => {
+      const dayOrders = validOrders.filter(o => {
         const od = new Date(o.timestamp);
         return od.getFullYear() === d.getFullYear() && od.getMonth() === d.getMonth() && od.getDate() === d.getDate();
       });
       const Revenue = dayOrders.reduce((s, o) => s + o.total, 0);
-      const Profit  = Revenue > 0 ? Math.round(Revenue * 0.3) : 0;
+      let dayCOGS = 0;
+      dayOrders.forEach(o => {
+        o.items.forEach(item => {
+          dayCOGS += costLookup.getItemCOGS(item);
+        });
+      });
+      const Profit = Math.max(0, Revenue - dayCOGS);
       return { name: DAY_LABELS[d.getDay()], Revenue, Profit, Savings: 0, Loans: 0 };
     });
-  }, [orders, activeModule]);
+  }, [validOrders, activeModule, costLookup]);
 
   const paymentData = useMemo(() => {
     const methods: Record<string, number> = {};
-    orders.forEach(o => { const m = o.paymentMethod || 'Other'; methods[m] = (methods[m] || 0) + 1; });
+    validOrders.forEach(o => { const m = o.paymentMethod || 'Other'; methods[m] = (methods[m] || 0) + 1; });
     const total = Object.values(methods).reduce((s, v) => s + v, 0) || 1;
     const COLORS: Record<string, string> = {
       'M-Pesa': '#10b981', 'Cash': '#3b82f6', 'Card': '#f59e0b',
@@ -294,12 +352,12 @@ export const Dashboard: React.FC = () => {
       value: Math.round((count / total) * 100),
       color: COLORS[name] || ['#6366f1','#ec4899','#14b8a6','#f59e0b','#ef4444'][idx % 5],
     }));
-  }, [orders]);
+  }, [validOrders]);
 
   // Top products bar chart data
   const topProductsData = useMemo(() => {
     const map: Record<string, { name: string; Revenue: number; Units: number }> = {};
-    for (const o of orders) {
+    for (const o of validOrders) {
       for (const item of o.items) {
         if (!map[item.productId]) map[item.productId] = { name: item.name.slice(0, 14), Revenue: 0, Units: 0 };
         map[item.productId].Revenue += item.price * item.quantity;
@@ -307,7 +365,7 @@ export const Dashboard: React.FC = () => {
       }
     }
     return Object.values(map).sort((a, b) => b.Revenue - a.Revenue).slice(0, 6);
-  }, [orders]);
+  }, [validOrders]);
 
   // ── Onboarding ─────────────────────────────────────────────────────────────
 
@@ -374,8 +432,8 @@ export const Dashboard: React.FC = () => {
       case 'Retail':
         return [
           { title: "Today's Sales",       value: fmtCcy(stats.totalSales),            desc: `${stats.todayOrderCount} transactions · ${stats.completedOrders} completed`,   icon: <DollarSign className="h-5 w-5"/>,   accent: '#3b82f6', trend: stats.salesTrend, trendLabel: stats.salesTrendPct },
-          { title: 'Gross Profit (Est.)', value: fmtCcy(stats.totalSales * 0.35),     desc: 'Est. 35% gross margin on today\'s sales',                                       icon: <TrendingUp className="h-5 w-5"/>,   accent: '#10b981', trend: stats.salesTrend, trendLabel: stats.salesTrendPct },
-          { title: 'Total Products',      value: products.length,                     desc: `${productVariants.length} variants · ${stats.supplierCount} suppliers`,          icon: <Package className="h-5 w-5"/>,      accent: '#f59e0b' },
+          { title: 'Gross Profit (Real)', value: fmtCcy(stats.todayGrossProfit),     desc: stats.totalSales > 0 ? `${stats.todayMargin}% real margin on today's sales` : 'No sales recorded today', icon: <TrendingUp className="h-5 w-5"/>, accent: '#10b981', trend: stats.salesTrend, trendLabel: stats.salesTrendPct },
+          { title: 'Total Products',      value: products.length,                     desc: `${stats.activeVariantCount} variants · ${stats.supplierCount} suppliers`,        icon: <Package className="h-5 w-5"/>,      accent: '#f59e0b' },
           { title: 'Stock Alerts',        value: stats.lowStockCount + stats.outOfStockCount, desc: `${stats.outOfStockCount} out of stock · ${stats.lowStockCount} low`,   icon: <AlertTriangle className="h-5 w-5"/>,accent: '#ef4444' },
           { title: 'Customer Debts',      value: fmtCcy(stats.totalLoans),            desc: `${stats.customerCount} registered customers`,                                   icon: <Users className="h-5 w-5"/>,        accent: '#6366f1' },
           { title: 'Inventory Value',     value: fmtCcy(stats.inventoryVal),          desc: 'Retail value of all stocked items',                                             icon: <PiggyBank className="h-5 w-5"/>,    accent: '#8b5cf6' },

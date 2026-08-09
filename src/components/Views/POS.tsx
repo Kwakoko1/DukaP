@@ -12,7 +12,7 @@ import { Button, Input, Dialog, Badge } from '../UI/custom-ui';
 import { barService } from '../../services/barService';
 import { 
   Search, ShoppingCart, Plus, Minus, Trash2, UserPlus, ShieldAlert,
-  HelpCircle, Calculator, ArrowLeftRight
+  HelpCircle, Calculator, ArrowLeftRight, X
 } from 'lucide-react';
 import './POS.css';
 import { decreaseInventoryForSale } from '../../services/inventoryService';
@@ -1630,53 +1630,89 @@ export const POS: React.FC = () => {
       )}
 
         {/* Right side: Shopping Cart & checkout trigger */}
-        <div className={`flex w-full flex-col border border-slate-200 bg-white rounded-xl shadow-sm dark:border-darkbg-border dark:bg-darkbg-card lg:w-96 overflow-hidden ${isMobileCartOpen ? 'flex' : 'hidden lg:flex'}`}>
-          <div className="flex items-center justify-between border-b border-slate-100 p-4 dark:border-darkbg-border/30">
-            <div className="flex items-center space-x-2">
-              <ShoppingCart className="h-4 w-4 text-primary" />
-              <span className="text-xs font-bold text-slate-800 dark:text-white">Shopping Cart</span>
-              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600 dark:bg-darkbg-border dark:text-slate-300">
-                {cart.reduce((sum, item) => sum + item.quantity, 0)}
-              </span>
-            </div>
-            {cart.length > 0 && (
-              <button onClick={handleClearCart} className="text-xs text-danger hover:underline font-semibold">
-                Clear
-              </button>
-            )}
+        <div className={`flex w-full flex-col border border-slate-200 bg-white rounded-xl shadow-sm dark:border-darkbg-border dark:bg-darkbg-card lg:w-[420px] xl:w-[460px] 2xl:w-[480px] shrink-0 overflow-hidden ${
+          isMobileCartOpen 
+            ? 'fixed inset-x-0 bottom-0 top-12 z-50 rounded-t-3xl border-t shadow-2xl flex dark:bg-darkbg-card lg:static lg:top-auto lg:z-auto lg:h-auto lg:rounded-xl lg:border lg:shadow-sm' 
+            : 'hidden lg:flex'
+        }`}>
+          {/* Mobile Sheet Handle Bar */}
+          <div className="lg:hidden w-full flex justify-center py-2 bg-slate-50 dark:bg-darkbg border-b border-slate-100 dark:border-darkbg-border/30">
+            <div className="w-12 h-1 rounded-full bg-slate-300 dark:bg-slate-600" />
           </div>
 
-          {/* Cart list scroll area */}
-          <div className="pos-cart-list p-4 space-y-2">
+          <div className="flex items-center justify-between border-b border-slate-100 p-4 dark:border-darkbg-border/30">
+            <div className="flex items-center space-x-2">
+              <ShoppingCart className="h-4.5 w-4.5 text-primary" />
+              <span className="text-xs font-bold text-slate-800 dark:text-white">Shopping Cart</span>
+              <span className="rounded-full bg-primary/10 text-primary px-2 py-0.5 text-[10px] font-black">
+                {cart.reduce((sum, item) => sum + item.quantity, 0)} items
+              </span>
+            </div>
+            <div className="flex items-center space-x-2">
+              {cart.length > 0 && (
+                <button onClick={handleClearCart} className="text-xs text-danger hover:underline font-semibold">
+                  Clear All
+                </button>
+              )}
+              {isMobileCartOpen && (
+                <button 
+                  onClick={() => setIsMobileCartOpen(false)}
+                  className="lg:hidden p-1 text-slate-400 hover:text-slate-700 dark:hover:text-white rounded-lg"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Cart list scroll area — Maximized Vertical Height */}
+          <div className="pos-cart-list p-3 space-y-2 flex-1 overflow-y-auto min-h-[180px]">
             {cart.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-slate-400 space-y-2 py-12">
-                <ShoppingCart className="h-8 w-8 text-slate-200" />
-                <p className="text-[11px] italic text-center">Cart is empty. Tap items to check out.</p>
+                <ShoppingCart className="h-10 w-10 text-slate-200 dark:text-slate-700 stroke-[1.5]" />
+                <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Cart is empty</p>
+                <p className="text-[10px] italic text-slate-400 text-center max-w-[200px]">Tap products from the catalog to add items to order.</p>
               </div>
             ) : (
               cart.map((item) => {
                 const itemKey = item.variant ? item.variant.id : item.product.id;
                 const price = item.variant?.sellingPrice || getProductPrice(item.product);
+                const itemTotal = price * item.quantity;
                 const label = item.variant 
                   ? `${item.product.name} (${Object.values(item.variant.attributes).join('/')})` 
                   : item.product.name;
 
                 return (
-                  <div key={itemKey} className="flex items-center justify-between rounded-lg border p-2 bg-slate-50/50 dark:bg-darkbg/20 dark:border-darkbg-border">
-                    <div className="flex-1 min-width-0 pr-2">
-                      <h5 className="text-[11px] font-bold text-slate-800 dark:text-white truncate">{label}</h5>
-                      <span className="text-[10px] text-slate-400">Tsh. {price.toLocaleString()}</span>
+                  <div key={itemKey} className="flex items-center justify-between rounded-xl border border-slate-100 p-2.5 bg-slate-50/70 dark:bg-darkbg/30 dark:border-darkbg-border/40 hover:border-slate-200 transition-all">
+                    <div className="flex-1 min-w-0 pr-2">
+                      <h5 className="text-xs font-bold text-slate-800 dark:text-white truncate">{label}</h5>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span className="text-[10px] text-slate-400">Tsh. {price.toLocaleString()} ea</span>
+                        <span className="text-[10px] font-bold text-primary dark:text-primary-dark">Subtotal: Tsh. {itemTotal.toLocaleString()}</span>
+                      </div>
                     </div>
 
-                    <div className="flex items-center space-x-1.5">
-                      <button onClick={() => updateQuantity(itemKey, -1)} className="p-1 rounded bg-slate-200 text-slate-600 hover:bg-slate-300 dark:bg-darkbg-border dark:text-slate-300">
-                        <Minus className="h-3 w-3" />
+                    <div className="flex items-center space-x-1.5 shrink-0">
+                      <button 
+                        type="button"
+                        onClick={() => updateQuantity(itemKey, -1)} 
+                        className="h-7 w-7 flex items-center justify-center rounded-lg bg-slate-200 text-slate-700 hover:bg-slate-300 dark:bg-darkbg-border dark:text-slate-200 dark:hover:bg-slate-700 transition"
+                      >
+                        <Minus className="h-3.5 w-3.5" />
                       </button>
-                      <span className="text-xs font-bold w-5 text-center">{item.quantity}</span>
-                      <button onClick={() => updateQuantity(itemKey, 1)} className="p-1 rounded bg-slate-200 text-slate-600 hover:bg-slate-300 dark:bg-darkbg-border dark:text-slate-300">
-                        <Plus className="h-3 w-3" />
+                      <span className="text-xs font-black w-6 text-center text-slate-900 dark:text-white">{item.quantity}</span>
+                      <button 
+                        type="button"
+                        onClick={() => updateQuantity(itemKey, 1)} 
+                        className="h-7 w-7 flex items-center justify-center rounded-lg bg-slate-200 text-slate-700 hover:bg-slate-300 dark:bg-darkbg-border dark:text-slate-200 dark:hover:bg-slate-700 transition"
+                      >
+                        <Plus className="h-3.5 w-3.5" />
                       </button>
-                      <button onClick={() => removeFromCart(itemKey)} className="p-1 text-slate-400 hover:text-danger">
+                      <button 
+                        type="button"
+                        onClick={() => removeFromCart(itemKey)} 
+                        className="h-7 w-7 flex items-center justify-center text-slate-400 hover:text-danger hover:bg-red-50 dark:hover:bg-red-950/30 rounded-lg transition ml-1"
+                      >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     </div>
@@ -1705,7 +1741,7 @@ export const POS: React.FC = () => {
           )}
 
           {/* Customer Attachment Block */}
-          <div className="border-t border-slate-100 p-4 space-y-3 dark:border-darkbg-border/30">
+          <div className="border-t border-slate-100 p-3 space-y-2 dark:border-darkbg-border/30">
             <div className="flex items-center justify-between">
               <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
                 Customer Attachment
@@ -1718,7 +1754,7 @@ export const POS: React.FC = () => {
               id="customer-select"
               value={selectedCustomerId}
               onChange={(e) => setSelectedCustomerId(e.target.value)}
-              className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 text-xs px-2.5 dark:border-darkbg-border dark:bg-darkbg dark:text-white focus:outline-none"
+              className="h-8 w-full rounded-lg border border-slate-200 bg-slate-50 text-xs px-2.5 dark:border-darkbg-border dark:bg-darkbg dark:text-white focus:outline-none"
             >
               <option value="">Walk-in Customer</option>
               {customers.map(c => (
@@ -1862,7 +1898,7 @@ export const POS: React.FC = () => {
             <div className="flex gap-2">
               <Button 
                 variant="secondary" 
-                className="w-1/3" 
+                className="w-1/3 h-10 text-xs font-bold" 
                 disabled={cart.length === 0} 
                 onClick={() => {
                   setHoldCartName(`Table-${Date.now().toString().slice(-4)}`);
@@ -1873,7 +1909,7 @@ export const POS: React.FC = () => {
               </Button>
               <Button 
                 variant="primary" 
-                className="flex-1" 
+                className="flex-1 h-10 text-xs font-black" 
                 disabled={cart.length === 0} 
                 onClick={() => {
                   if (!activeShift) {
@@ -1893,11 +1929,12 @@ export const POS: React.FC = () => {
                   setIsCheckoutOpen(true);
                 }}
               >
-                Pay
+                Pay (Tsh. {cartTotal.toLocaleString()})
               </Button>
             </div>
           </div>
         </div>
+
       </div>
 
       {/* Floating Mobile Cart Bar — Positioned above BottomNav (bottom-20) */}
@@ -2426,25 +2463,25 @@ export const POS: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setCashReceived(cartTotal)}
-                  className="px-2.5 py-1 bg-slate-100 dark:bg-darkbg-border text-slate-700 dark:text-slate-200 text-[10px] font-bold rounded-lg hover:bg-slate-200 transition"
+                  className="px-2.5 py-1 bg-slate-100 dark:bg-darkbg-border text-slate-700 dark:text-slate-200 text-[10px] font-bold rounded-lg hover:bg-slate-200 transition cursor-pointer"
                 >
                   Exact Amount
                 </button>
-                {[1000, 2000, 5000, 10000, 20000, 50000].map(amt => (
+                {[1000, 2000, 5000, 10000, 20000, 50000, 100000].map(amt => (
                   <button
                     key={amt}
                     type="button"
                     onClick={() => setCashReceived(amt >= cartTotal ? amt : Math.ceil(cartTotal / amt) * amt)}
-                    className="px-2.5 py-1 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 text-[10px] font-mono font-bold rounded-lg hover:bg-indigo-100 transition"
+                    className="px-2.5 py-1 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 text-[10px] font-mono font-bold rounded-lg hover:bg-indigo-100 transition cursor-pointer"
                   >
                     Tsh {amt.toLocaleString()}
                   </button>
                 ))}
               </div>
-              {cashReceived > cartTotal && (
-                <div className="p-3 bg-green-50 border border-green-200/50 rounded-lg text-xs flex justify-between font-bold text-green-700 dark:bg-green-950/20 dark:border-green-900/40 dark:text-green-400">
-                  <span>Change Due:</span>
-                  <span>Tsh. {changeDue.toLocaleString()}</span>
+              {cashReceived >= cartTotal && cartTotal > 0 && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200/50 rounded-lg text-xs flex justify-between items-center font-bold text-emerald-700 dark:bg-emerald-950/20 dark:border-emerald-900/40 dark:text-emerald-400">
+                  <span className="flex items-center gap-1">💰 Change Due:</span>
+                  <span className="text-sm font-black">Tsh. {changeDue.toLocaleString()}</span>
                 </div>
               )}
             </div>

@@ -8,6 +8,8 @@ import {
   type CloudDatabaseBackup
 } from '../db/supabaseMock';
 import { supabase } from '../db/supabaseClient';
+import { db } from '../db/dexie';
+import { getSyncRealClientIp } from './clientIpService';
 
 export interface SuperAdminUserContext {
   id: string;
@@ -84,7 +86,7 @@ export class SuperAdminService {
       updated_at: NOW,
       registration_source: 'SUPER_ADMIN_CPANEL',
       created_by: adminContext.id,
-      registration_ip: adminContext.ipAddress || '197.250.4.15',
+      registration_ip: adminContext.ipAddress || getSyncRealClientIp(),
       registration_device: typeof navigator !== 'undefined' ? navigator.userAgent : 'DukaPos Control Engine',
       verification_status: 'VERIFIED'
     };
@@ -163,23 +165,67 @@ export class SuperAdminService {
   }
 
   /**
-   * Soft deletes a tenant by setting deleted_at timestamp.
+   * Soft deletes a tenant by setting deleted_at timestamp in local IndexedDB & central database.
    */
   static async softDeleteTenant(
     tenantId: string,
     _adminContext: SuperAdminUserContext
   ): Promise<void> {
-    const existing = await cloudDb.cloud_tenants.get(tenantId);
-    if (!existing) return;
+    const NOW = Date.now();
+    
+    // 1. Update local IndexedDB
+    try {
+      const localT = await db.tenants.get(tenantId);
+      if (localT) {
+        await db.tenants.update(tenantId, {
+          status: 'Archived',
+          deleted_at: NOW,
+          updated_at: NOW
+        } as any);
+      }
+    } catch (_) {}
 
-    const updated: CloudTenant = {
-      ...existing,
-      deleted_at: Date.now(),
-      status: 'Archived',
-      updated_at: Date.now()
-    };
+    // 2. Update Cloud DB
+    try {
+      const existing = await cloudDb.cloud_tenants.get(tenantId);
+      if (existing) {
+        const updated: CloudTenant = {
+          ...existing,
+          deleted_at: NOW,
+          status: 'Archived',
+          updated_at: NOW
+        };
+        await supabase.from('tenants').update(updated).eq('id', tenantId);
+      }
+    } catch (_) {}
+  }
 
-    await supabase.from('tenants').update(updated).eq('id', tenantId);
+  /**
+   * Hard deletes a tenant and purges all associated local IndexedDB records & central cloud database entries.
+   */
+  static async purgeTenantData(tenantId: string): Promise<void> {
+    try {
+      await db.transaction('rw', [db.tenants, db.branches, db.users, db.products, db.productVariants, db.orders, db.categories, db.brands, db.stockLedger, db.cashDrawers, db.expenses], async () => {
+        await db.tenants.delete(tenantId);
+        await db.branches.where('tenant_id').equals(tenantId).delete();
+        await db.users.where('tenant_id').equals(tenantId).delete();
+        await db.products.where('tenant_id').equals(tenantId).delete();
+        await db.orders.where('tenant_id').equals(tenantId).delete();
+        await db.categories.where('tenant_id').equals(tenantId).delete();
+        await db.brands.where('tenant_id').equals(tenantId).delete();
+        await db.stockLedger.where('tenant_id').equals(tenantId).delete();
+        await db.cashDrawers.where('tenant_id').equals(tenantId).delete();
+        await db.expenses.where('tenant_id').equals(tenantId).delete();
+      });
+      try {
+        await cloudDb.cloud_tenants.delete(tenantId);
+      } catch (_) {}
+      try {
+        await supabase.from('tenants').delete().eq('id', tenantId);
+      } catch (_) {}
+    } catch (e: any) {
+      console.warn('[SuperAdminService] purgeTenantData warning:', e);
+    }
   }
 
   // ─── Super Admin Accounts & Authentication ────────────────────────────────

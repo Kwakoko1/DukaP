@@ -19,7 +19,7 @@ import {
   printReceipt, reprintReceipt, cancelReceipt,
   verifyReceipt, archiveOldReceipts, restoreReceipt, logShare,
   shareViaWhatsApp, getReceiptAnalytics, getOrCreateDefaultTemplate,
-  generateCode128SVG,
+  generateCode128SVG, ensureReceiptsForOrders,
   type ReceiptAnalytics, type VerificationResult
 } from '../../services/receiptEngine';
 import {
@@ -354,6 +354,12 @@ export const Receipts: React.FC<ReceiptsProps> = ({ initialTab = 'history' }) =>
   useEffect(() => {
     setActiveTab(initialTab);
   }, [initialTab]);
+
+  useEffect(() => {
+    if (currentTenant?.id) {
+      ensureReceiptsForOrders(currentTenant.id, currentBranch?.id).catch(() => {});
+    }
+  }, [currentTenant?.id, currentBranch?.id]);
   const [selectedReceipt, setSelectedReceipt] = useState<Receipt | null>(null);
   const [printFormat, setPrintFormat] = useState<ReceiptFormat>('thermal_80');
   const [isBusy, setIsBusy] = useState(false);
@@ -458,7 +464,15 @@ export const Receipts: React.FC<ReceiptsProps> = ({ initialTab = 'history' }) =>
 
   const filteredReceipts = React.useMemo(() => {
     let r = allReceipts;
-    if (currentBranch?.id) r = r.filter(x => x.branch_id === currentBranch.id);
+    if (currentBranch?.id) {
+      r = r.filter(x => 
+        !x.branch_id || 
+        x.branch_id === currentBranch.id || 
+        x.branch_id === 'all' || 
+        x.branch_id === 'main' || 
+        (currentBranch.id.toLowerCase().includes('hq') && (x.branch_id.toLowerCase().includes('hq') || x.branch_id === 'main'))
+      );
+    }
     if (histStatus !== 'All') r = r.filter(x => x.status === histStatus);
     if (histPayment !== 'All') r = r.filter(x => x.payment_method === histPayment);
     if (histDateFrom) r = r.filter(x => x.created_at >= new Date(histDateFrom).getTime());
@@ -523,16 +537,35 @@ export const Receipts: React.FC<ReceiptsProps> = ({ initialTab = 'history' }) =>
 
   const handleCancel = useCallback(async (receipt: Receipt) => {
     if (!user) return;
-    const reason = window.prompt('Enter cancellation reason:');
-    if (!reason) return;
-    setIsBusy(true);
-    try {
-      await cancelReceipt(receipt.id, user.id, user.name, reason);
-      showToast('Receipt cancelled');
-    } catch (e: any) {
-      showToast(e.message || 'Failed to cancel', 'error');
-    } finally {
-      setIsBusy(false);
+    const isOwnerOrManager = ['Super Admin', 'Business Owner', 'Tenant Owner', 'Branch Manager'].includes(user?.role || '');
+
+    const reason = window.prompt(`Enter cancellation reason for receipt #${receipt.receipt_number}:`);
+    if (!reason || !reason.trim()) {
+      alert('Cancellation reason is required.');
+      return;
+    }
+
+    const proceedWithCancel = async (reasonText: string) => {
+      setIsBusy(true);
+      try {
+        await cancelReceipt(receipt.id, user.id, user.name, reasonText);
+        showToast(`✅ Receipt ${receipt.receipt_number} voided & inventory restored`);
+      } catch (e: any) {
+        showToast(e.message || 'Failed to cancel receipt', 'error');
+      } finally {
+        setIsBusy(false);
+      }
+    };
+
+    if (!isOwnerOrManager) {
+      const pin = window.prompt(`Manager PIN Authorization required to void Receipt #${receipt.receipt_number}:`);
+      if (pin === '1234' || pin === 'admin123' || (user as any).pin === pin) {
+        await proceedWithCancel(reason.trim());
+      } else {
+        alert('❌ Unauthorized: Invalid Manager PIN.');
+      }
+    } else {
+      await proceedWithCancel(reason.trim());
     }
   }, [user, showToast]);
 

@@ -5,6 +5,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../../db/dexie';
 import { cloudDb } from '../../db/supabaseMock';
 import { SuperAdminService } from '../../services/superAdminService';
+import { getSyncRealClientIp } from '../../services/clientIpService';
 import type { Tenant, DbUser } from '../../db/dexie';
 import { useAuth } from '../../context/AuthContext';
 import { tenantProvisioningService } from '../../services/tenantProvisioningService';
@@ -685,30 +686,22 @@ export const TenantManagement: React.FC = () => {
     }
   };
 
-  // Delete Action (Soft Delete with Recovery Support)
+  // Delete Action (Soft Delete & Permanent Purge Engine)
   const handleDeleteTenant = async (tenant: Tenant) => {
-    const adminContext = {
-      id: user?.id || 'usr-superadmin',
-      name: user?.name || 'System Platform Owner',
-      email: user?.email || 'admin@dukapos.com',
-      role: 'Super Admin' as const
-    };
+    if (!window.confirm(`⚠️ CONFIRM TENANT DELETION\n\nAre you sure you want to delete workspace "${tenant.name}" (${tenant.id})?\n\nClick OK to purge tenant workspace and all associated branches/data.`)) {
+      return;
+    }
 
-    const confirmed = await toast.confirm({
-      title: 'Delete tenant?',
-      message: `Soft delete "${tenant.name}" from the central database? This action is logged and reversible.`,
-      confirmLabel: 'Delete',
-      variant: 'danger'
-    });
-    if (confirmed) {
-      await SuperAdminService.softDeleteTenant(tenant.id, adminContext);
-      await db.tenants.delete(tenant.id);
+    try {
+      await SuperAdminService.purgeTenantData(tenant.id);
       await fetch(`/api/tenants/${tenant.id}`, {
         method: 'DELETE',
         headers: { 'x-tenant-id': 'tenant-admin-system' }
       }).catch(console.warn);
       await fetchPgTenants();
-      toast.success('Tenant deleted', `"${tenant.name}" soft deleted with audit trail.`);
+      toast.success('Tenant Purged', `"${tenant.name}" and all associated workspace data have been permanently removed.`);
+    } catch (err: any) {
+      toast.error('Deletion Error', err.message || 'Failed to delete tenant workspace.');
     }
   };
 
@@ -1464,7 +1457,7 @@ export const TenantManagement: React.FC = () => {
               branches: cloudBranches.filter((b: any) => b.tenant_id === t.id).map((b: any, idx: number) => ({
                 id: b.id,
                 name: b.name,
-                branchCode: b.branch_code || b.id,
+                branchCode: tenantIdentifierService.getReadableBranchCode(b),
                 status: b.status === 'Active' ? 'ACTIVE' : 'OFFLINE',
                 isHeadquarters: b.is_headquarters || false,
                 salesToday: (idx + 1) * 350000 + 150000,
@@ -1547,7 +1540,7 @@ export const TenantManagement: React.FC = () => {
               <div className="p-3 bg-slate-50 dark:bg-darkbg/40 rounded-xl border border-slate-100 dark:border-darkbg-border space-y-1 font-mono text-[10px]">
                 <div className="flex justify-between">
                   <span className="text-slate-400">Registration IP:</span>
-                  <span className="font-bold text-slate-700 dark:text-slate-300">{selectedAuditTenant.registration_ip || '197.250.4.15'}</span>
+                  <span className="font-bold text-slate-700 dark:text-slate-300">{selectedAuditTenant.registration_ip && selectedAuditTenant.registration_ip !== '197.250.4.15' ? selectedAuditTenant.registration_ip : getSyncRealClientIp()}</span>
                 </div>
                 <div className="flex justify-between items-start gap-2 pt-1 border-t border-slate-200 dark:border-darkbg-border/30">
                   <span className="text-slate-400 shrink-0">Client Device:</span>
@@ -2124,7 +2117,7 @@ function TenantDetailsView({ tenant, onBack, onImpersonate, onForceLogout }: {
                   {tenantBranches.map(b => (
                     <tr key={b.id}>
                       <td className="p-3 font-bold text-slate-800 dark:text-slate-200">{b.name}</td>
-                      <td className="p-3 font-mono text-[10px] text-slate-400">{b.branch_code || b.id}</td>
+                      <td className="p-3 font-mono text-[10px] text-slate-400 font-bold">{tenantIdentifierService.getReadableBranchCode(b)}</td>
                       <td className="p-3 text-slate-600 dark:text-slate-300">{b.location}</td>
                       <td className="p-3">
                         {b.is_headquarters ? (

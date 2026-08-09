@@ -270,8 +270,17 @@
 
 /* Cart Item Scrollable Area */
 .pos-cart-list {
-  flex: 1;
+  flex: 1 1 auto;
   overflow-y: auto;
+  min-height: 160px;
+  scrollbar-width: thin;
+}
+.pos-cart-list::-webkit-scrollbar {
+  width: 4px;
+}
+.pos-cart-list::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.4);
+  border-radius: 4px;
 }
 
 /* Quick checkout payment splitting fields */

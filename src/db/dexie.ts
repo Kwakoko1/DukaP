@@ -141,7 +141,7 @@ export interface Order {
   discount: number;
   tax: number;
   paymentMethod: string;
-  status: 'Completed' | 'Pending' | 'Cancelled';
+  status: 'Completed' | 'Pending' | 'Cancelled' | 'Voided' | 'Refunded';
   timestamp: number;
   syncStatus: 'Synced' | 'Pending';
   tenant_id: string;
@@ -1395,14 +1395,27 @@ export interface Expense {
   id: string;
   tenant_id: string;
   branch_id: string;
-  category: string; // Utilities, Salaries, Rent, Other
+  category: string; // Rent, Salaries, Utilities, Permits, Transport, Maintenance, Packaging, Marketing, Banking, Waste, Other
+  sub_category?: string;
   description?: string;
   amount: number;
   date: string; // YYYY-MM-DD
-  paymentMethod: string; // Cash, M-Pesa, Bank, TigoPesa, Airtel
-  status: 'Paid' | 'Pending';
+  paymentMethod: string; // Cash, M-Pesa, Bank, TigoPesa, Airtel, Cheque, Petty Cash
+  payment_reference?: string; // M-Pesa ref code, Cheque #, Bank slip #
+  payee_name?: string; // Vendor, Landlord, TANESCO, Employee
+  status: 'Paid' | 'Pending' | 'Approved' | 'Voided';
+  tax_deductible?: boolean;
+  is_hq?: boolean; // HQ Corporate Overhead
+  is_recurring?: boolean;
+  recurring_frequency?: 'Monthly' | 'Weekly' | 'Quarterly' | 'Yearly';
+  approved_by?: string;
+  approved_at?: number;
+  notes?: string;
   created_at: number;
   created_by: string;
+  updated_at?: number;
+  updated_by?: string;
+  sync_status?: 'PENDING' | 'SYNCING' | 'SYNCED' | 'FAILED';
   origin?: 'DEMO' | 'PRODUCTION' | 'IMPORTED' | 'MIGRATED';
 }
 
@@ -1529,6 +1542,9 @@ export interface Category {
   name: string;
   description?: string;
   parent_id?: string;
+  default_tax_rate?: string;
+  target_margin_pct?: number;
+  module?: string;
   icon?: string;
   slug?: string;
   is_active?: boolean;

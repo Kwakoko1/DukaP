@@ -5,6 +5,7 @@
 
 import { cloudDb } from '../db/supabaseMock';
 import { db } from '../db/dexie';
+import { getSyncRealClientIp } from './clientIpService';
 
 export interface TamperProofAuditRecord {
   id: string;
@@ -82,7 +83,7 @@ class ImmutableAuditService {
         tenant_id: record.tenant_id,
         user_id: record.user_id,
         action: record.action,
-        ip_address: '197.250.4.15',
+        ip_address: getSyncRealClientIp(),
         status: 'SUCCESS',
         details: `Immutable Audit: ${record.action} on ${record.entity} (${record.entity_id}) [Hash: ${record.hash.slice(0, 10)}]`,
         timestamp: record.created_at

@@ -86,7 +86,7 @@ export const BusinessProfile: React.FC = () => {
   const openEditBranchModal = (br: Branch) => {
     setEditingBranch(br);
     setBName(br.name);
-    setBCode(br.branch_code || br.id);
+    setBCode(tenantIdentifierService.getReadableBranchCode(br));
     setBLocation(br.location || '');
     setBStatus(br.status || 'Active');
     setBIsHq(Boolean(br.is_headquarters));
@@ -143,7 +143,7 @@ export const BusinessProfile: React.FC = () => {
       alert('⚠️ Cannot delete the Headquarters/Default branch.');
       return;
     }
-    if (!confirm(`Are you sure you want to delete branch "${br.name}" (${br.branch_code || br.id})?`)) return;
+    if (!confirm(`Are you sure you want to delete branch "${br.name}" (${tenantIdentifierService.getReadableBranchCode(br)})?`)) return;
     try {
       await db.branches.delete(br.id);
     } catch (err) {
@@ -1147,7 +1147,7 @@ export const BusinessProfile: React.FC = () => {
                     </div>
                     {liveBranches.map((b) => (
                       <div key={b.id} className="grid grid-cols-12 items-center py-1.5 text-xs">
-                        <span className="col-span-2 font-mono font-bold text-primary">{b.branch_code || b.id}</span>
+                        <span className="col-span-2 font-mono font-bold text-primary">{tenantIdentifierService.getReadableBranchCode(b)}</span>
                         <span className="col-span-4 font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1">
                           {b.name}
                           {b.is_headquarters && (

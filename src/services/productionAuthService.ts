@@ -4,6 +4,7 @@
  */
 
 import { cloudDb } from '../db/supabaseMock';
+import { getSyncRealClientIp } from './clientIpService';
 import { envConfig } from '../config/environment';
 
 export interface DeviceSession {
@@ -157,7 +158,7 @@ class ProductionAuthService {
       tenantId: payload.tenantId,
       deviceId,
       deviceName: payload.deviceName || (typeof navigator !== 'undefined' ? navigator.userAgent : 'DukaPos Device'),
-      ipAddress: payload.ipAddress || '197.250.4.15',
+      ipAddress: payload.ipAddress || getSyncRealClientIp(),
       accessToken,
       refreshToken,
       refreshTokenHash,

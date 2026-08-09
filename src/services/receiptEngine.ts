@@ -81,6 +81,7 @@ export interface CreateReceiptParams {
   tax_breakdown?: Array<{ label: string; rate: number; amount: number }>;
   notes?: string;
   custom_fields?: Record<string, any>;
+  created_at?: number;
 }
 
 export interface VerificationResult {
@@ -334,7 +335,7 @@ export async function createReceipt(params: CreateReceiptParams): Promise<Receip
     if (existing) return existing;
   }
 
-  const now = Date.now();
+  const now = params.created_at || Date.now();
   const receiptId = newId('rcpt');
 
   // Get the template to see if there's a branch prefix
@@ -590,11 +591,22 @@ export async function cancelReceipt(
 ): Promise<void> {
   const receipt = await db.receipts.get(receiptId);
   if (!receipt) throw new Error('Receipt not found');
-  if (receipt.status === 'Cancelled') throw new Error('Receipt already cancelled');
+  if (receipt.status === 'Cancelled' || receipt.status === 'Voided') throw new Error('Receipt is already voided/cancelled');
   if (receipt.status === 'Archived') throw new Error('Cannot cancel an archived receipt');
 
+  const items = await db.receiptItems.where('receipt_id').equals(receiptId).toArray();
   const now = Date.now();
-  await db.transaction('rw', [db.receipts, db.receiptAuditLogs], async () => {
+
+  await db.transaction('rw', [
+    db.receipts, 
+    db.receiptAuditLogs, 
+    db.orders, 
+    db.products, 
+    db.productVariants, 
+    db.stockLedger, 
+    db.securityAuditLogs
+  ], async () => {
+    // 1. Update Receipt Status
     await db.receipts.update(receiptId, {
       status: 'Cancelled',
       cancellation_reason: reason,
@@ -604,12 +616,79 @@ export async function cancelReceipt(
       sync_status: 'PENDING',
     });
 
+    // 2. Update Order Status if transaction_id / order_id exists
+    const orderIdToCancel = receipt.transaction_id || receipt.id;
+    const existingOrder = await db.orders.get(orderIdToCancel);
+    if (existingOrder) {
+      await db.orders.update(orderIdToCancel, {
+        status: 'Cancelled',
+      });
+    }
+
+    // 3. Restore Stock & Record Stock Movement Reversals
+    for (const item of items) {
+      if (!item.product_id) continue;
+      const prod = await db.products.get(item.product_id);
+      if (prod) {
+        const qtyBefore = prod.stock || 0;
+        const qtyAfter = qtyBefore + item.qty;
+        await db.products.update(item.product_id, {
+          stock: qtyAfter,
+          updatedAt: now,
+        });
+
+        // Restore variant stock if variant exists
+        if (item.variant_id) {
+          const v = await db.productVariants.get(item.variant_id);
+          if (v) {
+            await db.productVariants.update(item.variant_id, {
+              stock: (v.stock || 0) + item.qty,
+            });
+          }
+        }
+
+        // Record Stock Movement Reversal
+        await db.stockLedger.add({
+          id: `stk-${now}-${Math.random().toString(36).slice(2, 7)}`,
+          tenant_id: receipt.tenant_id,
+          branch_id: receipt.branch_id,
+          warehouse_id: 'warehouse-main',
+          product_id: item.product_id,
+          variant_id: item.variant_id,
+          movement_type: 'CUSTOMER_RETURN',
+          reference_type: 'VOID_SALE',
+          reference_id: receipt.receipt_number,
+          quantity_change: item.qty,
+          quantity_before: qtyBefore,
+          quantity_after: qtyAfter,
+          unit_cost: item.unit_price,
+          total_cost: item.total,
+          user_id: userName,
+          notes: `Void/Cancel Receipt ${receipt.receipt_number}: ${reason}`,
+          created_at: now,
+          synced: false,
+        });
+      }
+    }
+
+    // 4. Write Receipt Audit Log
     await writeAuditLog(
       receiptId, receipt.receipt_number,
       receipt.tenant_id, receipt.branch_id,
       userId, userName,
       'CANCELLED', reason
     );
+
+    // 5. Write Security Audit Log
+    await db.securityAuditLogs.add({
+      id: `aud-${now}-${Math.random().toString(36).slice(2, 9)}`,
+      tenant_id: receipt.tenant_id,
+      branch_id: receipt.branch_id,
+      user_id: userId,
+      action: 'RECEIPT_CANCELLED',
+      created_at: now,
+      details: `Voided receipt ${receipt.receipt_number} (Tsh ${receipt.total.toLocaleString()}). Reason: ${reason}`,
+    } as any);
   });
 }
 
@@ -979,4 +1058,59 @@ export async function getOrCreateDefaultTemplate(
 
   await db.receiptTemplates.add(template);
   return template;
+}
+
+// ─── Auto-Healing: Ensure every completed order has a matching receipt ─────────
+
+export async function ensureReceiptsForOrders(tenantId: string, branchId?: string): Promise<number> {
+  if (!tenantId) return 0;
+  try {
+    const orders = await db.orders.where('tenant_id').equals(tenantId).toArray();
+    const existingReceipts = await db.receipts.where('tenant_id').equals(tenantId).toArray();
+    const existingMap = new Set(
+      existingReceipts.map(r => r.id).concat(existingReceipts.map(r => r.transaction_id || '')).filter(Boolean)
+    );
+
+    let createdCount = 0;
+    for (const order of orders) {
+      if (order.status === 'Cancelled') continue;
+      if (!existingMap.has(order.id)) {
+        try {
+          await createReceipt({
+            idempotency_key: order.id,
+            transaction_id: order.id,
+            transaction_type: 'POS_SALE',
+            tenant_id: order.tenant_id || tenantId,
+            branch_id: order.branch_id || branchId || 'main-hq',
+            cashier_id: 'usr-auto',
+            cashier_name: 'POS Terminal',
+            items: (order.items || []).map(item => ({
+              product_id: item.productId,
+              variant_id: item.variantId,
+              name: item.name || 'Sales Item',
+              qty: item.quantity || 1,
+              unit_price: item.price || 0,
+              discount: 0,
+              tax_rate: 0,
+            })),
+            discount_amount: order.discount || 0,
+            tax_amount: order.tax || 0,
+            total: order.total || 0,
+            paid_amount: order.total || 0,
+            change_amount: 0,
+            payment_method: order.paymentMethod || 'Cash',
+            currency: 'TZS',
+            created_at: order.timestamp || Date.now(),
+          });
+          createdCount++;
+        } catch (err) {
+          console.warn(`[ReceiptEngine] Auto-heal receipt for order ${order.id} failed:`, err);
+        }
+      }
+    }
+    return createdCount;
+  } catch (err) {
+    console.warn('[ReceiptEngine] ensureReceiptsForOrders failed:', err);
+    return 0;
+  }
 }

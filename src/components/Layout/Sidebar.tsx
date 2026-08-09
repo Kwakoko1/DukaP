@@ -18,38 +18,18 @@ import { getShortModuleName, getShortBranchName } from '../../utils/mobileFormat
 
 interface SidebarProps {}
 
-const superAdminSidebarItems: SidebarItem[] = [
-  'Dashboard',
-  'Tenant Management',
-  'Production Readiness',
-  'Release Center',
-  'Subscription Tiers',
-  'Business Categories',
-  'Billing & Finance',
-  'Users & Roles',
-  'Platform Monitoring',
-  { name: 'AI Management', subItems: ['Models usage', 'Prompt templates', 'Logs & Costs'] },
-  'Marketplace',
-  'Reports',
-  'Support Center',
-  'Notifications',
-  'Security Center',
-  { name: 'Developer Center', subItems: ['API Keys', 'Webhooks', 'Persistence Auditor'] },
-  'Backup & Recovery',
-  'Activity Center',
-  'Platform Updates',
-  'Integrations',
-  'System Settings'
-];
-
 export const Sidebar: React.FC<SidebarProps> = () => {
-  const { manifest, activeTab, setActiveTab, isMobileSidebarOpen, setIsMobileSidebarOpen } = useModule();
+  const { manifest, activeModule, activeTab, setActiveTab, isMobileSidebarOpen, setIsMobileSidebarOpen } = useModule();
   const { role, isSuperAdminView, hasPermission, jwtClaims, user, logout, currentBranch, toggleTheme, theme } = useAuth();
   
+  if (isSuperAdminView) {
+    return null;
+  }
+
   // Track expanded parent menus
   const [expandedMenus, setExpandedMenus] = useState<Record<string, boolean>>({});
 
-  const rawSidebarItems = isSuperAdminView ? superAdminSidebarItems : manifest.sidebar;
+  const rawSidebarItems = manifest.sidebar;
 
   const userInitials = useMemo(() => {
     if (!user?.name) return 'U';
@@ -57,8 +37,6 @@ export const Sidebar: React.FC<SidebarProps> = () => {
   }, [user]);
 
   const hasSidebarItemPermission = (item: SidebarItem): boolean => {
-    if (isSuperAdminView) return true;
-    
     const itemName = typeof item === 'string' ? item : item.name;
     const nameLower = itemName.toLowerCase();
     
@@ -99,7 +77,7 @@ export const Sidebar: React.FC<SidebarProps> = () => {
 
   const sidebarItems = useMemo(() => {
     let items = [...rawSidebarItems];
-    if (!isSuperAdminView && !items.some(item => (typeof item === 'string' ? item : item.name) === 'AI Insights Engine')) {
+    if (!items.some(item => (typeof item === 'string' ? item : item.name) === 'AI Insights Engine')) {
       const settingsIdx = items.findIndex(item => (typeof item === 'string' ? item : item.name) === 'Settings');
       const aiItem: SidebarItem = {
         name: 'AI Insights Engine',
@@ -122,7 +100,7 @@ export const Sidebar: React.FC<SidebarProps> = () => {
       }
     }
 
-    if (!isSuperAdminView && !items.some(item => (typeof item === 'string' ? item : item.name) === 'Cash Drawer')) {
+    if (!items.some(item => (typeof item === 'string' ? item : item.name) === 'Cash Drawer')) {
       const posIdx = items.findIndex(item => {
         const n = (typeof item === 'string' ? item : item.name).toLowerCase();
         return n === 'pos' || n.includes('sale') || n.includes('counter');
@@ -147,7 +125,7 @@ export const Sidebar: React.FC<SidebarProps> = () => {
       }
     }
 
-    if (!isSuperAdminView && !items.some(item => {
+    if (!items.some(item => {
       const n = (typeof item === 'string' ? item : item.name).toLowerCase();
       return n === 'receipts' || n.includes('receipt');
     })) {
@@ -175,6 +153,25 @@ export const Sidebar: React.FC<SidebarProps> = () => {
     return items
       .map(item => {
         const name = typeof item === 'string' ? item : item.name;
+        if (name === 'Inventory' || name === 'Beverage Inventory') {
+          return {
+            name: name,
+            subItems: [
+              'Inventory Overview',
+              'Products',
+              'Categories & Brands',
+              'Stock Adjustment',
+              'Stock Transfer',
+              'Stock Alerts',
+              'Stock Sync Engine',
+              activeModule === 'Bar' ? 'Recipes & Pour Control' : 'Product Bundles & Kits',
+              'Stock Count',
+              'Ledger Drilldown',
+              'Inventory Reports'
+            ]
+          };
+        }
+
         if (name === 'Purchasing' || name === 'Purchasing & Supplies' || name === 'Suppliers' || name === 'Distributors & Suppliers' || name === 'Procurement') {
           return {
             name: 'Purchasing',
@@ -197,6 +194,28 @@ export const Sidebar: React.FC<SidebarProps> = () => {
               'Receipt Analytics',
               'Receipt Verification',
               'Receipt Archive'
+            ]
+          };
+        }
+
+        if (name === 'Reports' || name === 'Reports & Analytics') {
+          return {
+            name: 'Reports',
+            subItems: [
+              'Sales',
+              'Profit',
+              'Inventory Valuation',
+              'Tax',
+              'Customers Report',
+              'Expenses Report',
+              'Payment Methods',
+              'Stock Movement',
+              'Purchasing Report',
+              'Discounts',
+              'Returns & Refunds',
+              'Branch Comparison',
+              'Cashier Performance',
+              'Receivables Aging'
             ]
           };
         }
@@ -492,7 +511,7 @@ export const Sidebar: React.FC<SidebarProps> = () => {
           </div>
           <div className="truncate">
             <h2 className="text-xs font-black text-slate-900 dark:text-white truncate leading-tight">
-              {isSuperAdminView ? 'SaaS Control Plane' : getShortModuleName(manifest.name)}
+              {getShortModuleName(manifest.name)}
             </h2>
             <p className="text-[10px] font-semibold text-slate-400 capitalize truncate mt-0.5">{role.toLowerCase()}</p>
           </div>

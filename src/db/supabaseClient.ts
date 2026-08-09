@@ -4,6 +4,7 @@ import {
   logCloudAudit,
   verifyRowLevelSecurity
 } from './supabaseMock';
+import { getSyncRealClientIp } from '../services/clientIpService';
 
 let mockAuthOverride: { tenant_id: string; user_id: string; user_name: string } | null = null;
 
@@ -379,7 +380,7 @@ export const supabase: SupabaseClient = {
                 tenant_id: recordTenantId,
                 user_id: auth.user_id,
                 action: `${displayTableName}.insert.success`,
-                ip_address: '197.250.4.15',
+                ip_address: getSyncRealClientIp(),
                 status: 'SUCCESS',
                 details: `Successfully inserted record (ID: ${newItem[idKey]}) to cloud database.`
               });
@@ -452,7 +453,7 @@ export const supabase: SupabaseClient = {
                 tenant_id: recordTenantId,
                 user_id: auth.user_id,
                 action: `${displayTableName}.update.success`,
-                ip_address: '197.250.4.15',
+                ip_address: getSyncRealClientIp(),
                 status: 'SUCCESS',
                 details: `Updated ID '${r[idKey]}' on cloud database.`
               });
@@ -521,7 +522,7 @@ export const supabase: SupabaseClient = {
             tenant_id: auth.tenant_id || 'unknown',
             user_id: auth.user_id || 'anonymous',
             action: `${displayTableName}.${this.action.toLowerCase()}.failed`,
-            ip_address: '197.250.4.15',
+            ip_address: getSyncRealClientIp(),
             status: 'FAILED',
             details: `Failed query on ${displayTableName}: ${err.message}`
           });

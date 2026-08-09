@@ -323,5 +323,50 @@ export const tenantIdentifierService = {
     }
 
     return codeStr || 'EMP-1001';
+  },
+
+  /**
+   * Returns a clean, human-readable Branch Code for UI tables and location badges
+   * Example: BR-HQ-01, BR-LUMUM-01, BR-MAIN-01
+   * Guaranteed never to return a raw UUID (like bc1497d1-3a12-481f-9d93-ca1815875902).
+   */
+  getReadableBranchCode(branchOrId: any): string {
+    if (!branchOrId) return 'BR-HQ-01';
+
+    let branchObj: any = null;
+    let rawIdStr = '';
+
+    if (typeof branchOrId === 'string') {
+      rawIdStr = branchOrId;
+    } else if (typeof branchOrId === 'object') {
+      branchObj = branchOrId;
+      if (branchObj.branch_code && !/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(branchObj.branch_code)) {
+        return branchObj.branch_code.toUpperCase();
+      }
+      if (branchObj.code && !/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(branchObj.code)) {
+        return branchObj.code.toUpperCase();
+      }
+      rawIdStr = branchObj.id || branchObj.branch_id || '';
+    }
+
+    if (!rawIdStr) return 'BR-HQ-01';
+
+    // If already formatted like BR-HQ-01 or BR-DAR-01
+    if (/^BR-[A-Z0-9]+-[A-Z0-9]+$/i.test(rawIdStr) && !/^[0-9a-f]{8}-/i.test(rawIdStr.replace(/^br-/i, ''))) {
+      return rawIdStr.toUpperCase();
+    }
+
+    const isHq = branchObj?.is_headquarters || rawIdStr.includes('hq') || rawIdStr.includes('headquarters') || (branchObj?.name || '').toLowerCase().includes('hq');
+
+    if (isHq) {
+      const cleanHash = rawIdStr.replace(/[^a-fA-F0-9]/g, '').slice(-2).toUpperCase() || '01';
+      return `BR-HQ-${cleanHash.padStart(2, '0')}`;
+    }
+
+    const nameStr = branchObj?.name || branchObj?.location || 'BRANCH';
+    const tag = extractBrandMoniker(nameStr).slice(0, 5) || 'MAIN';
+    const cleanHash = rawIdStr.replace(/[^a-fA-F0-9]/g, '').slice(-2).toUpperCase() || '01';
+
+    return `BR-${tag}-${cleanHash.padStart(2, '0')}`;
   }
 };

@@ -4,6 +4,7 @@
  */
 
 import { cloudDb } from '../db/supabaseMock';
+import { getSyncRealClientIp } from './clientIpService';
 
 export interface TenantContext {
   tenantId: string;
@@ -102,7 +103,7 @@ class TenantIsolationGuard {
         tenant_id: v.tenantId,
         user_id: v.userId,
         action: 'security.rls_violation_blocked',
-        ip_address: '197.250.4.15',
+        ip_address: getSyncRealClientIp(),
         status: 'FAILED',
         details: `Blocked cross-tenant access to ${v.resource} belonging to ${v.attemptedTenantId}`,
         timestamp: v.timestamp

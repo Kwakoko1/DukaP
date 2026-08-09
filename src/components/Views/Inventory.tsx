@@ -9,7 +9,12 @@ import {
   recordStockMovement,
   syncParentStock,
 } from '../../db/dexie';
-import { ProductService, cleanDuplicateVariants, getVariantAttrSig, createCategory, updateCategory, deleteCategory, createBrand, updateBrand, deleteBrand } from '../../services/productService';
+import {
+  ProductService, cleanDuplicateVariants, getVariantAttrSig,
+  createCategory, updateCategory, deleteCategory,
+  createBrand, updateBrand, deleteBrand,
+  seedIndustryCategoryPresets, mergeDuplicateCategories, mergeDuplicateBrands, reassignCategoryProducts
+} from '../../services/productService';
 import { Html5Qrcode } from 'html5-qrcode';
 import {
   getDashboardKPIs, get7DayMovements, generateValuationReport,
@@ -71,20 +76,42 @@ const blankVariant = (productId: string, tenantId: string, branchId: string): Pr
   inheritBuyingPrice: true, inheritSellingPrice: true,
 });
 
+function parseTs(val: any): Date | null {
+  if (!val) return null;
+  if (typeof val === 'number') {
+    return new Date(val < 1e11 ? val * 1000 : val);
+  }
+  if (typeof val === 'string') {
+    const parsedNum = Number(val);
+    if (!isNaN(parsedNum) && parsedNum > 0) {
+      return new Date(parsedNum < 1e11 ? parsedNum * 1000 : parsedNum);
+    }
+    const d = new Date(val);
+    if (!isNaN(d.getTime())) return d;
+  }
+  if (val instanceof Date && !isNaN(val.getTime())) return val;
+  return null;
+}
+
 function fmtNum(n: number | string): string {
   const num = typeof n === 'number' ? n : parseFloat(String(n || 0)) || 0;
-  return (isNaN(num) ? 0 : num).toLocaleString('en-TZ', { maximumFractionDigits: 0 });
+  return (isNaN(num) ? 0 : num).toLocaleString('en-US', { maximumFractionDigits: 0 });
 }
-function fmtCcy(n: number): string {
-  return `Tsh ${n.toLocaleString('en-TZ', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+function fmtCcy(n: any): string {
+  const num = typeof n === 'number' ? n : parseFloat(String(n || 0)) || 0;
+  if (isNaN(num) || !isFinite(num)) return 'Tsh 0';
+  return `Tsh ${num.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 }
-function fmtDate(ms: number): string {
-  return new Date(ms).toLocaleDateString('en-TZ', { day: '2-digit', month: 'short', year: 'numeric' });
+function fmtDate(ms: any): string {
+  const d = parseTs(ms);
+  if (!d) return '—';
+  return d.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
 }
-function fmtDateTime(ms: number): string {
-  const d = new Date(ms);
-  const dateStr = d.toLocaleDateString('en-TZ', { day: '2-digit', month: 'short', year: 'numeric' });
-  const timeStr = d.toLocaleTimeString('en-TZ', { hour: '2-digit', minute: '2-digit' });
+function fmtDateTime(ms: any): string {
+  const d = parseTs(ms);
+  if (!d) return '—';
+  const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
+  const timeStr = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
   return `${dateStr}, ${timeStr}`;
 }
 
@@ -99,49 +126,30 @@ export const Inventory: React.FC = () => {
 
   // ── Map sidebar activeTab → internal invTab on every navigation ─────────
   useEffect(() => {
-    switch (activeTab) {
-      case 'Products':
-        setInvTab('products');
-        break;
-      case 'Categories':
-      case 'Categories & Brands':
-      case 'Categories & brands':
-        setInvTab('categories');
-        break;
-      case 'Product Bundles & Kits':
-      case 'Product Bundles':
-      case 'Bundles & Kits':
-        setInvTab('recipes' as any);
-        break;
-      case 'Stock Adjustment':
-      case 'Stock Adjustments':
-        setInvTab('adjustments');
-        break;
-      case 'Stock Transfer':
-      case 'Stock Transfers':
-        setInvTab('transfers');
-        break;
-      case 'Stock Sync':
-      case 'Stock Sync Engine':
-      case 'Stock Ledger Sync':
-        setInvTab('stockSync');
-        break;
-      case 'Stock Alerts':
-      case 'Low Stock Alerts':
-        setInvTab('alerts');
-        break;
-      case 'Inventory':
-      case 'Beverage Inventory':
-        setInvTab('dashboard');
-        break;
-      // sub-items that Inventory handles but belong to the products tab
-      case 'Medicines':
-      case 'Stock Register':
-        setInvTab('products');
-        break;
-      default:
-        // Don't change tab if the activeTab is unrelated (e.g. user navigated away and back)
-        break;
+    if (!activeTab) return;
+    const norm = activeTab.toLowerCase().trim();
+    if (norm === 'products' || norm === 'medicines' || norm === 'stock register') {
+      setInvTab('products');
+    } else if (norm.includes('categor') || norm.includes('brand')) {
+      setInvTab('categories');
+    } else if (norm.includes('bundle') || norm.includes('kit') || norm.includes('recipe')) {
+      setInvTab('recipes' as any);
+    } else if (norm.includes('adjustment')) {
+      setInvTab('adjustments');
+    } else if (norm.includes('transfer')) {
+      setInvTab('transfers');
+    } else if (norm.includes('sync')) {
+      setInvTab('stockSync');
+    } else if (norm.includes('alert')) {
+      setInvTab('alerts');
+    } else if (norm.includes('count')) {
+      setInvTab('count');
+    } else if (norm.includes('ledger') || norm.includes('drilldown')) {
+      setInvTab('ledger');
+    } else if (norm.includes('report')) {
+      setInvTab('reports');
+    } else if (norm.includes('overview') || norm === 'inventory' || norm === 'beverage inventory' || norm === 'dashboard' || norm === 'inventory dashboard') {
+      setInvTab('dashboard');
     }
   }, [activeTab]);
 
@@ -295,43 +303,69 @@ export const Inventory: React.FC = () => {
     db.appSettings.where('[tenantId+namespace]').equals([currentTenant.id, 'SECURITY']).first()
   , [currentTenant.id]);
 
-  // Live query for brands
+  // Live query for brands (Multi-Tenant, Multi-Branch & Multi-Module Scoped)
   const allBrands = useLiveQuery(async () => {
-    const prods = await db.products.where('tenant_id').equals(currentTenant.id).toArray();
+    if (!currentTenant?.id) return [];
+    const prods = await db.products.where('tenant_id').equals(currentTenant.id)
+      .filter(p => {
+        if (p.deletedAt || (p as any).deleted_at || p.status === 'Inactive') return false;
+        const pMod = (p.module || 'Retail').toLowerCase();
+        const aMod = (activeModule || 'Retail').toLowerCase();
+        const matchMod = pMod === aMod || pMod === 'all' || !p.module;
+        const br = p.branch_id || p.branchId;
+        return matchMod && (!br || br === currentBranch.id || br === 'all' || br.includes('hq'));
+      }).toArray();
+
     const brandSet = new Map<string, number>();
     prods.forEach(p => {
       if (p.brand && p.brand.trim()) {
-        brandSet.set(p.brand.trim(), (brandSet.get(p.brand.trim()) || 0) + 1);
+        const b = p.brand.trim();
+        brandSet.set(b, (brandSet.get(b) || 0) + 1);
       }
     });
+
     try {
-      const dbBrands = await db.brands.toArray();
-      dbBrands.filter(b => !b.tenant_id || b.tenant_id === currentTenant.id).forEach(b => {
+      const dbBrands = await db.brands.where('tenant_id').equals(currentTenant.id).toArray();
+      dbBrands.forEach(b => {
         if (b.name && b.name.trim() && !brandSet.has(b.name.trim())) {
           brandSet.set(b.name.trim(), 0);
         }
       });
     } catch {}
     return Array.from(brandSet.entries()).map(([name, count]) => ({ name, count })).sort((a, b) => a.name.localeCompare(b.name));
-  }, [currentTenant.id]) || [];
+  }, [currentTenant?.id, currentBranch?.id, activeModule]) || [];
 
-  // Live query for categories
+  // Live query for categories (Multi-Tenant, Multi-Branch & Multi-Module Scoped)
   const allCategories = useLiveQuery(async () => {
-    const prods = await db.products.where('tenant_id').equals(currentTenant.id).toArray();
+    if (!currentTenant?.id) return [];
+    const prods = await db.products.where('tenant_id').equals(currentTenant.id)
+      .filter(p => {
+        if (p.deletedAt || (p as any).deleted_at || p.status === 'Inactive') return false;
+        const pMod = (p.module || 'Retail').toLowerCase();
+        const aMod = (activeModule || 'Retail').toLowerCase();
+        const matchMod = pMod === aMod || pMod === 'all' || !p.module;
+        const br = p.branch_id || p.branchId;
+        return matchMod && (!br || br === currentBranch.id || br === 'all' || br.includes('hq'));
+      }).toArray();
+
     const catSet = new Map<string, number>();
     prods.forEach(p => {
-      if (p.category) {
-        catSet.set(p.category, (catSet.get(p.category) || 0) + 1);
+      if (p.category && p.category.trim()) {
+        const c = p.category.trim();
+        catSet.set(c, (catSet.get(c) || 0) + 1);
       }
     });
+
     try {
       const dbCats = await db.categories.where('tenant_id').equals(currentTenant.id).toArray();
       dbCats.forEach(c => {
-        if (!catSet.has(c.name)) catSet.set(c.name, 0);
+        if (c.name && c.name.trim() && !catSet.has(c.name.trim())) {
+          catSet.set(c.name.trim(), 0);
+        }
       });
     } catch {}
     return Array.from(catSet.entries()).map(([name, count]) => ({ name, count })).sort((a, b) => a.name.localeCompare(b.name));
-  }, [currentTenant.id]) || [];
+  }, [currentTenant?.id, currentBranch?.id, activeModule]) || [];
 
   // Live query for real suppliers from the Purchasing module
   const allSuppliers = useLiveQuery(
@@ -346,7 +380,13 @@ export const Inventory: React.FC = () => {
     const categoryProds = prods.filter(p => p.category === name);
 
     if (categoryProds.length > 0) {
-      alert(`⚠️ Cannot delete category "${name}"!\n\nThere are ${categoryProds.length} product(s) currently assigned to this category. Please reassign or delete those products first before deleting this category.`);
+      const otherCats = allCategories.map(c => c.name).filter(cName => cName !== name);
+      const targetCat = prompt(
+        `⚠️ Category "${name}" has ${categoryProds.length} assigned product(s).\n\nTo re-assign these products and delete "${name}", type the target category name below:\nAvailable Categories: ${otherCats.join(', ') || 'General'}`
+      );
+      if (!targetCat || !targetCat.trim()) return;
+      const reassigned = await reassignCategoryProducts(currentTenant.id, name, targetCat.trim());
+      alert(`✅ Re-assigned ${reassigned} product(s) to "${targetCat.trim()}" and deleted category "${name}".`);
       return;
     }
 
@@ -1168,27 +1208,64 @@ export const Inventory: React.FC = () => {
     });
   }, [products, searchQuery, filterType]);
 
-  // Stable O(1) product lookup map — avoids repeated O(n) products.find() calls across the module
+  // Stable O(1) product lookup map — supports ID, SKU, barcode, and variant resolution
   const productMap = useMemo(() => {
     const map = new Map<string, typeof products[0]>();
-    for (const p of products) map.set(p.id, p);
+    for (const p of products) {
+      map.set(p.id, p);
+      if (p.sku) map.set(p.sku, p);
+      if (p.barcode) map.set(p.barcode, p);
+    }
+    for (const v of productVariants) {
+      const parent = products.find(p => p.id === v.productId);
+      if (parent) {
+        const vObj = { 
+          ...parent, 
+          name: `${parent.name} (${Object.values(v.attributes || {}).join('/') || 'Variant'})`, 
+          buyingPrice: v.buyingPrice ?? parent.buyingPrice 
+        };
+        map.set(v.id, vObj as any);
+        if (v.sku) map.set(v.sku, vObj as any);
+        if (v.barcode) map.set(v.barcode, vObj as any);
+      }
+    }
     return map;
-  }, [products]);
+  }, [products, productVariants]);
+
+  const getProductName = useCallback((productIdOrCode: string): string => {
+    if (!productIdOrCode) return '—';
+    const found = productMap.get(productIdOrCode);
+    if (found?.name) return found.name;
+    const p = products.find(prod => prod.id === productIdOrCode || prod.sku === productIdOrCode || prod.barcode === productIdOrCode);
+    if (p) return p.name;
+    const v = productVariants.find(varItem => varItem.id === productIdOrCode || varItem.sku === productIdOrCode || varItem.barcode === productIdOrCode);
+    if (v) {
+      const parent = products.find(prod => prod.id === v.productId);
+      if (parent) return `${parent.name} (${Object.values(v.attributes || {}).join('/') || 'Variant'})`;
+    }
+    if (productIdOrCode.includes('-') && productIdOrCode.length > 20) {
+      return `Unmapped Item (${productIdOrCode.slice(0, 8)})`;
+    }
+    return productIdOrCode;
+  }, [productMap, products, productVariants]);
 
 
   const stats = useMemo(() => {
+    const validIds = new Set(products.map(p => p.id));
+    const activeProductVariants = products.length === 0 ? [] : productVariants.filter(v => validIds.has(v.productId));
+
     const total = products.length;
     const variantProducts = products.filter(p => p.hasVariants).length;
     
     // Low stock: simple products with stock < 10 + variants with stock < (reorderLevel || 5)
     const simpleLow = products.filter(p => !p.hasVariants && p.stock < 10 && p.stock > 0).length;
-    const variantLow = productVariants.filter(v => v.stock < (v.reorderLevel ?? 5) && v.stock > 0).length;
-    const lowStock = simpleLow + variantLow;
+    const variantLow = activeProductVariants.filter(v => v.stock < (v.reorderLevel ?? 5) && v.stock > 0).length;
+    const lowStock = products.length === 0 ? 0 : (simpleLow + variantLow);
 
     // Out of stock: simple products with stock <= 0 + variants with stock <= 0
     const simpleOut = products.filter(p => !p.hasVariants && p.stock <= 0).length;
-    const variantOut = productVariants.filter(v => v.stock <= 0).length;
-    const outOfStock = simpleOut + variantOut;
+    const variantOut = activeProductVariants.filter(v => v.stock <= 0).length;
+    const outOfStock = products.length === 0 ? 0 : (simpleOut + variantOut);
 
     return { total, variantProducts, lowStock, outOfStock };
   }, [products, productVariants]);
@@ -1817,6 +1894,33 @@ export const Inventory: React.FC = () => {
     document.body.removeChild(link);
   };
 
+  const handleSeedPresets = async () => {
+    if (!currentTenant?.id) return;
+    const added = await seedIndustryCategoryPresets(currentTenant.id, activeModule);
+    if (added > 0) {
+      alert(`🌱 Successfully seeded ${added} standard category preset(s) for ${activeModule}!`);
+    } else {
+      alert(`ℹ️ Category presets for ${activeModule} are already loaded in your catalog.`);
+    }
+  };
+
+  const handleMergeDuplicates = async () => {
+    if (!currentTenant?.id) return;
+    if (!confirm('🧹 Scan catalog and automatically merge case-insensitive duplicate Categories and Brands (e.g. "LOCAL BEER" ➔ "Local Beer")? Associated product records will be updated automatically.')) {
+      return;
+    }
+    const catRes = await mergeDuplicateCategories(currentTenant.id);
+    const brandRes = await mergeDuplicateBrands(currentTenant.id);
+    const totalMerged = catRes.mergedCount + brandRes.mergedCount;
+    const totalProductsUpdated = catRes.updatedProductsCount + brandRes.updatedProductsCount;
+
+    if (totalMerged > 0) {
+      alert(`✅ Merged ${totalMerged} duplicate category/brand entries and updated ${totalProductsUpdated} product record(s).`);
+    } else {
+      alert('✨ Catalog hygiene check complete! No duplicate categories or brands found.');
+    }
+  };
+
   const renderCategoriesTab = () => {
     const totalCatalogProducts = products.length;
     const uncategorizedCount = products.filter(p => !p.category || p.category === 'General').length;
@@ -1859,6 +1963,20 @@ export const Inventory: React.FC = () => {
             <span className="text-xs font-semibold px-3 py-1.5 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 border border-purple-200 dark:border-purple-800">
               🏷️ {allBrands.length} Brands
             </span>
+            <button
+              onClick={handleSeedPresets}
+              className="px-3 py-1.5 text-xs font-bold rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/50 dark:hover:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 transition flex items-center gap-1.5 cursor-pointer"
+              title="Seed standard category presets for current industry module"
+            >
+              🌱 Seed {activeModule} Presets
+            </button>
+            <button
+              onClick={handleMergeDuplicates}
+              className="px-3 py-1.5 text-xs font-bold rounded-xl bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/50 dark:hover:bg-amber-900/50 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 transition flex items-center gap-1.5 cursor-pointer"
+              title="Merge case-insensitive duplicate categories and brands"
+            >
+              🧹 Clean &amp; Merge Duplicates
+            </button>
             <button
               onClick={handleExportTaxonomyCSV}
               className="px-3 py-1.5 text-xs font-bold rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-darkbg-border transition flex items-center gap-1.5 cursor-pointer"
@@ -4735,6 +4853,39 @@ export const Inventory: React.FC = () => {
       .reverse().sortBy('created_at');
   }, [currentTenant?.id, currentBranch?.id]) || [];
 
+  const handleClearStockLedger = async () => {
+    if (!currentTenant?.id) return;
+    const isOwnerOrAdmin = ['Super Admin', 'Business Owner', 'Tenant Owner', 'SuperAdmin'].includes(user?.role || '');
+
+    if (!confirm('⚠️ WARNING: Are you sure you want to PERMANENTLY CLEAR all Stock Movement Logs and Replay Stream for this workspace? This action cannot be undone.')) {
+      return;
+    }
+
+    const executeClear = async () => {
+      try {
+        await db.stockLedger.clear();
+        const pendingQueue = await db.syncQueue.where('entityName').equals('stockLedger').toArray();
+        for (const q of pendingQueue) {
+          if (q.id !== undefined) await db.syncQueue.delete(q.id);
+        }
+        alert('✅ All Stock Movement Logs and Replay Stream cleared successfully.');
+      } catch (err: any) {
+        alert(`Failed to clear stock movement log: ${err.message}`);
+      }
+    };
+
+    if (!isOwnerOrAdmin) {
+      requestPinApproval(
+        'Authorize Stock Movement Log & Replay Stream Wipe',
+        async () => {
+          await executeClear();
+        }
+      );
+    } else {
+      await executeClear();
+    }
+  };
+
   const filteredAdjustments = useMemo(() => {
     return recentAdjustments
       .filter(e => adjFilterType === 'ALL' || e.movement_type === adjFilterType)
@@ -4849,11 +5000,11 @@ export const Inventory: React.FC = () => {
   };
 
   const renderAdjustmentsTab = () => {
-    const totalMovements = filteredAdjustments.length;
-    const inboundCount = filteredAdjustments.filter(e => INBOUND_TYPES.has(e.movement_type)).length;
-    const outboundCount = filteredAdjustments.filter(e => !INBOUND_TYPES.has(e.movement_type)).length;
-    const totalCostIn  = filteredAdjustments.filter(e => INBOUND_TYPES.has(e.movement_type)).reduce((s,e) => s + (e.total_cost || 0), 0);
-    const totalCostOut = filteredAdjustments.filter(e => !INBOUND_TYPES.has(e.movement_type)).reduce((s,e) => s + (e.total_cost || 0), 0);
+    const totalMovements = recentAdjustments.length;
+    const inboundCount = recentAdjustments.filter(e => INBOUND_TYPES.has(e.movement_type)).length;
+    const outboundCount = recentAdjustments.filter(e => !INBOUND_TYPES.has(e.movement_type)).length;
+    const totalCostIn  = recentAdjustments.filter(e => INBOUND_TYPES.has(e.movement_type)).reduce((s,e) => s + (Number(e.total_cost) || (Number(e.unit_cost || 0) * Math.abs(e.quantity_change || 0)) || 0), 0);
+    const totalCostOut = recentAdjustments.filter(e => !INBOUND_TYPES.has(e.movement_type)).reduce((s,e) => s + (Number(e.total_cost) || (Number(e.unit_cost || 0) * Math.abs(e.quantity_change || 0)) || 0), 0);
 
     return (
     <div className="inv-adjustments-view">
@@ -4890,14 +5041,30 @@ export const Inventory: React.FC = () => {
       </div>
 
       <div className="inv-toolbar">
-        <h2 style={{margin:0}}>Stock Movement Log</h2>
-        {canAdjust && (
-          <button className="inv-add-btn" onClick={() => {
-            const first = products[0];
-            if (!first) { alert('Add a product first.'); return; }
-            openAdjustment(first);
-          }}><Sliders size={14}/> New Adjustment</button>
-        )}
+        <div className="flex items-center gap-2">
+          <h2 style={{margin:0}}>Stock Movement Log</h2>
+          <span className="text-[10px] font-mono font-bold bg-slate-100 dark:bg-darkbg px-2 py-0.5 rounded text-slate-500">
+            Replay Stream Active
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          {canAdjust && (
+            <button 
+              className="px-3 py-1.5 rounded-lg border border-red-200 dark:border-red-900/50 bg-red-50 hover:bg-red-100 dark:bg-red-950/30 text-red-600 dark:text-red-400 text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+              onClick={handleClearStockLedger}
+              title="Clear/Delete Stock Movement Logs and Replay Stream"
+            >
+              <Trash2 size={13}/> Clear Log Stream
+            </button>
+          )}
+          {canAdjust && (
+            <button className="inv-add-btn" onClick={() => {
+              const first = products[0];
+              if (!first) { alert('Add a product first.'); return; }
+              openAdjustment(first);
+            }}><Sliders size={14}/> New Adjustment</button>
+          )}
+        </div>
       </div>
       <div className="inv-toolbar" style={{marginTop:'8px'}}>
         <div className="inv-search-wrap">
@@ -4927,11 +5094,11 @@ export const Inventory: React.FC = () => {
             {filteredAdjustments.length === 0 ? (
               <tr><td colSpan={8} style={{textAlign:'center',padding:'32px',opacity:0.5}}>No stock movements yet.</td></tr>
             ) : filteredAdjustments.map(e => {
-              const prod = productMap.get(e.product_id);
+              const prodName = getProductName(e.product_id);
               return (
                 <tr key={e.id} className={INBOUND_TYPES.has(e.movement_type) ? 'inv-row-inbound' : 'inv-row-outbound'}>
                   <td style={{whiteSpace:'nowrap'}}>{fmtDateTime(e.created_at)}</td>
-                  <td style={{fontWeight:600}}>{prod?.name ?? <span style={{opacity:0.5,fontFamily:'monospace'}}>{e.product_id.slice(-8)}</span>}</td>
+                  <td style={{fontWeight:600}}>{prodName}</td>
                   <td><span className={`inv-move-chip ${INBOUND_TYPES.has(e.movement_type) ? 'inbound' : 'outbound'}`}>{e.movement_type.replace(/_/g,' ')}</span></td>
                   <td><strong style={{color: e.quantity_change > 0 ? '#10b981' : '#ef4444'}}>{e.quantity_change > 0 ? '+' : ''}{e.quantity_change}</strong></td>
                   <td>{e.quantity_before}</td>
@@ -5992,17 +6159,18 @@ export const Inventory: React.FC = () => {
   // RENDER
   // ──────────────────────────────────────────────────────────────────────────
   const TOP_TABS: { id: InventoryTab; label: string; icon: React.ReactNode; badge?: number }[] = [
-    { id: 'dashboard',   label: 'Dashboard',        icon: <BarChart3 size={15}/>, },
-    { id: 'products',    label: 'Products',         icon: <Package size={15}/>,   badge: stats.total },
+    { id: 'dashboard',   label: 'Inventory Overview',  icon: <BarChart3 size={15}/> },
+    { id: 'products',    label: 'Products',            icon: <Package size={15}/>, badge: stats.total },
+    { id: 'categories',  label: 'Categories & Brands', icon: <Tag size={15}/> },
+    { id: 'adjustments', label: 'Adjustments',         icon: <Sliders size={15}/> },
+    { id: 'transfers',   label: 'Transfers',           icon: <ArrowLeftRight size={15}/>, badge: kpis?.pendingTransfers },
+    { id: 'alerts',      label: 'Stock Alerts',        icon: <AlertTriangle size={15}/>, badge: kpis?.lowStockCount },
     { id: 'stockSync' as any, label: 'Stock Sync Engine', icon: <RefreshCw size={15}/> },
-    { id: 'ledger',      label: 'Ledger Drilldown', icon: <Activity size={15}/>, },
-    { id: 'adjustments', label: 'Adjustments',      icon: <Sliders size={15}/>,  },
-    { id: 'transfers',   label: 'Transfers',        icon: <ArrowLeftRight size={15}/>, badge: kpis?.pendingTransfers },
-    { id: 'alerts',      label: 'Stock Alerts',     icon: <AlertTriangle size={15}/>,   badge: kpis?.lowStockCount },
-    { id: 'count',       label: 'Stock Count',      icon: <ClipboardList size={15}/>, badge: kpis?.pendingCounts },
-    { id: 'reports',     label: 'Reports',          icon: <FileText size={15}/>,  },
+    { id: 'recipes' as any,   label: activeModule === 'Bar' ? 'Recipes & Pour Control' : 'Bundles & Kits', icon: <Layers size={15}/> },
+    { id: 'count',       label: 'Stock Count',         icon: <ClipboardList size={15}/>, badge: kpis?.pendingCounts },
+    { id: 'ledger',      label: 'Ledger Drilldown',    icon: <Activity size={15}/> },
+    { id: 'reports',     label: 'Reports',             icon: <FileText size={15}/> },
     ...(activeModule === 'Bar' ? [
-      { id: 'recipes' as any, label: 'Recipes & Pour Control', icon: <Activity size={15}/> },
       { id: 'wastage' as any, label: 'Wastage & Spillage', icon: <AlertTriangle size={15}/> }
     ] : [])
   ];

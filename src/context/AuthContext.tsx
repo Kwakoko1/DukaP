@@ -299,7 +299,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [currentIndustry, setCurrentIndustryState] = useState<{ id: string; name: string } | null>({ id: 'ind-retail', name: 'Retail' });
   const [jwtToken, setJwtToken] = useState<string | null>(null);
   const [jwtClaims, setJwtClaims] = useState<JWTClaims | null>(null);
-  const [theme, setTheme] = useState<'light' | 'dark'>('light');
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    const saved = localStorage.getItem('dukapos_theme');
+    if (saved === 'dark' || saved === 'light') return saved;
+    return 'dark';
+  });
   const [isOfflineLocked, setIsOfflineLocked] = useState<boolean>(false);
 
   const [isSuperAdminView, setIsSuperAdminView] = useState<boolean>(false);
@@ -315,6 +319,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } else {
       root.classList.remove('dark');
     }
+    localStorage.setItem('dukapos_theme', theme);
   }, [theme]);
 
   // Load session and restore user state on initialization

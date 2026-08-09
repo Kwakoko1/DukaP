@@ -1,4 +1,5 @@
 import { db } from '../db/dexie';
+import { getSyncRealClientIp } from './clientIpService';
 import { supabase, setMockAuthOverride } from '../db/supabaseClient';
 import { tenantIdentifierService } from './tenantIdentifierService';
 
@@ -356,7 +357,7 @@ export const tenantProvisioningService = {
           updated_at: NOW,
           registration_source: 'SUPER_ADMIN_CPANEL',
           created_by: 'system-provisioner',
-          registration_ip: '197.250.4.15',
+          registration_ip: getSyncRealClientIp(),
           registration_device: typeof navigator !== 'undefined' ? navigator.userAgent : 'Chrome 126.0 (Windows)',
           verification_status: 'VERIFIED'
         });

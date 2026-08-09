@@ -16,11 +16,11 @@ const Dashboard = lazy(() => import('./components/Views/Dashboard').then(m => ({
 const POS = lazy(() => import('./components/Views/POS').then(m => ({ default: m.POS })));
 const Inventory = lazy(() => import('./components/Views/Inventory').then(m => ({ default: m.Inventory })));
 const Customers = lazy(() => import('./components/Views/Customers').then(m => ({ default: m.Customers })));
-const Reports = lazy(() => import('./components/Views/Reports').then(m => ({ default: m.Reports })));
+const Reports = lazy(() => import('./components/Views/Reports/index').then(m => ({ default: m.Reports })));
 const Settings = lazy(() => import('./components/Views/Settings').then(m => ({ default: m.Settings })));
 
 import { Purchasing } from './components/Views/Purchasing';
-const SuperAdmin = lazy(() => import('./components/Views/SuperAdmin').then(m => ({ default: m.SuperAdmin })));
+const SuperAdminCPanel = lazy(() => import('./components/SuperAdminCPanel').then(m => ({ default: m.SuperAdminCPanel })));
 const AuthGateway = lazy(() => import('./components/Views/AuthGateway').then(m => ({ default: m.AuthGateway })));
 const UsersRoles = lazy(() => import('./components/Views/UsersRoles').then(m => ({ default: m.UsersRoles })));
 const Expenses = lazy(() => import('./components/Views/Expenses').then(m => ({ default: m.Expenses })));
@@ -147,7 +147,7 @@ const DukaPosAppContent: React.FC = () => {
   const renderActiveView = () => {
     console.log('renderActiveView called with activeTab =', activeTab);
     if (role === 'Super Admin' && isSuperAdminView && activeTab !== 'Users & Roles') {
-      return <SuperAdmin />;
+      return <SuperAdminCPanel initialTab={activeTab} />;
     }
 
     // Billing middleware subscription enforcement
@@ -215,6 +215,10 @@ const DukaPosAppContent: React.FC = () => {
       case 'Returns':
         return <POS />;
       case 'Inventory':
+      case 'Inventory Overview':
+      case 'Inventory Dashboard':
+      case 'Stock Overview':
+      case 'Beverage Inventory':
       case 'Products':
       case 'Categories':
       case 'Categories & Brands':
@@ -225,10 +229,21 @@ const DukaPosAppContent: React.FC = () => {
       case 'Product Bundles & Kits':
       case 'Product Bundles':
       case 'Bundles & Kits':
+      case 'Recipe & Pour Control':
       case 'Stock Adjustment':
+      case 'Stock Adjustments':
       case 'Stock Transfer':
+      case 'Stock Transfers':
       case 'Stock Alerts':
+      case 'Low Stock Alerts':
+      case 'Stock Count':
       case 'Medicines':
+      case 'Stock Register':
+      case 'Batch Management':
+      case 'Expiry Tracking':
+      case 'Wastage & Spillage':
+      case 'Ledger Drilldown':
+      case 'Inventory Reports':
         return <Inventory />;
       case 'Customers':
       case 'Members':
@@ -238,9 +253,22 @@ const DukaPosAppContent: React.FC = () => {
       case 'Users & Roles':
         return <UsersRoles />;
       case 'Reports':
+      case 'Reports & Analytics':
       case 'Sales':
       case 'Profit':
+      case 'Inventory Valuation':
+      case 'Stock Valuation':
       case 'Tax':
+      case 'Customers Report':
+      case 'Expenses Report':
+      case 'Payment Methods':
+      case 'Stock Movement':
+      case 'Purchasing Report':
+      case 'Discounts':
+      case 'Returns & Refunds':
+      case 'Branch Comparison':
+      case 'Cashier Performance':
+      case 'Receivables Aging':
         return <Reports />;
       case 'Settings':
       case 'General Settings':
