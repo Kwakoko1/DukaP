@@ -329,6 +329,17 @@ async function initDatabaseSchema() {
       );
     `;
 
+    // Auto-heal: add all missing columns to tenants for full online-registration capture
+    await sql`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS email TEXT;`;
+    await sql`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS owner_name TEXT;`;
+    await sql`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS business_type TEXT DEFAULT 'Retail';`;
+    await sql`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS slug TEXT;`;
+    await sql`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS registration_source TEXT DEFAULT 'SELF_REGISTERED';`;
+    await sql`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS verification_status TEXT DEFAULT 'PENDING';`;
+    await sql`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS updated_at BIGINT;`;
+    await sql`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS registration_ip TEXT;`;
+    await sql`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS registration_device TEXT;`;
+
     // Auto-heal missing password_hash and security columns on existing tables
     await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT;`;
     await sql`ALTER TABLE user_security ADD COLUMN IF NOT EXISTS tenant_id TEXT;`;
@@ -569,13 +580,22 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
-      // 2. GET /api/tenants & POST /api/tenants
+      // 2. GET /api/tenants/all — Super Admin privileged full tenant registry
+      if (pathname === '/api/tenants/all' && req.method === 'GET') {
+        const allTenants = await sql`SELECT * FROM tenants WHERE (deleted_at IS NULL) ORDER BY created_at DESC`;
+        res.writeHead(200);
+        res.end(JSON.stringify(allTenants));
+        return;
+      }
+
+      // 2.1 GET /api/tenants & POST /api/tenants
       if (pathname === '/api/tenants' && req.method === 'GET') {
         let tenants = [];
         if (tenantId && tenantId !== 'tenant-admin-system') {
           tenants = await sql`SELECT * FROM tenants WHERE id = ${tenantId} AND (deleted_at IS NULL)`;
         } else {
-          tenants = await sql`SELECT * FROM tenants WHERE (deleted_at IS NULL)`;
+          // Super admin or no scoping — return all
+          tenants = await sql`SELECT * FROM tenants WHERE (deleted_at IS NULL) ORDER BY created_at DESC`;
         }
         res.writeHead(200);
         res.end(JSON.stringify(tenants));
@@ -586,14 +606,79 @@ const server = http.createServer(async (req, res) => {
         const payload = await parseRequestBody(req);
         const tid = payload.id || `tenant-${Date.now()}`;
         const now = Date.now();
+        const slug = payload.slug || payload.name?.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || tid;
+        const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '0.0.0.0';
+        const device = req.headers['user-agent'] || 'Web Client';
         await sql`
-          INSERT INTO tenants (id, name, plan, status, business_code, tenant_code, created_at)
-          VALUES (${tid}, ${payload.name || 'Tenant'}, ${payload.plan || 'Basic'}, ${payload.status || 'Active'}, ${payload.business_code || ''}, ${payload.tenant_code || ''}, ${payload.created_at || now})
+          INSERT INTO tenants (
+            id, name, plan, status, business_code, tenant_code, slug,
+            email, owner_name, business_type,
+            registration_source, verification_status,
+            registration_ip, registration_device,
+            created_at, updated_at
+          )
+          VALUES (
+            ${tid},
+            ${payload.name || 'Tenant'},
+            ${payload.plan || 'Basic'},
+            ${payload.status || 'Trial'},
+            ${payload.business_code || ''},
+            ${payload.tenant_code || tid},
+            ${slug},
+            ${payload.email || ''},
+            ${payload.owner_name || payload.ownerName || ''},
+            ${payload.business_type || payload.businessType || 'Retail'},
+            ${payload.registration_source || payload.registrationSource || 'SELF_REGISTERED'},
+            ${payload.verification_status || payload.verificationStatus || 'PENDING'},
+            ${String(payload.registration_ip || ip)},
+            ${String(payload.registration_device || device).substring(0, 255)},
+            ${payload.created_at || now},
+            ${now}
+          )
           ON CONFLICT (id) DO UPDATE SET
             name = EXCLUDED.name,
             plan = EXCLUDED.plan,
-            status = EXCLUDED.status;
+            status = EXCLUDED.status,
+            email = COALESCE(EXCLUDED.email, tenants.email),
+            owner_name = COALESCE(EXCLUDED.owner_name, tenants.owner_name),
+            business_type = COALESCE(EXCLUDED.business_type, tenants.business_type),
+            updated_at = ${now};
         `;
+        invalidateTenantBootstrapCache(tid);
+        res.writeHead(200);
+        res.end(JSON.stringify({ success: true, id: tid }));
+        return;
+      }
+
+      // 2.2 PUT /api/tenants/:id — Update single tenant record
+      if (pathname.startsWith('/api/tenants/') && req.method === 'PUT') {
+        const tid = pathname.replace('/api/tenants/', '');
+        const payload = await parseRequestBody(req);
+        const now = Date.now();
+        await sql`
+          UPDATE tenants SET
+            name = COALESCE(${payload.name || null}, name),
+            plan = COALESCE(${payload.plan || null}, plan),
+            status = COALESCE(${payload.status || null}, status),
+            email = COALESCE(${payload.email || null}, email),
+            owner_name = COALESCE(${payload.owner_name || null}, owner_name),
+            business_type = COALESCE(${payload.business_type || null}, business_type),
+            verification_status = COALESCE(${payload.verification_status || null}, verification_status),
+            updated_at = ${now}
+          WHERE id = ${tid}
+        `;
+        invalidateTenantBootstrapCache(tid);
+        res.writeHead(200);
+        res.end(JSON.stringify({ success: true, id: tid }));
+        return;
+      }
+
+      // 2.3 DELETE /api/tenants/:id — Soft delete
+      if (pathname.startsWith('/api/tenants/') && req.method === 'DELETE') {
+        const tid = pathname.replace('/api/tenants/', '');
+        const now = Date.now();
+        await sql`UPDATE tenants SET deleted_at = ${now}, updated_at = ${now} WHERE id = ${tid}`;
+        invalidateTenantBootstrapCache(tid);
         res.writeHead(200);
         res.end(JSON.stringify({ success: true, id: tid }));
         return;

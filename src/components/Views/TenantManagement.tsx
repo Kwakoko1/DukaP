@@ -133,6 +133,34 @@ export const TenantManagement: React.FC = () => {
   const [sortDirection, setSortDirection] = useState<'DESC' | 'ASC'>('DESC');
   const [selectedAuditTenant, setSelectedAuditTenant] = useState<any | null>(null);
 
+  // PostgreSQL live tenant registry (authoritative source for online registrations)
+  const [pgTenants, setPgTenants] = useState<any[]>([]);
+  const [isFetchingPg, setIsFetchingPg] = useState(false);
+
+  const fetchPgTenants = React.useCallback(async () => {
+    setIsFetchingPg(true);
+    try {
+      const res = await fetch('/api/tenants/all', {
+        headers: { 'x-tenant-id': 'tenant-admin-system' }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) setPgTenants(data);
+      }
+    } catch (e) {
+      console.warn('[TenantManagement] Could not reach /api/tenants/all:', e);
+    } finally {
+      setIsFetchingPg(false);
+    }
+  }, []);
+
+  // Fetch live PostgreSQL tenants on mount and poll every 30s
+  React.useEffect(() => {
+    fetchPgTenants();
+    const interval = setInterval(fetchPgTenants, 30000);
+    return () => clearInterval(interval);
+  }, [fetchPgTenants]);
+
   // Auto-sync active dev workspace currentTenant to cloudDb and local db.tenants
   React.useEffect(() => {
     const curT = currentTenant as any;
@@ -211,67 +239,104 @@ export const TenantManagement: React.FC = () => {
     return list;
   }, [cloudPlans, localPlans]);
 
-  // Merge central PostgreSQL cloudTenants with local dbTenants & currentTenant for complete central registry
+  // Merge: PostgreSQL (authoritative) → cloudDb cache → local Dexie → currentTenant
   const tenants = useMemo(() => {
     const map = new Map<string, any>();
-    for (const ct of cloudTenants) {
-      map.set(ct.id, {
-        id: ct.id,
-        name: ct.name,
-        slug: ct.slug,
-        status: ct.status,
-        plan: ct.plan,
-        business_type: ct.business_type || 'Retail',
-        industry: ct.industry || ct.business_type || 'Retail',
-        tenant_code: ct.tenant_code,
-        owner_name: ct.owner_name,
-        email: ct.email,
-        created_at: ct.created_at || Date.now(),
-        updated_at: ct.updated_at,
-        deleted_at: ct.deleted_at,
-        registration_source: ct.registration_source || 'SUPER_ADMIN_CPANEL',
-        created_by: ct.created_by || 'usr-superadmin',
-        registration_ip: ct.registration_ip || '197.250.4.15',
-        registration_device: ct.registration_device || 'DukaPos Control Engine',
-        verification_status: ct.verification_status || 'VERIFIED'
+
+    // 1. PostgreSQL live records — primary source of truth for online registrations
+    for (const pg of pgTenants) {
+      if (pg.deleted_at) continue;
+      map.set(pg.id, {
+        id: pg.id,
+        name: pg.name,
+        slug: pg.slug || pg.id,
+        status: pg.status || 'Active',
+        plan: pg.plan || 'Basic',
+        business_type: pg.business_type || 'Retail',
+        industry: pg.business_type || 'Retail',
+        tenant_code: pg.tenant_code || pg.business_code || pg.id,
+        owner_name: pg.owner_name || '',
+        email: pg.email || '',
+        created_at: pg.created_at ? Number(pg.created_at) : Date.now(),
+        updated_at: pg.updated_at ? Number(pg.updated_at) : undefined,
+        registration_source: pg.registration_source || 'SELF_REGISTERED',
+        created_by: pg.created_by || 'SELF_REGISTERED',
+        registration_ip: pg.registration_ip || '',
+        registration_device: pg.registration_device || '',
+        verification_status: pg.verification_status || 'PENDING',
+        _source: 'POSTGRESQL'
       });
     }
+
+    // 2. Dexie cloudDb cache — fills gaps for tenants provisioned locally
+    for (const ct of cloudTenants) {
+      if (!map.has(ct.id)) {
+        map.set(ct.id, {
+          id: ct.id,
+          name: ct.name,
+          slug: ct.slug,
+          status: ct.status,
+          plan: ct.plan,
+          business_type: ct.business_type || 'Retail',
+          industry: ct.industry || ct.business_type || 'Retail',
+          tenant_code: ct.tenant_code,
+          owner_name: ct.owner_name,
+          email: ct.email,
+          created_at: ct.created_at || Date.now(),
+          updated_at: ct.updated_at,
+          deleted_at: ct.deleted_at,
+          registration_source: ct.registration_source || 'SUPER_ADMIN_CPANEL',
+          created_by: ct.created_by || 'usr-superadmin',
+          registration_ip: ct.registration_ip || '',
+          registration_device: ct.registration_device || '',
+          verification_status: ct.verification_status || 'VERIFIED',
+          _source: 'CLOUD_DB'
+        });
+      }
+    }
+
+    // 3. Local Dexie tenants
     for (const dt of dbTenants) {
       if (!map.has(dt.id)) {
         map.set(dt.id, {
           ...dt,
           created_at: dt.created_at || Date.now(),
-          registration_source: dt.registration_source || 'SUPER_ADMIN_CPANEL',
-          created_by: dt.created_by || 'usr-superadmin',
-          registration_ip: dt.registration_ip || '197.250.4.15',
-          registration_device: dt.registration_device || 'DukaPos Control Engine',
-          verification_status: dt.verification_status || 'VERIFIED'
+          registration_source: (dt as any).registration_source || 'SUPER_ADMIN_CPANEL',
+          created_by: (dt as any).created_by || 'usr-superadmin',
+          registration_ip: (dt as any).registration_ip || '',
+          registration_device: (dt as any).registration_device || '',
+          verification_status: (dt as any).verification_status || 'VERIFIED',
+          _source: 'LOCAL_DEXIE'
         });
       }
     }
+
+    // 4. Current session tenant as fallback
     const curT = currentTenant as any;
     if (curT && curT.id && !map.has(curT.id)) {
       map.set(curT.id, {
         id: curT.id,
-        name: curT.name || 'Local Dev Tenant',
-        slug: curT.slug || 'local-dev',
+        name: curT.name || 'Current Tenant',
+        slug: curT.slug || 'current',
         status: curT.status || 'ACTIVE',
         plan: curT.plan || 'PRO',
         business_type: curT.business_type || curT.industry || 'Retail',
         industry: curT.industry || curT.business_type || 'Retail',
         tenant_code: curT.tenant_code || curT.id,
-        owner_name: curT.owner_name || 'Business Owner',
-        email: curT.email || 'owner@dukapos.com',
+        owner_name: curT.owner_name || '',
+        email: curT.email || '',
         created_at: curT.created_at || Date.now(),
         registration_source: 'LOCAL_DEV_WORKSPACE',
         created_by: 'usr-dev-owner',
         registration_ip: '127.0.0.1',
         registration_device: 'Local Dev Workspace',
-        verification_status: 'VERIFIED'
+        verification_status: 'VERIFIED',
+        _source: 'SESSION'
       });
     }
+
     return Array.from(map.values());
-  }, [cloudTenants, dbTenants, currentTenant]);
+  }, [pgTenants, cloudTenants, dbTenants, currentTenant]);
 
   // Enriched Tenants with meta counts
   const enrichedTenants = useMemo(() => {
@@ -426,8 +491,57 @@ export const TenantManagement: React.FC = () => {
         const tenantId = `tenant-${Date.now()}`;
         const branchId = `branch-${Date.now()}`;
         const fullName = `${form.ownerFirstName} ${form.ownerLastName}`.trim() || 'Tenant Owner';
+        const slug = form.businessName.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
-        // 1. Commit to central production PostgreSQL database via SuperAdminService
+        // 1. Commit to PostgreSQL — authoritative tenant registry
+        await fetch('/api/tenants', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-tenant-id': 'tenant-admin-system' },
+          body: JSON.stringify({
+            id: tenantId,
+            name: form.businessName.trim(),
+            plan: form.planName,
+            status: form.status === 'TRIAL' ? 'Trial' : 'Active',
+            slug,
+            email: form.email.trim(),
+            owner_name: fullName,
+            business_type: form.businessType,
+            tenant_code: slug.toUpperCase().replace(/-/g, '_'),
+            business_code: slug.toUpperCase().replace(/-/g, '_'),
+            registration_source: 'SUPER_ADMIN_CPANEL',
+            verification_status: 'VERIFIED',
+            created_at: Date.now()
+          })
+        });
+
+        // 2. POST owner user to PostgreSQL
+        await fetch('/api/users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-tenant-id': 'tenant-admin-system' },
+          body: JSON.stringify({
+            id: `usr-${tenantId}`,
+            tenant_id: tenantId,
+            name: fullName,
+            email: form.email.trim(),
+            role: 'Tenant Owner',
+            password_hash: form.password
+          })
+        });
+
+        // 3. POST branch to PostgreSQL
+        await fetch('/api/branches', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-tenant-id': 'tenant-admin-system' },
+          body: JSON.stringify({
+            id: branchId,
+            tenant_id: tenantId,
+            name: form.branchName || 'Main HQ Branch',
+            location: '',
+            is_headquarters: true
+          })
+        });
+
+        // 4. Commit to central SuperAdminService (cloudDb + audit)
         await SuperAdminService.createTenant({
           id: tenantId,
           name: form.businessName.trim(),
@@ -435,7 +549,7 @@ export const TenantManagement: React.FC = () => {
           business_type: form.businessType
         }, adminContext);
 
-        // 2. Also provision local workspace
+        // 5. Provision local workspace
         await tenantProvisioningService.provisionCleanTenant(
           tenantId,
           branchId,
@@ -445,8 +559,23 @@ export const TenantManagement: React.FC = () => {
           { plan: form.planName as any, status: form.status === 'TRIAL' ? 'Trial' : 'Active', industry: form.businessType, branchName: form.branchName || 'Main HQ Branch' }
         );
 
-        alert(`✅ Tenant "${form.businessName}" (${form.businessType}) committed to central production database and onboarded!`);
+        // 6. Refresh live PostgreSQL list
+        await fetchPgTenants();
+
+        alert(`✅ Tenant "${form.businessName}" (${form.businessType}) provisioned and registered in PostgreSQL!`);
       } else if (panelMode === 'edit' && selectedTenant) {
+        // Update PostgreSQL
+        await fetch(`/api/tenants/${selectedTenant.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', 'x-tenant-id': 'tenant-admin-system' },
+          body: JSON.stringify({
+            name: form.businessName.trim(),
+            email: form.email.trim(),
+            business_type: form.businessType
+          })
+        });
+
+        // Update local Dexie
         await db.tenants.update(selectedTenant.id, {
           name: form.businessName.trim(),
           email: form.email.trim(),
@@ -460,13 +589,31 @@ export const TenantManagement: React.FC = () => {
           await cloudDb.cloud_tenants.put({ ...cloudT, name: form.businessName.trim(), business_type: form.businessType, updated_at: Date.now() });
         }
 
-        alert(`✅ Tenant "${form.businessName}" updated in central database!`);
+        await fetchPgTenants();
+        alert(`✅ Tenant "${form.businessName}" updated in PostgreSQL!`);
       }
       closePanel();
     } catch (err: any) {
       alert(`Error: ${err.message || 'Failed to save tenant.'}`);
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  // Verify Tenant Action (PENDING → VERIFIED)
+  const handleVerifyTenant = async (tenant: any) => {
+    try {
+      await fetch(`/api/tenants/${tenant.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'x-tenant-id': 'tenant-admin-system' },
+        body: JSON.stringify({ verification_status: 'VERIFIED' })
+      });
+      // Also update cloudDb
+      const cloudT = await cloudDb.cloud_tenants.get(tenant.id);
+      if (cloudT) await cloudDb.cloud_tenants.put({ ...cloudT, verification_status: 'VERIFIED' });
+      await fetchPgTenants();
+    } catch (e) {
+      console.warn('Verify failed:', e);
     }
   };
 
@@ -515,7 +662,14 @@ export const TenantManagement: React.FC = () => {
     if (window.confirm(`${isSuspended ? 'Activate' : 'Suspend'} tenant "${tenant.name}"?`)) {
       await SuperAdminService.updateTenantStatus(tenant.id, nextStatus as any, adminContext);
       await db.tenants.update(tenant.id, { status: nextStatus as any });
-      alert(`✅ Tenant status updated to ${nextStatus} in central database.`);
+      // Sync to PostgreSQL
+      await fetch(`/api/tenants/${tenant.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'x-tenant-id': 'tenant-admin-system' },
+        body: JSON.stringify({ status: nextStatus })
+      }).catch(console.warn);
+      await fetchPgTenants();
+      alert(`✅ Tenant status updated to ${nextStatus} in PostgreSQL.`);
     }
   };
 
@@ -531,7 +685,13 @@ export const TenantManagement: React.FC = () => {
     if (window.confirm(`⚠️ CONFIRM DELETION\nSoft delete organization "${tenant.name}" in central database?`)) {
       await SuperAdminService.softDeleteTenant(tenant.id, adminContext);
       await db.tenants.delete(tenant.id);
-      alert(`✅ Tenant "${tenant.name}" soft deleted with audit trail in central database.`);
+      // Soft delete in PostgreSQL
+      await fetch(`/api/tenants/${tenant.id}`, {
+        method: 'DELETE',
+        headers: { 'x-tenant-id': 'tenant-admin-system' }
+      }).catch(console.warn);
+      await fetchPgTenants();
+      alert(`✅ Tenant "${tenant.name}" soft deleted with audit trail in PostgreSQL.`);
     }
   };
 
@@ -623,6 +783,23 @@ export const TenantManagement: React.FC = () => {
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
             Manage SaaS tenants, subscription lifecycles, operational hierarchy, and platform access.
           </p>
+          <div className="flex items-center gap-2 mt-2">
+            <span className={`inline-flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1 rounded-full border ${
+              isFetchingPg
+                ? 'bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-950/20 dark:border-amber-800/40'
+                : 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/20 dark:border-emerald-800/40'
+            }`}>
+              <Globe className={`h-3 w-3 ${isFetchingPg ? 'animate-spin' : ''}`} />
+              {isFetchingPg ? 'Syncing PostgreSQL...' : `${pgTenants.length} from PostgreSQL`}
+            </span>
+            <button
+              onClick={fetchPgTenants}
+              disabled={isFetchingPg}
+              className="text-[10px] font-bold text-slate-400 hover:text-primary transition disabled:opacity-40"
+            >
+              Refresh ↺
+            </button>
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <div className="inline-flex rounded-xl border border-slate-200 dark:border-darkbg-border bg-slate-50 dark:bg-darkbg p-1 shadow-sm text-xs font-bold">
@@ -1024,6 +1201,17 @@ export const TenantManagement: React.FC = () => {
                             >
                               <Info className="h-3.5 w-3.5 text-primary" />
                             </button>
+                            {(t.verification_status === 'PENDING' || t.verification_status === 'UNVERIFIED') && (
+                              <Button
+                                variant="primary"
+                                size="sm"
+                                className="h-7 text-[10px] !bg-emerald-600 hover:!bg-emerald-700 border-0"
+                                onClick={() => handleVerifyTenant(t)}
+                                title="Mark tenant as verified"
+                              >
+                                <ShieldCheck className="h-3 w-3 mr-0.5" /> Verify
+                              </Button>
+                            )}
                             <Button variant="secondary" size="sm" className="h-7 text-[10px]" onClick={() => setDetailTenantId(t.id)}>
                               <ExternalLink className="h-3 w-3 mr-1" /> View
                             </Button>
