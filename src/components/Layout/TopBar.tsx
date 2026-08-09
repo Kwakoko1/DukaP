@@ -431,15 +431,17 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenSearch }) => {
             className="flex h-9 sm:h-10 w-full items-center space-x-2 rounded-lg border border-slate-200 bg-slate-50 px-3 text-xs sm:text-sm text-slate-400 hover:bg-slate-100 dark:border-darkbg-border dark:bg-darkbg/50 dark:hover:bg-darkbg"
           >
             <Search className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-            <span className="flex-1 text-left truncate">Search products, customers, transactions...</span>
+            <span className="flex-1 text-left truncate">
+              {isSuperAdminView ? 'Search platform tenants, subscriptions...' : 'Search products, customers, transactions...'}
+            </span>
             <span className="hidden sm:inline-block rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500 dark:bg-darkbg-border dark:text-slate-400">Ctrl+K</span>
           </button>
         </div>
 
         {/* Right Actions */}
         <div className="flex items-center space-x-1.5 sm:space-x-3 shrink-0">
-          {/* DESKTOP ONLY: Industry Module Selector */}
-          {displayedModules.length > 0 && (
+          {/* DESKTOP ONLY: Industry Module Selector (Tenant View Only) */}
+          {!isSuperAdminView && displayedModules.length > 0 && (
             <div className="relative hidden lg:block" ref={moduleContainerRef}>
               <button
                 onClick={() => setShowModuleDropdown(!showModuleDropdown)}
@@ -475,8 +477,8 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenSearch }) => {
             </div>
           )}
 
-          {/* DESKTOP ONLY: Branch Context Selector */}
-          {(uniqueBranchesCount > 0 || currentBranch) && (
+          {/* DESKTOP ONLY: Branch Context Selector (Tenant View Only) */}
+          {!isSuperAdminView && (uniqueBranchesCount > 0 || currentBranch) && (
             <div className="relative hidden md:block" ref={branchContainerRef}>
               <button
                 onClick={() => setShowBranchDropdown(!showBranchDropdown)}

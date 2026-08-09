@@ -35,7 +35,7 @@ import { Dialog, Badge } from './components/UI/custom-ui';
 
 const DukaPosAppContent: React.FC = () => {
   const { activeTab, setActiveTab, setActiveModule } = useModule();
-  const { toggleTheme, role, isSuperAdminView, user, currentTenant, isInitializing } = useAuth();
+  const { toggleTheme, role, isSuperAdminView, user, currentTenant, isInitializing, impersonatedTenant } = useAuth();
   const { isOnline, syncFromServer } = useSyncState();
   const sub = useSubscription();
 
@@ -642,6 +642,27 @@ const DukaPosAppContent: React.FC = () => {
 
   if (!user) {
     return <AuthGateway />;
+  }
+
+  // ─── Super Admin Standalone CPanel Check ─────────────────────────────────
+  // When Super Admin is active, render SuperAdminCPanel directly as a standalone platform console
+  // without tenant TopBar, tenant branch switcher, tenant industry selector, or tenant Sidebar.
+  const isSuperAdminConsoleActive = 
+    (role === 'Super Admin' || user?.role === 'Super Admin') && 
+    (isSuperAdminView || activeTab === 'Super Admin' || activeTab === 'Super Admin CPanel' || activeTab === 'System Super Admin') &&
+    !impersonatedTenant;
+
+  if (isSuperAdminConsoleActive) {
+    return (
+      <Suspense fallback={
+        <div className="flex flex-col items-center justify-center min-h-screen bg-slate-950 text-white font-sans">
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-500 border-t-transparent mb-4"></div>
+          <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Loading Super Admin Control Panel...</p>
+        </div>
+      }>
+        <SuperAdminCPanel initialTab={activeTab} />
+      </Suspense>
+    );
   }
 
   return (
