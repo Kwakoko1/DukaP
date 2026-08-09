@@ -205,6 +205,18 @@ export class SuperAdminService {
    */
   static async purgeTenantData(tenantId: string): Promise<void> {
     try {
+      // 1. Record tenantId in persistent localStorage tombstone set
+      if (typeof window !== 'undefined') {
+        try {
+          const raw = localStorage.getItem('DUKAPOS_DELETED_TENANTS') || '[]';
+          const list: string[] = JSON.parse(raw);
+          if (!list.includes(tenantId)) {
+            list.push(tenantId);
+            localStorage.setItem('DUKAPOS_DELETED_TENANTS', JSON.stringify(list));
+          }
+        } catch (_) {}
+      }
+
       await db.transaction('rw', [db.tenants, db.branches, db.users, db.products, db.productVariants, db.orders, db.categories, db.brands, db.stockLedger, db.cashDrawers, db.expenses], async () => {
         await db.tenants.delete(tenantId);
         await db.branches.where('tenant_id').equals(tenantId).delete();

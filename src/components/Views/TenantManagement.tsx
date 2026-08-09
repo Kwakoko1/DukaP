@@ -112,7 +112,7 @@ const formatTenantRegistrationDate = (ts?: any) => {
 };
 
 export const TenantManagement: React.FC = () => {
-  const { user, currentTenant, setImpersonatedTenant } = useAuth();
+  const { user, currentTenant, setImpersonatedTenant, isSuperAdminView } = useAuth();
   const { setActiveTab, enabledModules } = useModule();
 
   // Navigation & View States
@@ -141,7 +141,17 @@ export const TenantManagement: React.FC = () => {
   const [pgTenants, setPgTenants] = useState<any[]>([]);
   const [isFetchingPg, setIsFetchingPg] = useState(false);
 
-  const [deletedTenantIds, setDeletedTenantIds] = useState<Set<string>>(() => new Set());
+  const getPersistentDeletedTenantIds = (): Set<string> => {
+    if (typeof window === 'undefined') return new Set();
+    try {
+      const raw = localStorage.getItem('DUKAPOS_DELETED_TENANTS') || '[]';
+      return new Set(JSON.parse(raw));
+    } catch {
+      return new Set();
+    }
+  };
+
+  const [deletedTenantIds, setDeletedTenantIds] = useState<Set<string>>(() => getPersistentDeletedTenantIds());
 
   const fetchPgTenants = React.useCallback(async () => {
     setIsFetchingPg(true);
@@ -167,10 +177,12 @@ export const TenantManagement: React.FC = () => {
     return () => clearInterval(interval);
   }, [fetchPgTenants]);
 
-  // Auto-sync active dev workspace currentTenant to cloudDb and local db.tenants
+  // Auto-sync active dev workspace currentTenant to cloudDb and local db.tenants (ONLY when NOT in Super Admin view)
   React.useEffect(() => {
+    if (isSuperAdminView) return; // Do NOT auto-seed or resurrect currentTenant into DB when in Super Admin View!
     const curT = currentTenant as any;
     if (curT && curT.id) {
+      if (deletedTenantIds.has(curT.id)) return; // Never auto-sync a deleted tenant!
       const tenantData = {
         id: curT.id,
         name: curT.name || 'Local Dev Tenant',
@@ -213,7 +225,7 @@ export const TenantManagement: React.FC = () => {
         }
       }).catch(console.warn);
     }
-  }, [currentTenant]);
+  }, [currentTenant, isSuperAdminView, deletedTenantIds]);
 
   // Live queries for auxiliary tenant counts and local Dexie tenant registry
   const cloudTenants = useLiveQuery(() => cloudDb.cloud_tenants.toArray(), []) || [];
@@ -313,9 +325,9 @@ export const TenantManagement: React.FC = () => {
       }
     }
 
-    // 4. Current session tenant as fallback
+    // 4. Current session tenant as fallback (ONLY in tenant view, NEVER in Super Admin view)
     const curT = currentTenant as any;
-    if (curT && curT.id && !map.has(curT.id) && !deletedTenantIds.has(curT.id)) {
+    if (!isSuperAdminView && curT && curT.id && !map.has(curT.id) && !deletedTenantIds.has(curT.id)) {
       map.set(curT.id, {
         id: curT.id,
         name: curT.name || 'Current Tenant',
@@ -744,12 +756,13 @@ export const TenantManagement: React.FC = () => {
     if (window.confirm('⚠️ PURGE TEST DATA\nAre you sure you want to remove all test data tenants from Super Admin Cpanel? This will purge test tenants like tenant-101, tenant-102, tenant-103, tenant-106, and test workspaces.')) {
       try {
         const allTenants = await db.tenants.toArray();
-        const seedIds = ['tenant-101', 'tenant-102', 'tenant-103', 'tenant-104', 'tenant-105', 'tenant-106'];
+        const seedIds = ['tenant-101', 'tenant-102', 'tenant-103', 'tenant-104', 'tenant-105', 'tenant-106', 'tenant-bravados'];
         const seedTenants = allTenants.filter(t => 
           seedIds.includes(t.id) || 
           t.id.endsWith('_demo') || 
           t.name.toLowerCase().includes('demo') || 
           t.name.toLowerCase().includes('acme') || 
+          t.name.toLowerCase().includes('bravados') || 
           t.name.toLowerCase().includes('arusha chemist') || 
           t.name.toLowerCase().includes('dodoma plaza') || 
           t.name.toLowerCase().includes('bongo liqueur') || 
@@ -758,12 +771,11 @@ export const TenantManagement: React.FC = () => {
         );
 
         for (const t of seedTenants) {
-          await db.tenants.delete(t.id);
-          await db.branches.where('tenant_id').equals(t.id).delete();
-          await db.users.where('tenant_id').equals(t.id).delete();
-          await db.tenantSubscriptions.where('tenant_id').equals(t.id).delete();
+          await SuperAdminService.purgeTenantData(t.id);
+          setDeletedTenantIds(prev => new Set(prev).add(t.id));
         }
 
+        await fetchPgTenants();
         alert(`✅ Cleaned out ${seedTenants.length} test tenants from Super Admin Cpanel.`);
       } catch (err: any) {
         alert(`Error purging test data: ${err.message}`);
