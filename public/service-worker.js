@@ -59,7 +59,24 @@ self.addEventListener('fetch', (event) => {
           if (event.request.mode === 'navigate') {
             return caches.match('/index.html');
           }
-        });
+        })
     })
   );
+});
+
+// Native Background Sync API Event Handler
+self.addEventListener('sync', (event) => {
+  if (event.tag === 'dukapos-sync-queue') {
+    event.waitUntil(
+      fetch('/api/sync/push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Background-Sync': 'true' },
+        body: JSON.stringify({ trigger: 'sw-background-sync', timestamp: Date.now() })
+      }).then(() => {
+        console.info('[ServiceWorker] Background sync queue flush completed successfully.');
+      }).catch((err) => {
+        console.warn('[ServiceWorker] Background sync queue flush postponed:', err);
+      })
+    );
+  }
 });

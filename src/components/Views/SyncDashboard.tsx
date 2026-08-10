@@ -92,6 +92,69 @@ export const SyncDashboard: React.FC = () => {
   const pendingQueue = queueItems.filter(i => i.status === 'Pending' || i.status === 'Processing');
   const failedQueue = queueItems.filter(i => i.status === 'Failed');
   const completedQueue = queueItems.filter(i => i.status === 'Completed');
+  const deadLetterQueue = queueItems.filter(i => i.status === 'DeadLetter' || (i.retry_count || 0) >= 10);
+
+  const [selectedDLQItem, setSelectedDLQItem] = useState<any>(null);
+  const [editPayloadJson, setEditPayloadJson] = useState<string>('');
+  const [showDLQModal, setShowDLQModal] = useState<boolean>(false);
+
+  const handleRetryDLQItem = async (item: any) => {
+    if (!item?.id) return;
+    try {
+      await db.syncQueue.update(item.id, {
+        status: 'Pending' as any,
+        retry_count: 0,
+        last_attempt: null,
+        error: null
+      });
+      alert(`✅ Item #${item.id} (${item.entity}) reset to Pending. Triggering sync...`);
+      await syncData(true);
+    } catch (err: any) {
+      alert(`Error retrying item: ${err.message}`);
+    }
+  };
+
+  const handleSaveAndRetryDLQ = async () => {
+    if (!selectedDLQItem?.id) return;
+    try {
+      const parsedPayload = JSON.parse(editPayloadJson);
+      await db.syncQueue.update(selectedDLQItem.id, {
+        payload: parsedPayload,
+        status: 'Pending' as any,
+        retry_count: 0,
+        last_attempt: null,
+        error: null
+      });
+      setShowDLQModal(false);
+      setSelectedDLQItem(null);
+      alert(`✅ Payload updated for Item #${selectedDLQItem.id} and reset to Pending. Triggering sync...`);
+      await syncData(true);
+    } catch (err: any) {
+      alert(`Invalid JSON payload: ${err.message}`);
+    }
+  };
+
+  const handlePurgeAllDLQQueue = async () => {
+    if (!confirm('Are you sure you want to purge all Dead-Letter / Failed operations from the sync queue?')) return;
+    try {
+      const dlqIds = deadLetterQueue.map(i => i.id).filter(Boolean) as number[];
+      for (const id of dlqIds) {
+        await db.syncQueue.delete(id);
+      }
+      alert(`✅ Purged ${dlqIds.length} Dead-Letter queue operation(s).`);
+    } catch (err: any) {
+      alert(`Error purging DLQ: ${err.message}`);
+    }
+  };
+
+  const handleRunStoragePrune = async () => {
+    try {
+      const res = await productionSyncEngine.enforceStorageQuotaGuard();
+      alert(`✅ Storage Quota Monitor:\nUsage: ${res.usageMb} MB / Quota: ${res.quotaMb} MB\nPruned ${res.prunedCount} old completed queue records.`);
+    } catch (err: any) {
+      alert(`Storage prune error: ${err.message}`);
+    }
+  };
 
   const handleManualSync = async () => {
     await syncData(true);
@@ -373,6 +436,77 @@ export const SyncDashboard: React.FC = () => {
             </div>
           )}
 
+          {/* Dead-Letter Queue (DLQ) Remediation Console */}
+          {deadLetterQueue.length > 0 && (
+            <Card className="border border-rose-200 dark:border-rose-950/40 bg-rose-50/20 dark:bg-rose-950/10">
+              <CardHeader className="pb-3 border-b border-rose-100 dark:border-rose-950/30">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="h-5 w-5 text-rose-500 animate-pulse" />
+                    <div>
+                      <CardTitle className="text-sm font-bold text-rose-700 dark:text-rose-400">
+                        Dead-Letter Queue (DLQ) Remediation Console
+                      </CardTitle>
+                      <CardDescription className="text-rose-600/80 dark:text-rose-400/70">
+                        {deadLetterQueue.length} operation(s) exceeded 10 max retries and require manual inspection or remediation.
+                      </CardDescription>
+                    </div>
+                  </div>
+                  <Button onClick={handlePurgeAllDLQQueue} size="sm" variant="outline" className="text-xs font-bold text-rose-600 border-rose-300 hover:bg-rose-100">
+                    Purge All DLQ Items
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="p-0 overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-rose-100 dark:border-rose-950/30 bg-rose-100/40 dark:bg-rose-950/30 text-rose-700 dark:text-rose-300 font-bold uppercase text-[10px]">
+                      <th className="p-3">ID</th>
+                      <th className="p-3">Entity</th>
+                      <th className="p-3">Operation</th>
+                      <th className="p-3">Error Cause</th>
+                      <th className="p-3">Retries</th>
+                      <th className="p-3 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-rose-100 dark:divide-rose-950/20 font-mono text-[11px]">
+                    {deadLetterQueue.map((dlqItem) => (
+                      <tr key={dlqItem.id} className="hover:bg-rose-100/30 dark:hover:bg-rose-900/10">
+                        <td className="p-3 font-bold text-slate-800 dark:text-slate-200">#{dlqItem.id}</td>
+                        <td className="p-3 font-semibold text-slate-700 dark:text-slate-300">{dlqItem.entity}</td>
+                        <td className="p-3"><Badge variant="warning" className="text-[9px] py-0">{dlqItem.operation}</Badge></td>
+                        <td className="p-3 text-rose-600 dark:text-rose-400 max-w-[200px] truncate" title={dlqItem.error || 'Schema validation error'}>
+                          {dlqItem.error || 'Schema validation failure'}
+                        </td>
+                        <td className="p-3 font-bold text-rose-600">{dlqItem.retry_count || 10}/10</td>
+                        <td className="p-3 text-right flex justify-end gap-1.5">
+                          <button
+                            onClick={() => handleRetryDLQItem(dlqItem)}
+                            className="px-2 py-1 text-[10px] font-bold bg-indigo-600 text-white rounded hover:bg-indigo-700 transition"
+                            title="Reset retry count and force immediate sync"
+                          >
+                            Retry
+                          </button>
+                          <button
+                            onClick={() => {
+                              setSelectedDLQItem(dlqItem);
+                              setEditPayloadJson(JSON.stringify(dlqItem.payload || {}, null, 2));
+                              setShowDLQModal(true);
+                            }}
+                            className="px-2 py-1 text-[10px] font-bold bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-white rounded hover:bg-slate-300 transition"
+                            title="Inspect & edit payload JSON"
+                          >
+                            Edit Payload
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Transactional Outbox Queue Card */}
           <Card>
             <CardHeader className="pb-3 border-b border-slate-100 dark:border-darkbg-border/30">
@@ -564,6 +698,15 @@ export const SyncDashboard: React.FC = () => {
             </CardHeader>
             <CardContent className="p-4 space-y-3">
               <Button
+                onClick={handleRunStoragePrune}
+                variant="outline"
+                className="w-full text-xs font-bold text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 flex items-center justify-center gap-2"
+              >
+                <HardDrive className="h-4 w-4" />
+                Run Storage Quota Auto-Pruning
+              </Button>
+
+              <Button
                 onClick={handlePurgeCache}
                 disabled={isClearingQueue}
                 variant="outline"
@@ -580,6 +723,45 @@ export const SyncDashboard: React.FC = () => {
           </Card>
         </div>
       </div>
+
+      {/* Dead-Letter Queue JSON Editor Modal */}
+      {showDLQModal && selectedDLQItem && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-darkbg-card rounded-2xl p-6 max-w-2xl w-full border border-slate-200 dark:border-darkbg-border shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b pb-3 dark:border-darkbg-border">
+              <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-rose-500" />
+                DLQ Payload Inspector & Remediation (#{selectedDLQItem.id})
+              </h3>
+              <button onClick={() => setShowDLQModal(false)} className="text-slate-400 hover:text-slate-600 text-lg font-bold">✕</button>
+            </div>
+
+            <div className="space-y-2 text-xs">
+              <div className="flex gap-4 font-mono text-[11px] text-slate-500">
+                <span><strong>Entity:</strong> {selectedDLQItem.entity}</span>
+                <span><strong>Operation:</strong> {selectedDLQItem.operation}</span>
+                <span><strong>Retries:</strong> {selectedDLQItem.retry_count || 10}</span>
+              </div>
+              <p className="text-rose-600 font-medium"><strong>Error Cause:</strong> {selectedDLQItem.error || 'Schema validation failure'}</p>
+              
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Edit Payload JSON:</label>
+                <textarea
+                  value={editPayloadJson}
+                  onChange={e => setEditPayloadJson(e.target.value)}
+                  rows={10}
+                  className="w-full font-mono text-xs p-3 rounded-xl border border-slate-300 dark:border-darkbg-border bg-slate-900 text-emerald-400 focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t dark:border-darkbg-border">
+              <Button onClick={() => setShowDLQModal(false)} variant="outline" size="sm">Cancel</Button>
+              <Button onClick={handleSaveAndRetryDLQ} variant="primary" size="sm" className="font-bold">Save Payload & Force Retry</Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -486,6 +486,15 @@ export function useSync() {
     if (isOnlineRef.current) {
       addLog(`Queued [${operation}] on ${entityName}. Auto-syncing...`);
       setTimeout(() => syncData(false), 300);
+
+      // Broadcast real-time sync signal to sibling browser tabs/devices
+      try {
+        if (typeof BroadcastChannel !== 'undefined') {
+          const bc = new BroadcastChannel('dukapos_sync_events');
+          bc.postMessage({ type: 'SYNC_PUSH_SIGNAL', tenantId, entityName, operation, timestamp: Date.now() });
+          bc.close();
+        }
+      } catch (_) {}
     } else {
       addLog(`Offline: Queued [${operation}] on ${entityName}.`);
     }

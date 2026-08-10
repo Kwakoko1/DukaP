@@ -306,6 +306,40 @@ class ProductionSyncEngine {
       deviceSyncId: getOrCreateDeviceId()
     };
   }
+
+  /**
+   * Automatic Storage Quota Monitoring & Auto-Pruning Engine
+   * Prevents IndexedDB QuotaExceededError by monitoring storage usage and pruning completed sync logs older than 14 days.
+   */
+  async enforceStorageQuotaGuard(): Promise<{ usageMb: number; quotaMb: number; prunedCount: number }> {
+    if (typeof navigator === 'undefined' || !('storage' in navigator) || !navigator.storage.estimate) {
+      return { usageMb: 0, quotaMb: 0, prunedCount: 0 };
+    }
+
+    try {
+      const estimate = await navigator.storage.estimate();
+      const usageMb = parseFloat(((estimate.usage || 0) / (1024 * 1024)).toFixed(2));
+      const quotaMb = parseFloat(((estimate.quota || 0) / (1024 * 1024)).toFixed(2));
+
+      let prunedCount = 0;
+      // Auto-prune if storage usage > 100MB or > 70% of storage quota
+      if (usageMb > 100 || (quotaMb > 0 && (usageMb / quotaMb) > 0.7)) {
+        const cutoff = Date.now() - (14 * 24 * 60 * 60 * 1000);
+        prunedCount = await db.syncQueue
+          .where('status').equals('Completed')
+          .and(item => (item.created_at || item.timestamp || 0) < cutoff)
+          .delete();
+        if (prunedCount > 0) {
+          console.info(`[ProductionSyncEngine] Storage Quota Guard pruned ${prunedCount} completed sync queue records.`);
+        }
+      }
+
+      return { usageMb, quotaMb, prunedCount };
+    } catch (e) {
+      console.warn('[ProductionSyncEngine] Storage quota check warning:', e);
+      return { usageMb: 0, quotaMb: 0, prunedCount: 0 };
+    }
+  }
 }
 
 export const productionSyncEngine = new ProductionSyncEngine();

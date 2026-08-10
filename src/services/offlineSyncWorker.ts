@@ -34,7 +34,25 @@ export const offlineSyncWorker = {
       this.triggerSyncNow(tenantId, branchId).catch(() => {});
     }, intervalMs);
 
+    // 3. Register Browser Native Background Sync tag with Service Worker
+    this.registerBackgroundSync();
+
     console.info(`[OfflineSyncWorker] Sync worker active (Interval: ${intervalMs}ms).`);
+  },
+
+  /**
+   * Registers Browser Native Background Sync tag with Service Worker
+   */
+  async registerBackgroundSync() {
+    if (typeof window !== 'undefined' && 'serviceWorker' in navigator && 'SyncManager' in window) {
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        await (reg as any).sync.register('dukapos-sync-queue');
+        console.info('[OfflineSyncWorker] Native Service Worker Background Sync tag registered.');
+      } catch (err) {
+        console.debug('[OfflineSyncWorker] Background sync tag registration notice:', err);
+      }
+    }
   },
 
   /**

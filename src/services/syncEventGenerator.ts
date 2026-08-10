@@ -72,6 +72,23 @@ export function mapOperationToLegacyActionType(operation: SyncOperation): 'INSER
 }
 
 /**
+ * Generates compact field-level delta payload for UPDATE operations
+ * Reduces mobile 2G/3G network data usage by only sending changed fields over the wire.
+ */
+export function computeDeltaPayload(previousState: Record<string, any>, newState: Record<string, any>): Record<string, any> {
+  if (!previousState || typeof previousState !== 'object') return newState;
+  const delta: Record<string, any> = { id: newState.id || newState.id, _isDelta: true };
+  for (const key of Object.keys(newState)) {
+    if (key === 'id' || key === 'tenant_id' || key === 'branch_id') {
+      delta[key] = newState[key];
+    } else if (JSON.stringify(previousState[key]) !== JSON.stringify(newState[key])) {
+      delta[key] = newState[key];
+    }
+  }
+  return delta;
+}
+
+/**
  * Generates and enqueues a persistent Event-Driven SyncItem in IndexedDB
  */
 export async function createSyncEvent(params: CreateSyncEventParams): Promise<SyncItem> {
