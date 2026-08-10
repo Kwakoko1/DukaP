@@ -615,6 +615,23 @@ export const AuthGateway: React.FC = () => {
 
       dbUser.tenant_id = dbUser.tenant_id || dbUser.tenantId;
 
+      // ── Persistent Tombstone Deletion Guard ──
+      const rawDeleted = typeof window !== 'undefined' ? localStorage.getItem('DUKAPOS_DELETED_TENANTS') || '[]' : '[]';
+      const deletedTenantSet = new Set<string>(JSON.parse(rawDeleted));
+      const userTenantId = dbUser.tenant_id;
+
+      if (!dbUser.is_super_admin && dbUser.role !== 'Super Admin') {
+        if (dbUser.status === 'Deleted' || dbUser.deleted_at) {
+          setErrorMsg('Access Denied: Your account has been deactivated or deleted.');
+          return;
+        }
+
+        if (userTenantId && deletedTenantSet.has(userTenantId)) {
+          setErrorMsg('Access Denied: This organization workspace has been permanently deleted.');
+          return;
+        }
+      }
+
       // 2. Resolve roles associated with the user across all tenants
       let roles = await db.userBranchRoles
         .where('user_id')
@@ -630,7 +647,7 @@ export const AuthGateway: React.FC = () => {
       }
 
       // Fallback Layer 2: Search Cloud for userBranchRoles if empty locally
-      if (roles.length === 0) {
+      if (roles.length === 0 && dbUser.tenant_id && !deletedTenantSet.has(dbUser.tenant_id)) {
         try {
           const { data: cloudUbr } = await supabase
             .from('userBranchRoles')
@@ -645,8 +662,8 @@ export const AuthGateway: React.FC = () => {
         }
       }
 
-      // Fallback Layer 3: Auto-heal missing role for registered tenant user/owner
-      if (roles.length === 0 && dbUser.tenant_id) {
+      // Fallback Layer 3: Auto-heal missing role for active non-deleted tenant user/owner
+      if (roles.length === 0 && dbUser.tenant_id && !deletedTenantSet.has(dbUser.tenant_id)) {
         const branchRec = (await db.branches.where('tenant_id').equals(dbUser.tenant_id).first()) || { id: `branch-${dbUser.tenant_id}-hq` };
         
         const healedRole: any = {
@@ -661,74 +678,19 @@ export const AuthGateway: React.FC = () => {
         await db.userBranchRoles.put(healedRole);
         roles = [healedRole];
       }
-
-      // Fallback Layer 4: If tenant_id is missing on user, match against active tenant in DB or Cloud
-      if (roles.length === 0) {
-        let activeTenant: any = (await db.tenants.toArray()).find(t => t.status !== 'ARCHIVED' && t.status !== 'Archived');
-        if (!activeTenant) {
-          try {
-            const { data: cloudTenants } = await supabase.from('tenants').select();
-            if (cloudTenants && cloudTenants.length > 0) {
-              activeTenant = cloudTenants[0];
-              await db.tenants.put(activeTenant as any);
-            }
-          } catch (e) {
-            console.warn('[Auth Login] Cloud tenants query failed:', e);
-          }
-        }
-
-        // Guaranteed Fallback Workspace creation if system has zero tenants
-        if (!activeTenant) {
-          const fallbackTenantId = `tenant-${dbUser.id || Date.now()}`;
-          const fallbackBranchId = `branch-${fallbackTenantId}-hq`;
-          activeTenant = {
-            id: fallbackTenantId,
-            name: `${dbUser.name || 'Business'} Workspace`,
-            status: 'Active',
-            createdAt: Date.now()
-          } as any;
-          const fallbackBranch = {
-            id: fallbackBranchId,
-            tenant_id: fallbackTenantId,
-            name: 'Main HQ Branch',
-            location: 'Main Location',
-            is_active: true
-          } as any;
-          await db.tenants.put(activeTenant as any);
-          await db.branches.put(fallbackBranch as any);
-        }
-
-        if (activeTenant) {
-          let branchRec: any = await db.branches.where('tenant_id').equals(activeTenant.id).first();
-          if (!branchRec) {
-            const cloudB = await cloudDb.cloud_branches.where('tenant_id').equals(activeTenant.id).first();
-            branchRec = cloudB || { id: `branch-${activeTenant.id}-hq`, tenant_id: activeTenant.id, name: 'Main Branch', location: 'Headquarters', is_headquarters: true, status: 'Active', created_at: Date.now() };
-            await db.branches.put(branchRec as any);
-          }
-          const healedRole: any = {
-            id: `ubr-${activeTenant.id}-fallback`,
-            user_id: dbUser.id,
-            tenant_id: activeTenant.id,
-            branch_id: branchRec?.id || `branch-${activeTenant.id}-hq`,
-            industry_id: 'ind-retail',
-            role_id: dbUser.is_super_admin ? 'Super Admin' : 'Business Owner'
-          };
-          await db.userBranchRoles.put(healedRole);
-          roles = [healedRole];
-
-          // Link tenant to user
-          dbUser.tenant_id = activeTenant.id;
-          await db.users.put(dbUser);
-        }
-      }
       
       if (roles.length === 0) {
-        setErrorMsg('User account has no associated workspace roles.');
+        setErrorMsg('Access Denied: User account has no active workspace roles or tenant has been deleted.');
         return;
       }
 
       // Retrieve default/active tenant — check local DB then recover from server/cloudDb
       const defaultTenantId = loginTenantId.trim() || dbUser.tenant_id || (roles[0] && roles[0].tenant_id);
+      if (deletedTenantSet.has(defaultTenantId)) {
+        setErrorMsg('Access Denied: This organization workspace has been permanently deleted.');
+        return;
+      }
+
       let tenant: any = defaultTenantId ? await safeGet(db.tenants, defaultTenantId) : null;
       if (!tenant && defaultTenantId) {
         console.log(`[Auth Login] Local tenant record missing for ${defaultTenantId}. Triggering server recovery...`);
@@ -737,7 +699,7 @@ export const AuthGateway: React.FC = () => {
       if (!tenant && defaultTenantId) {
         // Direct query to central production database cloudDb.cloud_tenants
         const cloudT = await safeGet(cloudDb.cloud_tenants, defaultTenantId);
-        if (cloudT) {
+        if (cloudT && !cloudT.deleted_at && cloudT.status !== 'Deleted' && cloudT.status !== 'Archived') {
           tenant = {
             id: cloudT.id,
             name: cloudT.name,
@@ -751,22 +713,15 @@ export const AuthGateway: React.FC = () => {
           await db.tenants.put(tenant as any);
         }
       }
+
       if (!tenant) {
-        const allLocalTenants = await db.tenants.toArray();
-        if (allLocalTenants.length > 0) {
-          tenant = allLocalTenants[0];
-          dbUser.tenant_id = tenant.id;
-          await db.users.put(dbUser);
-        }
-      }
-      if (!tenant) {
-        setErrorMsg('Associated workspace not found on server.');
+        setErrorMsg('Access Denied: Associated business workspace was not found or has been deleted.');
         return;
       }
 
-      // Enforce soft-delete archive blocking
-      if (tenant.status === 'ARCHIVED' || tenant.status === 'Archived' || tenant.deletedAt || tenant.deleted_at) {
-        setErrorMsg('Workspace Archived. This business account is archived and cannot be logged in.');
+      // Enforce soft-delete archive & deletion blocking
+      if (tenant.status === 'ARCHIVED' || tenant.status === 'Archived' || tenant.status === 'Deleted' || tenant.deletedAt || tenant.deleted_at) {
+        setErrorMsg('Access Denied: This business workspace has been deactivated or deleted.');
         return;
       }
 

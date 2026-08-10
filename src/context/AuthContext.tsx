@@ -137,24 +137,34 @@ const AVAILABLE_BRANCHES: Branch[] = [];
 async function resolveTenantById(tenantId: string): Promise<Tenant | null> {
   if (!tenantId || tenantId.trim() === '') return null;
 
-  if (typeof window !== 'undefined' && localStorage.getItem('DUKAPOS_PRODUCTION_LOCKED') === 'true') {
+  if (typeof window !== 'undefined') {
     try {
-      const dbTenant = await safeGet(db.tenants, tenantId);
-      if (dbTenant) {
-        return {
-          id: dbTenant.id,
-          name: dbTenant.name,
-          plan: (dbTenant.plan as Tenant['plan']) || 'Basic',
-          status: dbTenant.status as Tenant['status']
-        };
+      const rawDeleted = localStorage.getItem('DUKAPOS_DELETED_TENANTS') || '[]';
+      const deletedSet = new Set(JSON.parse(rawDeleted));
+      if (deletedSet.has(tenantId)) {
+        return null;
       }
     } catch (_) {}
-    return null;
+
+    if (localStorage.getItem('DUKAPOS_PRODUCTION_LOCKED') === 'true') {
+      try {
+        const dbTenant = await safeGet(db.tenants, tenantId);
+        if (dbTenant && dbTenant.status !== 'Deleted' && dbTenant.status !== 'Archived' && dbTenant.status !== 'ARCHIVED') {
+          return {
+            id: dbTenant.id,
+            name: dbTenant.name,
+            plan: (dbTenant.plan as Tenant['plan']) || 'Basic',
+            status: dbTenant.status as Tenant['status']
+          };
+        }
+      } catch (_) {}
+      return null;
+    }
   }
 
   try {
     const dbTenant = await safeGet(db.tenants, tenantId);
-    if (dbTenant) {
+    if (dbTenant && dbTenant.status !== 'Deleted' && dbTenant.status !== 'Archived' && dbTenant.status !== 'ARCHIVED') {
       return {
         id: dbTenant.id,
         name: dbTenant.name,
@@ -167,13 +177,15 @@ async function resolveTenantById(tenantId: string): Promise<Tenant | null> {
       const { data: cloudTenants } = await supabase.from('tenants').select('*').eq('id', tenantId);
       if (cloudTenants && cloudTenants.length > 0) {
         const ct = cloudTenants[0];
-        await db.tenants.put(ct);
-        return {
-          id: ct.id,
-          name: ct.name,
-          plan: (ct.plan as Tenant['plan']) || 'Basic',
-          status: ct.status as Tenant['status']
-        };
+        if (!ct.deleted_at && ct.status !== 'Deleted' && ct.status !== 'Archived' && ct.status !== 'ARCHIVED') {
+          await db.tenants.put(ct);
+          return {
+            id: ct.id,
+            name: ct.name,
+            plan: (ct.plan as Tenant['plan']) || 'Basic',
+            status: ct.status as Tenant['status']
+          };
+        }
       }
     } catch (_) {}
 
@@ -397,6 +409,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // Validate non-super-admin tenant context against server and startup integrity rules
         if (session.user && session.user.role !== 'Super Admin') {
           const tenantId = session.user.tenant_id;
+
+          // Immediate tombstone check
+          const rawDeleted = localStorage.getItem('DUKAPOS_DELETED_TENANTS') || '[]';
+          const deletedSet = new Set(JSON.parse(rawDeleted));
+          if (deletedSet.has(tenantId)) {
+            console.warn(`[Auth Startup] Tenant ${tenantId} has been deleted. Clearing active session.`);
+            localStorage.removeItem('dukapos_session');
+            setUserState(null);
+            cleanup();
+            finalizeInit();
+            return;
+          }
           
           tenantHealthMonitor.verifyStartupIntegrity(tenantId).then(async (integrity) => {
             try {
@@ -405,7 +429,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 if (validTenant) {
                   restoreSessionData({ ...session, tenant: validTenant });
                 } else {
-                  restoreSessionData(session);
+                  console.warn(`[Auth Startup] Tenant ${tenantId} missing or deleted. Clearing session.`);
+                  localStorage.removeItem('dukapos_session');
+                  setUserState(null);
                 }
               } else {
                 console.warn(`[Auth Startup] Tenant verification failed: ${integrity.message}. Clearing invalid session cache.`);
@@ -414,14 +440,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               }
             } catch (innerErr) {
               console.error('[Auth Startup] Inner restore error:', innerErr);
-              restoreSessionData(session);
+              localStorage.removeItem('dukapos_session');
+              setUserState(null);
             } finally {
               cleanup();
               finalizeInit();
             }
           }).catch(err => {
             console.error('[Auth Startup] Error verifying tenant integrity:', err);
-            restoreSessionData(session);
+            localStorage.removeItem('dukapos_session');
+            setUserState(null);
             cleanup();
             finalizeInit();
           });
