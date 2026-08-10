@@ -55,21 +55,23 @@ export const BottomNav: React.FC = () => {
   // Tenant Operations Navigation Items
   const isPosActive = [
     'POS', 'New Sale', 'Sales History', 'Returns', 
-    'Counter POS', 'Bar Counter POS', 'Active Tables', 'Open Tabs & Bills', 'Order History'
+    'Counter POS', 'Bar Counter POS', 'Active Tables', 'Open Tabs & Bills', 'Order History', 'Receipts', 'Cash Drawer'
   ].includes(activeTab);
 
   const isInventoryActive = [
     'Inventory', 'Products', 'Categories', 'Categories & Brands', 'Categories & brands',
     'Medicines', 'Stock Sync Engine', 'Stock Sync', 'Stock Ledger Sync',
     'Product Bundles & Kits', 'Product Bundles', 'Bundles & Kits',
-    'Stock Adjustment', 'Stock Transfer', 'Stock Alerts', 'Beverage Inventory'
+    'Stock Adjustment', 'Stock Transfer', 'Stock Alerts', 'Beverage Inventory',
+    'Purchasing', 'Purchase Orders', 'Goods Receipts', 'Suppliers'
   ].includes(activeTab);
 
   const isReportsActive = [
     'Reports', 'Sales', 'Profit', 'Tax', 'Inventory Valuation', 'Stock Valuation', 'Daily Sales Summary', 
     'Fast-Moving Drinks', 'Pour Variance Report', 'Profit Margin Analysis', 'Reports & Analytics',
     'Customers Report', 'Expenses Report', 'Payment Methods', 'Stock Movement', 'Purchasing Report',
-    'Discounts', 'Returns & Refunds', 'Branch Comparison', 'Cashier Performance', 'Receivables Aging'
+    'Discounts', 'Returns & Refunds', 'Branch Comparison', 'Cashier Performance', 'Receivables Aging',
+    'Expenses', 'Customers', 'AI Insights', 'Business Consulting'
   ].includes(activeTab);
 
   const isSettingsActive = [
@@ -77,7 +79,7 @@ export const BottomNav: React.FC = () => {
     'Inventory Rules', 'Tax & Billing', 'Security Policies', 'Terminals & Sessions',
     'Subscriptions & Billing', 'Developer Options', 'User Manual & Guide', 'User Manual',
     'Change Log', 'Plans & Pricing', 'Coupons', 'Grace Periods', 'Features',
-    'Usage Meter', 'Audit Log', 'Employees'
+    'Usage Meter', 'Audit Log', 'Employees', 'Users & Roles', 'Super Admin', 'Release Center', 'Production Control'
   ].includes(activeTab);
 
   const isDashboardActive = activeTab === 'Dashboard';
@@ -120,7 +122,7 @@ export const BottomNav: React.FC = () => {
   return (
     <nav 
       aria-label="Mobile Navigation Footer" 
-      className="fixed bottom-0 inset-x-0 z-40 flex h-16 w-full items-center justify-around border-t border-slate-200/90 bg-white/95 px-2 py-1.5 shadow-2xl backdrop-blur-xl dark:border-darkbg-border dark:bg-darkbg-card/95 md:hidden transition-all"
+      className="fixed bottom-0 inset-x-0 z-40 flex h-16 w-full items-center justify-around border-t border-slate-200/90 bg-white/95 px-2 py-1.5 pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))] shadow-2xl backdrop-blur-xl dark:border-darkbg-border dark:bg-darkbg-card/95 md:hidden transition-all"
     >
       <div className="flex w-full items-center justify-between max-w-full px-1">
         {navItems.map((item) => (
