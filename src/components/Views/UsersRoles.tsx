@@ -575,6 +575,30 @@ export const UsersRoles: React.FC = () => {
       // 5. Delete security profile
       await db.userSecurity.delete(tu.user_id);
 
+      // 6. Record user email in persistent tombstone set to block future logins
+      if (employeeUser?.email && typeof window !== 'undefined') {
+        try {
+          const cleanEmail = employeeUser.email.trim().toLowerCase();
+          const rawEmails = localStorage.getItem('DUKAPOS_DELETED_USER_EMAILS') || '[]';
+          const emailList: string[] = JSON.parse(rawEmails);
+          if (!emailList.includes(cleanEmail)) {
+            emailList.push(cleanEmail);
+            localStorage.setItem('DUKAPOS_DELETED_USER_EMAILS', JSON.stringify(emailList));
+          }
+        } catch (_) {}
+      }
+
+      // 7. Purge from Central Cloud Database and Supabase
+      try {
+        await cloudDb.cloud_users.delete(tu.user_id);
+      } catch (_) {}
+
+      try {
+        await supabase.from('users').delete().eq('id', tu.user_id);
+        await supabase.from('tenantUsers').delete().eq('id', tu.id);
+        await supabase.from('userBranchRoles').delete().eq('user_id', tu.user_id);
+      } catch (_) {}
+
       await logAudit('user.deleted', { user: employeeUser?.name });
       alert(`✅ Profile for ${employeeUser?.name || 'Employee'} deleted successfully.`);
     } catch (err) {
