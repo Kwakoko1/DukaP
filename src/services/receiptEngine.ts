@@ -146,9 +146,24 @@ export async function generateReceiptNumber(
   while (attempts < 10) {
     attempts++;
     const existing = await db.receiptNumberSequences.get(seqId);
-    const nextSeq = (existing?.last_sequence ?? 0) + 1;
+    let nextSeq = (existing?.last_sequence ?? 0) + 1;
 
     try {
+      // Collision prevention loop: ensure candidate number doesn't already exist in db.receipts
+      let candidateNumber = '';
+      while (true) {
+        const paddedSeq = String(nextSeq).padStart(6, '0');
+        candidateNumber = prefix ? `${prefix}-RCPT-${paddedSeq}` : `RCPT-${dateKey}-${paddedSeq}`;
+
+        const collision = await db.receipts
+          .where('receipt_number').equals(candidateNumber)
+          .and(r => r.tenant_id === tenantId)
+          .first();
+
+        if (!collision) break;
+        nextSeq++;
+      }
+
       await db.receiptNumberSequences.put({
         id: seqId,
         tenant_id: tenantId,
@@ -158,11 +173,7 @@ export async function generateReceiptNumber(
         updated_at: Date.now(),
       });
 
-      const paddedSeq = String(nextSeq).padStart(6, '0');
-      if (prefix) {
-        return `${prefix}-RCPT-${paddedSeq}`;
-      }
-      return `RCPT-${dateKey}-${paddedSeq}`;
+      return candidateNumber;
     } catch {
       // Race condition — retry
       await new Promise(r => setTimeout(r, 10 * attempts));
@@ -623,7 +634,32 @@ export async function cancelReceipt(
       await db.orders.update(orderIdToCancel, {
         status: 'Cancelled',
       });
+      // Enqueue sync event for cancelled order
+      await db.syncQueue.add({
+        tenant_id: receipt.tenant_id,
+        branch_id: receipt.branch_id,
+        entity: 'orders',
+        entity_id: orderIdToCancel,
+        operation: 'UPDATE',
+        payload: { id: orderIdToCancel, status: 'Cancelled', tenant_id: receipt.tenant_id },
+        status: 'Pending',
+        created_at: now,
+        priority: 1,
+      } as any);
     }
+
+    // Enqueue sync event for cancelled receipt
+    await db.syncQueue.add({
+      tenant_id: receipt.tenant_id,
+      branch_id: receipt.branch_id,
+      entity: 'receipts',
+      entity_id: receiptId,
+      operation: 'UPDATE',
+      payload: { ...receipt, status: 'Cancelled', cancellation_reason: reason, updated_at: now },
+      status: 'Pending',
+      created_at: now,
+      priority: 1,
+    } as any);
 
     // 3. Restore Stock & Record Stock Movement Reversals
     for (const item of items) {
@@ -1068,12 +1104,25 @@ export async function ensureReceiptsForOrders(tenantId: string, branchId?: strin
     const orders = await db.orders.where('tenant_id').equals(tenantId).toArray();
     const existingReceipts = await db.receipts.where('tenant_id').equals(tenantId).toArray();
     const existingMap = new Set(
-      existingReceipts.map(r => r.id).concat(existingReceipts.map(r => r.transaction_id || '')).filter(Boolean)
+      existingReceipts.map(r => r.id)
+        .concat(existingReceipts.map(r => r.transaction_id || ''))
+        .concat(existingReceipts.map(r => r.original_receipt_id || ''))
+        .filter(Boolean)
     );
 
     let createdCount = 0;
     for (const order of orders) {
-      if (order.status === 'Cancelled') continue;
+      if (order.status === 'Cancelled' || order.status === 'Voided') continue;
+
+      // Check if a matching receipt exists that was cancelled or voided
+      const matchingReceipt = existingReceipts.find(
+        r => r.id === order.id || r.transaction_id === order.id || r.original_receipt_id === order.id
+      );
+      if (matchingReceipt && (matchingReceipt.status === 'Cancelled' || matchingReceipt.status === 'Voided')) {
+        await db.orders.update(order.id, { status: 'Cancelled' });
+        continue;
+      }
+
       if (!existingMap.has(order.id)) {
         try {
           await createReceipt({

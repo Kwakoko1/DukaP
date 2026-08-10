@@ -487,7 +487,22 @@ export const Receipts: React.FC<ReceiptsProps> = ({ initialTab = 'history' }) =>
         x.payment_method.toLowerCase().includes(q)
       );
     }
-    return r;
+
+    // Deduplicate by receipt_number (preferring cancelled/voided status or latest updated_at)
+    const uniqueMap = new Map<string, Receipt>();
+    for (const item of r) {
+      const existing = uniqueMap.get(item.receipt_number);
+      if (!existing) {
+        uniqueMap.set(item.receipt_number, item);
+      } else {
+        if (item.status === 'Cancelled' || item.status === 'Voided') {
+          uniqueMap.set(item.receipt_number, item);
+        } else if ((item.updated_at || item.created_at) > (existing.updated_at || existing.created_at)) {
+          uniqueMap.set(item.receipt_number, item);
+        }
+      }
+    }
+    return Array.from(uniqueMap.values());
   }, [allReceipts, currentBranch?.id, histStatus, histPayment, histDateFrom, histDateTo, histSearch]);
 
   const totalPages = Math.ceil(filteredReceipts.length / PAGE_SIZE);

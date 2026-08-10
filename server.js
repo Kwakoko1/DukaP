@@ -1247,6 +1247,26 @@ const server = http.createServer(async (req, res) => {
             }
 
             processedIds.push(op.id || recordId);
+          } else if (entity === 'orders') {
+            await sql`
+              INSERT INTO orders (id, tenant_id, branch_id, total, status, payment_method, created_at, updated_at)
+              VALUES (${recordId}, ${opTenant}, ${payload.branch_id || ''}, ${payload.total || 0}, ${payload.status || 'Completed'}, ${payload.paymentMethod || payload.payment_method || 'Cash'}, ${payload.timestamp || payload.created_at || now}, ${now})
+              ON CONFLICT (id) DO UPDATE SET
+                status = EXCLUDED.status,
+                updated_at = ${now};
+            `.catch(() => {});
+            processedIds.push(op.id || recordId);
+          } else if (entity === 'receipts') {
+            await sql`
+              INSERT INTO receipts (id, tenant_id, branch_id, receipt_number, total, status, created_at, updated_at)
+              VALUES (${recordId}, ${opTenant}, ${payload.branch_id || ''}, ${payload.receipt_number || recordId}, ${payload.total || 0}, ${payload.status || 'Completed'}, ${payload.created_at || now}, ${now})
+              ON CONFLICT (id) DO UPDATE SET
+                status = EXCLUDED.status,
+                updated_at = ${now};
+            `.catch(() => {});
+            processedIds.push(op.id || recordId);
+          } else {
+            processedIds.push(op.id || recordId);
           }
         }
 
