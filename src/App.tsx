@@ -9,6 +9,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { TopBar } from './components/Layout/TopBar';
 import { Sidebar } from './components/Layout/Sidebar';
 import { BottomNav } from './components/Layout/BottomNav';
+import { AppVersionFooter } from './components/Layout/AppVersionFooter';
 import { ToastProvider } from './components/UI/Toast';
 import { EmptyState } from './components/UI/EmptyState';
 
@@ -705,6 +706,9 @@ const DukaPosAppContent: React.FC = () => {
               {renderActiveView()}
             </div>
           </Suspense>
+
+          {/* Global App Version Footer — visible at the bottom of all views */}
+          <AppVersionFooter className="mt-8 pt-6 border-t border-slate-200/60 dark:border-darkbg-border/60" />
         </main>
       </div>
 
