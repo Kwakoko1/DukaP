@@ -165,7 +165,7 @@ export type SyncOperation =
   | 'EXPENSE'
   | 'ATTACHMENT';
 
-export type SyncStatus = 'Pending' | 'Syncing' | 'Completed' | 'Failed' | 'Conflict' | 'Cancelled' | 'Processing';
+export type SyncStatus = 'Pending' | 'Syncing' | 'Completed' | 'Failed' | 'Conflict' | 'Cancelled' | 'Processing' | 'DeadLetter';
 
 export interface SyncItem {
   id?: number;

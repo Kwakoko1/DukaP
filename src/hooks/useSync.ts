@@ -155,112 +155,124 @@ export function useSync() {
       const changes = data.changes || {};
       let totalDownloaded = 0;
 
-      // 1. Ingest Products (handling soft deletes and pending locks)
-      if (Array.isArray(changes.products)) {
-        for (const sp of changes.products) {
-          if (sp.deletedAt || sp.deleted_at || sp.is_deleted) {
-            await db.products.delete(sp.id);
-            continue;
-          }
-          const existing = await db.products.get(sp.id);
-          if (existing && existing.syncStatus === 'PENDING') continue;
-          const localProd = mapProductToLocal({ ...sp, syncStatus: 'SYNCED' });
-          if (existing) {
-            localProd.stock = existing.stock;
-          }
-          await db.products.put(localProd);
-          totalDownloaded++;
-        }
-      }
-
-      // 2. Ingest Variants
-      const incomingVariants = changes.productVariants || changes.variants;
-      if (Array.isArray(incomingVariants)) {
-        for (const sv of incomingVariants) {
-          if (sv.deletedAt || sv.deleted_at || sv.is_deleted) {
-            await db.productVariants.delete(sv.id);
-            continue;
-          }
-          const existing = await db.productVariants.get(sv.id);
-          if (!existing || existing.syncStatus !== 'PENDING') {
-            const localVariant = { ...sv, syncStatus: 'SYNCED', isSynced: 1 };
-            if (existing) {
-              localVariant.stock = existing.stock;
+      // Wrap all entity ingestions inside a single Dexie transaction for maximum performance
+      await db.transaction('rw', [
+        db.products, db.productVariants, db.categories, db.brands,
+        db.customers, db.suppliers, db.orders, db.stockLedger
+      ], async () => {
+        // 1. Ingest Products (handling soft deletes and pending locks)
+        if (Array.isArray(changes.products)) {
+          for (const sp of changes.products) {
+            if (sp.deletedAt || sp.deleted_at || sp.is_deleted) {
+              await db.products.delete(sp.id);
+              continue;
             }
-            await db.productVariants.put(localVariant);
+            const existing = await db.products.get(sp.id);
+            if (existing && existing.syncStatus === 'PENDING') continue;
+            const localProd = mapProductToLocal({ ...sp, syncStatus: 'SYNCED' });
+            if (existing) {
+              localProd.stock = existing.stock;
+            }
+            await db.products.put(localProd);
+            totalDownloaded++;
           }
         }
-      }
 
-      // 3. Ingest Categories
-      if (Array.isArray(changes.categories)) {
-        for (const cat of changes.categories) {
-          if (cat.deletedAt || cat.deleted_at || cat.is_deleted) {
-            await db.categories.delete(cat.id);
-            continue;
-          }
-          await db.categories.put({ ...cat, syncStatus: 'SYNCED' } as any);
-        }
-      }
-
-      // 3.5. Ingest Brands
-      if (Array.isArray(changes.brands)) {
-        for (const brand of changes.brands) {
-          if (brand.deletedAt || brand.deleted_at || brand.is_deleted) {
-            await db.brands.delete(brand.id);
-            continue;
-          }
-          await db.brands.put({ ...brand, syncStatus: 'SYNCED' } as any);
-        }
-      }
-
-      // 4. Ingest Customers
-      if (Array.isArray(changes.customers)) {
-        for (const sc of changes.customers) {
-          if (sc.deletedAt || sc.deleted_at || sc.is_deleted) {
-            await db.customers.delete(sc.id);
-            continue;
-          }
-          const existing = await db.customers.get(sc.id) as any;
-          if (!existing || existing.syncStatus !== 'PENDING') {
-            await db.customers.put({ ...sc, syncStatus: 'SYNCED' } as any);
+        // 2. Ingest Variants
+        const incomingVariants = changes.productVariants || changes.variants;
+        if (Array.isArray(incomingVariants)) {
+          for (const sv of incomingVariants) {
+            if (sv.deletedAt || sv.deleted_at || sv.is_deleted) {
+              await db.productVariants.delete(sv.id);
+              continue;
+            }
+            const existing = await db.productVariants.get(sv.id);
+            if (!existing || existing.syncStatus !== 'PENDING') {
+              const localVariant = { ...sv, syncStatus: 'SYNCED', isSynced: 1 };
+              if (existing) {
+                localVariant.stock = existing.stock;
+              }
+              await db.productVariants.put(localVariant);
+            }
           }
         }
-      }
 
-      // 5. Ingest Suppliers
-      if (Array.isArray(changes.suppliers)) {
-        for (const sup of changes.suppliers) {
-          if (sup.deletedAt || sup.deleted_at || sup.is_deleted) {
-            await db.suppliers.delete(sup.id);
-            continue;
-          }
-          const existing = await db.suppliers.get(sup.id);
-          if (!existing || (existing as any).syncStatus !== 'PENDING') {
-            await db.suppliers.put({ ...sup, syncStatus: 'SYNCED' } as any);
+        // 3. Ingest Categories
+        if (Array.isArray(changes.categories)) {
+          for (const cat of changes.categories) {
+            if (cat.deletedAt || cat.deleted_at || cat.is_deleted) {
+              await db.categories.delete(cat.id);
+              continue;
+            }
+            await db.categories.put({ ...cat, syncStatus: 'SYNCED' } as any);
           }
         }
-      }
 
-      // 6. Ingest Orders
-      if (Array.isArray(changes.orders)) {
-        for (const so of changes.orders) {
-          if (so.deletedAt || so.deleted_at || so.is_deleted) {
-            await db.orders.delete(so.id);
-            continue;
-          }
-          const existing = await db.orders.get(so.id);
-          if (!existing || existing.syncStatus !== 'Pending') {
-            await db.orders.put({ ...so, syncStatus: 'Synced' });
+        // 3.5. Ingest Brands
+        if (Array.isArray(changes.brands)) {
+          for (const brand of changes.brands) {
+            if (brand.deletedAt || brand.deleted_at || brand.is_deleted) {
+              await db.brands.delete(brand.id);
+              continue;
+            }
+            await db.brands.put({ ...brand, syncStatus: 'SYNCED' } as any);
           }
         }
-      }
 
-      // 7. Ingest Stock Ledger & Recalculate Stock Balances (Requirement #15)
-      if (Array.isArray(changes.stockLedger) && changes.stockLedger.length > 0) {
-        const affectedItems = new Map<string, Set<string>>(); // productId -> Set of variantIds
+        // 4. Ingest Customers
+        if (Array.isArray(changes.customers)) {
+          for (const sc of changes.customers) {
+            if (sc.deletedAt || sc.deleted_at || sc.is_deleted) {
+              await db.customers.delete(sc.id);
+              continue;
+            }
+            const existing = await db.customers.get(sc.id) as any;
+            if (!existing || existing.syncStatus !== 'PENDING') {
+              await db.customers.put({ ...sc, syncStatus: 'SYNCED' } as any);
+            }
+          }
+        }
+
+        // 5. Ingest Suppliers
+        if (Array.isArray(changes.suppliers)) {
+          for (const sup of changes.suppliers) {
+            if (sup.deletedAt || sup.deleted_at || sup.is_deleted) {
+              await db.suppliers.delete(sup.id);
+              continue;
+            }
+            const existing = await db.suppliers.get(sup.id);
+            if (!existing || (existing as any).syncStatus !== 'PENDING') {
+              await db.suppliers.put({ ...sup, syncStatus: 'SYNCED' } as any);
+            }
+          }
+        }
+
+        // 6. Ingest Orders
+        if (Array.isArray(changes.orders)) {
+          for (const so of changes.orders) {
+            if (so.deletedAt || so.deleted_at || so.is_deleted) {
+              await db.orders.delete(so.id);
+              continue;
+            }
+            const existing = await db.orders.get(so.id);
+            if (!existing || existing.syncStatus !== 'Pending') {
+              await db.orders.put({ ...so, syncStatus: 'Synced' });
+            }
+          }
+        }
+
+        // 7. Ingest Stock Ledger
+        if (Array.isArray(changes.stockLedger) && changes.stockLedger.length > 0) {
+          for (const sle of changes.stockLedger) {
+            await db.stockLedger.put({ ...sle, synced: true, sync_status: 'SYNCED' });
+          }
+        }
+      });
+
+      // Recalculate affected stock balances outside write transaction if stock events were updated
+      if (Array.isArray(changes.stockLedger) && changes.stockLedger.length > 0 && currentTenantId) {
+        const affectedItems = new Map<string, Set<string>>();
         for (const sle of changes.stockLedger) {
-          await db.stockLedger.put({ ...sle, synced: true, sync_status: 'SYNCED' });
           if (sle.product_id) {
             if (!affectedItems.has(sle.product_id)) {
               affectedItems.set(sle.product_id, new Set<string>());
@@ -268,20 +280,18 @@ export function useSync() {
             affectedItems.get(sle.product_id)!.add(sle.variant_id || 'no-variant');
           }
         }
-        if (currentTenantId && affectedItems.size > 0) {
-          for (const [prodId, variantIds] of affectedItems.entries()) {
-            const p = await db.products.get(prodId);
-            if (p) {
-              const branchId = p.branchId || p.branch_id || 'main-branch';
-              for (const varId of variantIds) {
-                const actualVarId = varId === 'no-variant' ? undefined : varId;
-                await stockLedgerSyncEngine.recalculateStockFromEvents(
-                  currentTenantId,
-                  branchId,
-                  prodId,
-                  actualVarId
-                ).catch(() => {});
-              }
+        for (const [prodId, variantIds] of affectedItems.entries()) {
+          const p = await db.products.get(prodId);
+          if (p) {
+            const branchId = p.branchId || p.branch_id || 'main-branch';
+            for (const varId of variantIds) {
+              const actualVarId = varId === 'no-variant' ? undefined : varId;
+              await stockLedgerSyncEngine.recalculateStockFromEvents(
+                currentTenantId,
+                branchId,
+                prodId,
+                actualVarId
+              ).catch(() => {});
             }
           }
         }

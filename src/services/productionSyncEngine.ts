@@ -51,7 +51,9 @@ export function getBackoffDelayMs(retryCount: number): number {
 
 export function shouldAttemptRetry(item: SyncItem): boolean {
   if (item.status === 'Pending') return true;
+  if (item.status === 'DeadLetter' || (item.status as string) === 'PermanentlyFailed') return false;
   if (item.status !== 'Failed') return false;
+  if ((item.retry_count || 0) >= 10) return false;
   if (!item.last_attempt) return true;
 
   const delay = getBackoffDelayMs(item.retry_count || 1);
@@ -218,12 +220,16 @@ class ProductionSyncEngine {
         } catch (err: any) {
           failedCount++;
           const currentRetries = (item.retry_count || 0) + 1;
+          const isDeadLetter = currentRetries >= 10;
           await db.syncQueue.update(item.id, {
-            status: 'Failed' as SyncStatus,
+            status: isDeadLetter ? ('DeadLetter' as any) : ('Failed' as SyncStatus),
             retry_count: currentRetries,
             last_attempt: Date.now(),
             error: err?.message || 'Unknown error',
           });
+          if (isDeadLetter) {
+            console.warn(`[ProductionSyncEngine] Item ${item.id} (${item.entity}) marked as DeadLetter after ${currentRetries} retries.`);
+          }
         }
       }
 

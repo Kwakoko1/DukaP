@@ -23,21 +23,15 @@ export const offlineSyncWorker = {
     // 1. Online reconnection trigger
     if (typeof window !== 'undefined') {
       window.addEventListener('online', () => {
-        console.info('[OfflineSyncWorker] Network reconnected. Flushing sync queues...');
-        this.triggerSyncNow(tenantId, branchId);
-        import('./productionSyncEngine').then(({ productionSyncEngine }) => {
-          productionSyncEngine.processQueue(tenantId).catch(() => {});
-        });
+        console.info('[OfflineSyncWorker] Network reconnected. Flushing all sync queues...');
+        this.triggerSyncNow(tenantId, branchId).catch(() => {});
       });
     }
 
     // 2. Periodic background interval
     syncTimerId = setInterval(() => {
       if (typeof navigator !== 'undefined' && !navigator.onLine) return;
-      this.triggerSyncNow(tenantId, branchId);
-      import('./productionSyncEngine').then(({ productionSyncEngine }) => {
-        productionSyncEngine.processQueue(tenantId).catch(() => {});
-      });
+      this.triggerSyncNow(tenantId, branchId).catch(() => {});
     }, intervalMs);
 
     console.info(`[OfflineSyncWorker] Sync worker active (Interval: ${intervalMs}ms).`);
@@ -55,13 +49,21 @@ export const offlineSyncWorker = {
   },
 
   /**
-   * Triggers an immediate full sync flush
+   * Triggers an immediate full sync flush across CRUD queue and Stock Ledger Outbox
    */
   async triggerSyncNow(tenantId: string, branchId: string): Promise<{ syncedCount: number; failedCount: number }> {
-    if (!tenantId || !branchId) return { syncedCount: 0, failedCount: 0 };
+    if (!tenantId) return { syncedCount: 0, failedCount: 0 };
     try {
-      const res = await stockLedgerSyncEngine.syncPendingEvents(tenantId, branchId);
-      return res;
+      const { productionSyncEngine } = await import('./productionSyncEngine');
+      const prodRes = await productionSyncEngine.processQueue(tenantId);
+      let stockRes = { syncedCount: 0, failedCount: 0 };
+      if (branchId) {
+        stockRes = await stockLedgerSyncEngine.syncPendingEvents(tenantId, branchId);
+      }
+      return {
+        syncedCount: (prodRes.syncedItems || 0) + (stockRes.syncedCount || 0),
+        failedCount: (prodRes.failedItems || 0) + (stockRes.failedCount || 0)
+      };
     } catch (err) {
       console.warn('[OfflineSyncWorker] Sync execution error:', err);
       return { syncedCount: 0, failedCount: 0 };
