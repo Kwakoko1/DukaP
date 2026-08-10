@@ -202,25 +202,75 @@ export class SuperAdminService {
 
   /**
    * Hard deletes a tenant and purges all associated local IndexedDB records & central cloud database entries.
+   * Also revokes and purges all associated employee accounts across all stores & cloud tables.
    */
   static async purgeTenantData(tenantId: string): Promise<void> {
     try {
-      // 1. Record tenantId in persistent localStorage tombstone set
+      // 1. Collect all employee emails and user IDs associated with this tenant
+      const userEmails = new Set<string>();
+      const userIds = new Set<string>();
+
+      try {
+        const localUsers = await db.users.where('tenant_id').equals(tenantId).toArray();
+        for (const u of localUsers) {
+          if (u.email) userEmails.add(u.email.trim().toLowerCase());
+          if (u.id) userIds.add(u.id);
+        }
+      } catch (_) {}
+
+      try {
+        const cloudUsers = await cloudDb.cloud_users.where('tenant_id').equals(tenantId).toArray();
+        for (const u of cloudUsers) {
+          if (u.email) userEmails.add(u.email.trim().toLowerCase());
+          if (u.id) userIds.add(u.id);
+        }
+      } catch (_) {}
+
+      try {
+        const { data: sbUsers } = await supabase.from('users').select('id, email').eq('tenant_id', tenantId);
+        if (sbUsers) {
+          for (const u of sbUsers) {
+            if (u.email) userEmails.add(u.email.trim().toLowerCase());
+            if (u.id) userIds.add(u.id);
+          }
+        }
+      } catch (_) {}
+
+      // 2. Record tenantId and user emails in persistent localStorage tombstones
       if (typeof window !== 'undefined') {
         try {
-          const raw = localStorage.getItem('DUKAPOS_DELETED_TENANTS') || '[]';
-          const list: string[] = JSON.parse(raw);
-          if (!list.includes(tenantId)) {
-            list.push(tenantId);
-            localStorage.setItem('DUKAPOS_DELETED_TENANTS', JSON.stringify(list));
+          const rawTenants = localStorage.getItem('DUKAPOS_DELETED_TENANTS') || '[]';
+          const tenantList: string[] = JSON.parse(rawTenants);
+          if (!tenantList.includes(tenantId)) {
+            tenantList.push(tenantId);
+            localStorage.setItem('DUKAPOS_DELETED_TENANTS', JSON.stringify(tenantList));
           }
+
+          const rawEmails = localStorage.getItem('DUKAPOS_DELETED_USER_EMAILS') || '[]';
+          const emailList: string[] = JSON.parse(rawEmails);
+          userEmails.forEach(email => {
+            if (email && !emailList.includes(email)) {
+              emailList.push(email);
+            }
+          });
+          localStorage.setItem('DUKAPOS_DELETED_USER_EMAILS', JSON.stringify(emailList));
         } catch (_) {}
       }
 
-      await db.transaction('rw', [db.tenants, db.branches, db.users, db.products, db.productVariants, db.orders, db.categories, db.brands, db.stockLedger, db.cashDrawers, db.expenses], async () => {
+      // 3. Purge all tenant data and employee accounts from local Dexie IndexedDB
+      await db.transaction('rw', [
+        db.tenants, db.branches, db.users, db.tenantUsers, db.userBranchRoles, db.tenantUserBranches, db.userSecurity,
+        db.products, db.productVariants, db.orders, db.categories, db.brands, db.stockLedger, db.cashDrawers, db.expenses
+      ], async () => {
         await db.tenants.delete(tenantId);
         await db.branches.where('tenant_id').equals(tenantId).delete();
         await db.users.where('tenant_id').equals(tenantId).delete();
+        await db.tenantUsers.where('tenant_id').equals(tenantId).delete();
+        await db.userBranchRoles.where('tenant_id').equals(tenantId).delete();
+        await db.tenantUserBranches.where('tenant_id').equals(tenantId).delete();
+        for (const uid of Array.from(userIds)) {
+          await db.userSecurity.delete(uid).catch(() => {});
+        }
         await db.products.where('tenant_id').equals(tenantId).delete();
         await db.orders.where('tenant_id').equals(tenantId).delete();
         await db.categories.where('tenant_id').equals(tenantId).delete();
@@ -229,11 +279,30 @@ export class SuperAdminService {
         await db.cashDrawers.where('tenant_id').equals(tenantId).delete();
         await db.expenses.where('tenant_id').equals(tenantId).delete();
       });
+
+      // 4. Purge central Cloud Database entries
       try {
         await cloudDb.cloud_tenants.delete(tenantId);
+        const cUsers = await cloudDb.cloud_users.where('tenant_id').equals(tenantId).toArray();
+        for (const u of cUsers) {
+          await cloudDb.cloud_users.delete(u.id);
+        }
       } catch (_) {}
+
+      // 5. Purge Supabase remote entries
       try {
         await supabase.from('tenants').delete().eq('id', tenantId);
+        await supabase.from('users').delete().eq('tenant_id', tenantId);
+        await supabase.from('userBranchRoles').delete().eq('tenant_id', tenantId);
+        await supabase.from('tenantUsers').delete().eq('tenant_id', tenantId);
+      } catch (_) {}
+
+      // 6. Purge PostgreSQL backend records
+      try {
+        await fetch(`/api/tenants/${tenantId}`, {
+          method: 'DELETE',
+          headers: { 'x-tenant-id': 'tenant-admin-system' }
+        });
       } catch (_) {}
     } catch (e: any) {
       console.warn('[SuperAdminService] purgeTenantData warning:', e);

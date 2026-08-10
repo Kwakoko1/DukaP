@@ -35,6 +35,17 @@ export const tenantProvisioningService = {
       subscribedModules?: string[];
     } = {}
   ): Promise<void> {
+    // Clear owner email tombstone upon tenant re-registration
+    if (typeof window !== 'undefined' && superAdminUser?.email) {
+      try {
+        const cleanEmail = superAdminUser.email.trim().toLowerCase();
+        const rawEmails = localStorage.getItem('DUKAPOS_DELETED_USER_EMAILS') || '[]';
+        const emailList: string[] = JSON.parse(rawEmails);
+        const updated = emailList.filter(e => e !== cleanEmail);
+        localStorage.setItem('DUKAPOS_DELETED_USER_EMAILS', JSON.stringify(updated));
+      } catch (_) {}
+    }
+
     const NOW = Date.now();
     const userId = `usr-${tenantId}-owner`;
     const warehouseId = `warehouse-default-${tenantId}`;

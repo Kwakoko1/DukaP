@@ -616,18 +616,28 @@ export const AuthGateway: React.FC = () => {
       dbUser.tenant_id = dbUser.tenant_id || dbUser.tenantId;
 
       // ── Persistent Tombstone Deletion Guard ──
-      const rawDeleted = typeof window !== 'undefined' ? localStorage.getItem('DUKAPOS_DELETED_TENANTS') || '[]' : '[]';
-      const deletedTenantSet = new Set<string>(JSON.parse(rawDeleted));
+      const rawDeletedTenants = typeof window !== 'undefined' ? localStorage.getItem('DUKAPOS_DELETED_TENANTS') || '[]' : '[]';
+      const deletedTenantSet = new Set<string>(JSON.parse(rawDeletedTenants));
+
+      const rawDeletedEmails = typeof window !== 'undefined' ? localStorage.getItem('DUKAPOS_DELETED_USER_EMAILS') || '[]' : '[]';
+      const deletedEmailSet = new Set<string>(JSON.parse(rawDeletedEmails));
+
       const userTenantId = dbUser.tenant_id;
+      const userEmail = (dbUser.email || '').trim().toLowerCase();
 
       if (!dbUser.is_super_admin && dbUser.role !== 'Super Admin') {
         if (dbUser.status === 'Deleted' || dbUser.deleted_at) {
-          setErrorMsg('Access Denied: Your account has been deactivated or deleted.');
+          setErrorMsg('Access Denied: Your account has been revoked or deleted.');
+          return;
+        }
+
+        if (userEmail && deletedEmailSet.has(userEmail)) {
+          setErrorMsg('Access Denied: Your account was revoked when your organization workspace was deleted. Please re-register a new workspace to regain access.');
           return;
         }
 
         if (userTenantId && deletedTenantSet.has(userTenantId)) {
-          setErrorMsg('Access Denied: This organization workspace has been permanently deleted.');
+          setErrorMsg('Access Denied: This organization workspace has been permanently deleted and all associated employee accounts revoked. Please re-register a new workspace to regain access.');
           return;
         }
       }
