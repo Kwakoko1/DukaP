@@ -730,11 +730,28 @@ export const TenantManagement: React.FC = () => {
     setDeleteMode('HARD_PURGE');
   };
 
+  const isDeleteConfirmationValid = (input: string, tenant: any): boolean => {
+    if (!tenant || !input) return false;
+    const clean = input.replace(/^["'“”‘’]|["'“”‘’]$/g, '').trim().toLowerCase();
+    if (!clean) return false;
+
+    const targetName = (tenant.name || '').trim().toLowerCase();
+    const targetCode = (tenant.tenant_code || tenant.business_code || '').trim().toLowerCase();
+    const targetId = (tenant.id || '').trim().toLowerCase();
+    const targetUuid = (tenant.tenant_uuid || '').trim().toLowerCase();
+
+    return (
+      clean === targetName ||
+      (targetCode !== '' && clean === targetCode) ||
+      (targetId !== '' && clean === targetId) ||
+      (targetUuid !== '' && clean === targetUuid)
+    );
+  };
+
   const executeTenantDeletion = async () => {
     if (!deleteModalTenant) return;
-    const requiredText = (deleteModalTenant.tenant_code || deleteModalTenant.name).trim();
-    if (deleteConfirmationText.trim().toLowerCase() !== requiredText.toLowerCase() && deleteConfirmationText.trim() !== deleteModalTenant.id) {
-      toast.error('Verification Error', `Confirmation text must match "${requiredText}".`);
+    if (!isDeleteConfirmationValid(deleteConfirmationText, deleteModalTenant)) {
+      toast.error('Verification Error', `Confirmation text must match "${deleteModalTenant.name}".`);
       return;
     }
 
@@ -1660,13 +1677,13 @@ export const TenantManagement: React.FC = () => {
 
             <div className="space-y-2">
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                To confirm, type the target Business Name <span className="font-mono text-rose-600 dark:text-rose-400 font-extrabold select-all">"{deleteModalTenant.name.trim()}"</span> below:
+                To confirm, type the target Business Name <span className="font-mono text-rose-600 dark:text-rose-400 font-extrabold select-all">{deleteModalTenant.name.trim()}</span> below:
               </label>
               <Input
                 type="text"
                 value={deleteConfirmationText}
                 onChange={e => setDeleteConfirmationText(e.target.value)}
-                placeholder={`Type "${deleteModalTenant.name.trim()}"`}
+                placeholder={`Type ${deleteModalTenant.name.trim()}`}
                 className="h-10 text-xs font-mono border-rose-300 dark:border-rose-900/50"
               />
             </div>
@@ -1685,7 +1702,7 @@ export const TenantManagement: React.FC = () => {
                 variant="danger"
                 size="sm"
                 onClick={executeTenantDeletion}
-                disabled={isDeleting || deleteConfirmationText.trim().toLowerCase() !== (deleteModalTenant.tenant_code || deleteModalTenant.name).trim().toLowerCase() && deleteConfirmationText.trim() !== deleteModalTenant.id}
+                disabled={isDeleting || !isDeleteConfirmationValid(deleteConfirmationText, deleteModalTenant)}
                 className="text-xs font-bold"
               >
                 {isDeleting ? 'Purging Workspace...' : deleteMode === 'HARD_PURGE' ? 'Execute Hard Purge' : 'Execute Soft Delete'}

@@ -3068,113 +3068,115 @@ export function getEffectiveVariantBuyingPrice(
 // Automatic Parent–Variant Stock Synchronization Service
 export async function syncParentStock(parentProductId: string): Promise<void> {
   if (!parentProductId) return;
-  const parent = await db.products.get(parentProductId);
-  if (!parent) return;
 
-  const variants = await db.productVariants
-    .where('productId')
-    .equals(parentProductId)
-    .toArray();
+  try {
+    await db.transaction('rw', [db.products, db.productVariants, db.stockBalance, db.syncQueue], async () => {
+      const parent = await db.products.get(parentProductId);
+      if (!parent) return;
 
-  const activeVariants = variants.filter(v => (v.status as any) !== 'Inactive' && !(v as any).deletedAt);
-
-  if (parent.hasVariants || variants.length > 0) {
-    // 1. Calculate Aggregate Stock & Variant Metrics across active variants
-    const totalStock = activeVariants.reduce((sum, v) => sum + (Number(v.stock) || 0), 0);
-    const reservedStock = activeVariants.reduce((sum, v) => sum + (Number(v.reservedStock || (v as any).reserved_stock) || 0), 0);
-    const availableQty = Math.max(0, totalStock - reservedStock);
-    const lowStockVariantCount = activeVariants.filter(v => (Number(v.stock) || 0) <= (v.reorderLevel ?? 5)).length;
-
-    const reorderLevel = parent.reorderLevel ?? 10;
-    const stockStatus =
-      totalStock === 0
-        ? 'OUT_OF_STOCK'
-        : totalStock <= reorderLevel
-        ? 'LOW_STOCK'
-        : 'IN_STOCK';
-
-    // 2. Price Range & Container Meta Calculations (for UI range display)
-    const validPrices = activeVariants
-      .map(v => getEffectiveVariantSellingPrice(v, parent))
-      .filter((p): p is number => typeof p === 'number' && p > 0);
-
-    const minPrice = validPrices.length > 0 ? Math.min(...validPrices) : (parent.sellingPrice || parent.price || 0);
-    const maxPrice = validPrices.length > 0 ? Math.max(...validPrices) : minPrice;
-    const priceRange = minPrice !== maxPrice ? `${minPrice.toLocaleString()} - ${maxPrice.toLocaleString()}` : undefined;
-
-    // 3. Earliest Expiry Date (FEFO - First Expired, First Out)
-    const validExpiries = activeVariants
-      .map(v => (v as any).expiryDate)
-      .filter((d): d is string => typeof d === 'string' && d.length > 0)
-      .sort();
-    const earliestExpiry = validExpiries[0] || parent.expiryDate;
-
-    // 4. Update Parent Product Container
-    // CRITICAL: Preserve parent.sellingPrice, parent.price, and parent.buyingPrice.
-    // Variant prices NEVER overwrite or propagate back to the parent container base price!
-    const hasVariantsFlag = parent.hasVariants || variants.length > 0;
-    const updatedProd: Product = {
-      ...parent,
-      hasVariants: hasVariantsFlag,
-      stock: totalStock,
-      expiryDate: earliestExpiry,
-      updatedAt: Date.now(),
-      syncStatus: 'PENDING' as const,
-    };
-
-    (updatedProd as any).minPrice = minPrice;
-    (updatedProd as any).maxPrice = maxPrice;
-    (updatedProd as any).priceRange = priceRange;
-    (updatedProd as any).reservedStock = reservedStock;
-    (updatedProd as any).availableQty = availableQty;
-    (updatedProd as any).variantCount = variants.length;
-    (updatedProd as any).lowStockVariantCount = lowStockVariantCount;
-    (updatedProd as any).inStock = totalStock > 0;
-    (updatedProd as any).stockStatus = stockStatus;
-
-    await db.products.put(updatedProd);
-
-    // 5. Synchronize Branch-Level Stock Balance Table (db.stockBalance)
-    try {
-      const allVariantBalances = await db.stockBalance
-        .where('product_id')
+      const variants = await db.productVariants
+        .where('productId')
         .equals(parentProductId)
         .toArray();
 
-      const branchTotals: Record<string, number> = {};
-      for (const sb of allVariantBalances) {
-        if (sb.variant_id && sb.variant_id !== 'no-variant') {
-          const bId = sb.branch_id || 'branch-101';
-          branchTotals[bId] = (branchTotals[bId] || 0) + (sb.current_quantity || 0);
-        }
+      // Dangling Aggregates Protection: Filter out inactive or soft-deleted variants
+      const activeVariants = variants.filter(v => 
+        (v.status as any) !== 'Inactive' && 
+        (v.status as any) !== 'INACTIVE' && 
+        !(v as any).deletedAt && 
+        !(v as any).deleted_at && 
+        !(v as any).deleted
+      );
+
+      if (parent.hasVariants || variants.length > 0) {
+        // 1. Calculate Aggregate Stock & Variant Metrics across active variants
+        const totalStock = activeVariants.reduce((sum, v) => sum + (Number(v.stock) || 0), 0);
+        const reservedStock = activeVariants.reduce((sum, v) => sum + (Number(v.reservedStock || (v as any).reserved_stock) || 0), 0);
+        const availableQty = Math.max(0, totalStock - reservedStock);
+        const lowStockVariantCount = activeVariants.filter(v => (Number(v.stock) || 0) <= (v.reorderLevel ?? 5)).length;
+
+        const reorderLevel = parent.reorderLevel ?? 10;
+        const stockStatus =
+          totalStock === 0
+            ? 'OUT_OF_STOCK'
+            : totalStock <= reorderLevel
+            ? 'LOW_STOCK'
+            : 'IN_STOCK';
+
+        // 2. Price Range & Container Meta Calculations (Materialized Fields)
+        const validPrices = activeVariants
+          .map(v => getEffectiveVariantSellingPrice(v, parent))
+          .filter((p): p is number => typeof p === 'number' && p > 0);
+
+        const minPrice = validPrices.length > 0 ? Math.min(...validPrices) : (parent.sellingPrice || parent.price || 0);
+        const maxPrice = validPrices.length > 0 ? Math.max(...validPrices) : minPrice;
+        const priceRange = minPrice !== maxPrice ? `${minPrice.toLocaleString()} - ${maxPrice.toLocaleString()}` : undefined;
+
+        // 3. Earliest Expiry Date (FEFO - First Expired, First Out)
+        const validExpiries = activeVariants
+          .map(v => (v as any).expiryDate || (v as any).expiry_date)
+          .filter((d): d is string => typeof d === 'string' && d.length > 0)
+          .sort();
+        const earliestExpiry = validExpiries[0] || parent.expiryDate;
+
+        // 4. Update Parent Product Container
+        const hasVariantsFlag = parent.hasVariants || variants.length > 0;
+        const updatedProd: Product = {
+          ...parent,
+          hasVariants: hasVariantsFlag,
+          stock: totalStock,
+          expiryDate: earliestExpiry,
+          updatedAt: Date.now(),
+          syncStatus: 'PENDING' as const,
+        };
+
+        (updatedProd as any).minPrice = minPrice;
+        (updatedProd as any).maxPrice = maxPrice;
+        (updatedProd as any).priceRange = priceRange;
+        (updatedProd as any).reservedStock = reservedStock;
+        (updatedProd as any).availableQty = availableQty;
+        (updatedProd as any).variantCount = activeVariants.length;
+        (updatedProd as any).lowStockVariantCount = lowStockVariantCount;
+        (updatedProd as any).inStock = totalStock > 0;
+        (updatedProd as any).stockStatus = stockStatus;
+
+        await db.products.put(updatedProd);
+
+        // 5. Synchronize Branch-Level Stock Balance Table (db.stockBalance)
+        try {
+          const allVariantBalances = await db.stockBalance
+            .where('product_id')
+            .equals(parentProductId)
+            .toArray();
+
+          const branchTotals: Record<string, number> = {};
+          for (const sb of allVariantBalances) {
+            if (sb.variant_id && sb.variant_id !== 'no-variant') {
+              const bId = sb.branch_id || 'branch-101';
+              branchTotals[bId] = (branchTotals[bId] || 0) + (sb.current_quantity || 0);
+            }
+          }
+
+          for (const [bId, bQty] of Object.entries(branchTotals)) {
+            const parentSb = await db.stockBalance
+              .where('[branch_id+product_id+variant_id]')
+              .equals([bId, parentProductId, 'no-variant'])
+              .first();
+
+            if (parentSb) {
+              await db.stockBalance.put({
+                ...parentSb,
+                current_quantity: bQty,
+                stock_value: bQty * (parent.buyingPrice || 0),
+                updated_at: Date.now(),
+              });
+            }
+          }
+        } catch (_) {}
       }
-
-      for (const [bId, bQty] of Object.entries(branchTotals)) {
-        const parentSb = await db.stockBalance
-          .where('[branch_id+product_id+variant_id]')
-          .equals([bId, parentProductId, 'no-variant'])
-          .first();
-
-        if (parentSb) {
-          await db.stockBalance.put({
-            ...parentSb,
-            current_quantity: bQty,
-            stock_value: bQty * (parent.buyingPrice || 0),
-            updated_at: Date.now(),
-          });
-        }
-      }
-    } catch (_) {}
-
-    // 6. Queue Cloud Sync Payload
-    const { mapProductToCloud } = await import('../services/productService');
-    await db.syncQueue.add({
-      actionType: 'UPDATE',
-      entityName: 'products',
-      payload: mapProductToCloud(updatedProd),
-      timestamp: Date.now(),
-      status: 'Pending',
     });
+  } catch (err) {
+    console.warn(`[syncParentStock] Failed for parent ${parentProductId}:`, err);
   }
 }
 
