@@ -147,7 +147,7 @@ export function initPWAUpdateService(): void {
  */
 export async function pollServerVersion(): Promise<void> {
   try {
-    const res = await fetch('/api/version', { cache: 'no-store' });
+    const res = await fetch(`/api/version?_t=${Date.now()}`, { cache: 'no-store' });
     if (!res.ok) return;
 
     const data: AppVersionInfo = await res.json();
@@ -157,6 +157,14 @@ export async function pollServerVersion(): Promise<void> {
   } catch (e) {
     // Fail silently when offline
   }
+}
+
+/**
+ * Manually trigger update check (e.g. when user clicks build number in footer)
+ */
+export async function forceCheckPWAUpdate(): Promise<boolean> {
+  await pollServerVersion();
+  return currentState.isUpdateAvailable;
 }
 
 async function handleNewVersionDetected(latestInfo?: AppVersionInfo) {

@@ -27,16 +27,29 @@ export const PWAUpdateBanner: React.FC = () => {
     return () => unsubscribe();
   }, []);
 
-  if (!updateState.isUpdateAvailable || dismissed) {
+  if (!updateState.isUpdateAvailable) {
     return null;
+  }
+
+  const newBuild = updateState.latestVersionInfo?.buildNumber || 'NEW';
+
+  if (dismissed) {
+    return (
+      <button
+        onClick={() => setDismissed(false)}
+        className="fixed bottom-4 right-4 z-50 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full shadow-2xl border border-indigo-400/40 flex items-center gap-2 transition animate-pulse"
+        title="DukaPOS Update Ready — Click to open"
+      >
+        <Sparkles size={14} className="text-indigo-200" />
+        <span className="text-xs font-extrabold font-mono">Build #{newBuild} Ready</span>
+      </button>
+    );
   }
 
   const handleUpdate = async () => {
     setIsUpdating(true);
     await executeSafePWAUpdate();
   };
-
-  const newBuild = updateState.latestVersionInfo?.buildNumber || 'NEW';
 
   return (
     <div className="fixed bottom-4 right-4 left-4 sm:left-auto sm:max-w-md z-50 animate-in slide-in-from-bottom-5 duration-300">
