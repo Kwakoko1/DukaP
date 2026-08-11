@@ -190,6 +190,7 @@ export const Sidebar: React.FC<SidebarProps> = () => {
             name: 'Receipts',
             subItems: [
               'Receipt History',
+              'Receipt Viewer',
               'Receipt Templates',
               'Receipt Analytics',
               'Receipt Verification',

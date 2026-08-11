@@ -15,6 +15,7 @@ import {
 import { db } from '../../db/dexie';
 import type { Receipt, ReceiptTemplate, ReceiptStatus, ReceiptFormat } from '../../db/dexie';
 import { useAuth } from '../../context/AuthContext';
+import { useModule } from '../../context/ModuleContext';
 import {
   printReceipt, reprintReceipt, cancelReceipt,
   verifyReceipt, archiveOldReceipts, restoreReceipt, logShare,
@@ -347,9 +348,26 @@ interface ReceiptsProps {
   initialTab?: 'history' | 'viewer' | 'templates' | 'analytics' | 'verification' | 'archive';
 }
 
+const RECEIPT_TAB_TO_SUBITEM: Record<string, string> = {
+  history: 'Receipt History',
+  viewer: 'Receipt Viewer',
+  templates: 'Receipt Templates',
+  analytics: 'Receipt Analytics',
+  verification: 'Receipt Verification',
+  archive: 'Receipt Archive',
+};
+
 export const Receipts: React.FC<ReceiptsProps> = ({ initialTab = 'history' }) => {
   const { user, currentTenant, currentBranch } = useAuth();
+  const { setActiveTab: setGlobalActiveTab } = useModule();
   const [activeTab, setActiveTab] = useState(initialTab);
+
+  const handleSwitchTab = useCallback((tabId: any) => {
+    setActiveTab(tabId);
+    if (RECEIPT_TAB_TO_SUBITEM[tabId]) {
+      setGlobalActiveTab(RECEIPT_TAB_TO_SUBITEM[tabId]);
+    }
+  }, [setGlobalActiveTab]);
 
   useEffect(() => {
     setActiveTab(initialTab);
@@ -795,7 +813,7 @@ export const Receipts: React.FC<ReceiptsProps> = ({ initialTab = 'history' }) =>
         {tabs.map(tab => (
           <button
             key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
+            onClick={() => handleSwitchTab(tab.id)}
             className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
               activeTab === tab.id
                 ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-200 dark:shadow-indigo-900/30'
