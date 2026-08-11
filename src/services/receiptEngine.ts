@@ -1096,6 +1096,24 @@ export async function getOrCreateDefaultTemplate(
   return template;
 }
 
+export function getDeletedReceiptNumbers(): Set<string> {
+  try {
+    const raw = localStorage.getItem('dukapos_deleted_receipt_numbers') || '[]';
+    return new Set(JSON.parse(raw));
+  } catch (e) {
+    return new Set();
+  }
+}
+
+export function registerDeletedReceiptNumber(num: string) {
+  if (!num) return;
+  try {
+    const set = getDeletedReceiptNumbers();
+    set.add(num);
+    localStorage.setItem('dukapos_deleted_receipt_numbers', JSON.stringify(Array.from(set)));
+  } catch (e) {}
+}
+
 // ─── Auto-Healing: Ensure every completed order has a matching receipt ─────────
 
 export async function ensureReceiptsForOrders(tenantId: string, branchId?: string): Promise<number> {
@@ -1103,9 +1121,11 @@ export async function ensureReceiptsForOrders(tenantId: string, branchId?: strin
   try {
     const orders = await db.orders.where('tenant_id').equals(tenantId).toArray();
     const existingReceipts = await db.receipts.where('tenant_id').equals(tenantId).toArray();
+    const deletedSet = getDeletedReceiptNumbers();
 
     const existingMap = new Set(
       existingReceipts.map(r => r.id)
+        .concat(existingReceipts.map(r => r.receipt_number || ''))
         .concat(existingReceipts.map(r => r.transaction_id || ''))
         .concat(existingReceipts.map(r => r.original_receipt_id || ''))
         .filter(Boolean)
@@ -1117,7 +1137,9 @@ export async function ensureReceiptsForOrders(tenantId: string, branchId?: strin
         (order as any).is_deleted || 
         (order as any).deletedAt || 
         (order as any).deleted_at || 
-        ['Cancelled', 'Voided', 'Refunded', 'Deleted'].includes(order.status)
+        ['Cancelled', 'Voided', 'Refunded', 'Deleted'].includes(order.status) ||
+        deletedSet.has(order.id) ||
+        deletedSet.has((order as any).receipt_number)
       ) {
         continue;
       }

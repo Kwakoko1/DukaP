@@ -19,7 +19,7 @@ import {
   printReceipt, reprintReceipt, cancelReceipt,
   verifyReceipt, archiveOldReceipts, restoreReceipt, logShare,
   shareViaWhatsApp, getReceiptAnalytics, getOrCreateDefaultTemplate,
-  generateCode128SVG, ensureReceiptsForOrders,
+  generateCode128SVG, ensureReceiptsForOrders, registerDeletedReceiptNumber,
   type ReceiptAnalytics, type VerificationResult
 } from '../../services/receiptEngine';
 import {
@@ -595,22 +595,31 @@ export const Receipts: React.FC<ReceiptsProps> = ({ initialTab = 'history' }) =>
     if (window.confirm(`Are you sure you want to permanently delete receipt #${receipt.receipt_number}? This action cannot be undone.`)) {
       try {
         setIsBusy(true);
-        // 1. Delete receipt and items from Dexie DB
-        await db.receipts.delete(receipt.id);
-        await db.receiptItems.where('receipt_id').equals(receipt.id).delete();
+        // 1. Register persistent tombstone in localStorage
+        registerDeletedReceiptNumber(receipt.receipt_number);
+        registerDeletedReceiptNumber(receipt.id);
+        if (receipt.transaction_id) registerDeletedReceiptNumber(receipt.transaction_id);
 
-        // 2. Delete matching order
+        // 2. Delete receipt and items from Dexie DB
+        await db.receipts.delete(receipt.id);
+        await db.receipts.where('receipt_number').equals(receipt.receipt_number).delete();
+        await db.receiptItems.where('receipt_id').equals(receipt.id).delete();
+        await db.receiptQrCodes.where('receipt_number').equals(receipt.receipt_number).delete();
+        await db.receiptSignatures.where('receipt_number').equals(receipt.receipt_number).delete();
+
+        // 3. Delete matching orders
         const orderId = receipt.transaction_id || receipt.id;
         await db.orders.delete(orderId);
+        await db.orders.where('id').equals(receipt.receipt_number).delete();
 
-        // 3. Queue DELETE event for cloud sync
+        // 4. Queue DELETE event for cloud sync
         await db.syncQueue.add({
           tenant_id: receipt.tenant_id,
           branch_id: receipt.branch_id,
           entity: 'receipts',
           entity_id: receipt.id,
           operation: 'DELETE',
-          payload: { id: receipt.id, tenant_id: receipt.tenant_id },
+          payload: { id: receipt.id, receipt_number: receipt.receipt_number, tenant_id: receipt.tenant_id },
           status: 'Pending',
           created_at: Date.now(),
           priority: 1,
