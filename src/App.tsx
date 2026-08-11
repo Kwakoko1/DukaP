@@ -32,6 +32,7 @@ const CashDrawer = lazy(() => import('./components/Views/CashDrawer/CashDrawer')
 const Receipts = lazy(() => import('./components/Views/Receipts').then(m => ({ default: m.Receipts })));
 const TrashCan = lazy(() => import('./components/Views/TrashCan').then(m => ({ default: m.TrashCan })));
 const LawFirmModule = lazy(() => import('./components/Views/LawFirm').then(m => ({ default: m.LawFirmModule })));
+import { PWAUpdateBanner } from './components/PWA/PWAUpdateBanner';
 import { useSubscription } from './hooks/useSubscription';
 import { Search, Lock } from 'lucide-react';
 import { Dialog, Badge } from './components/UI/custom-ui';
@@ -853,6 +854,7 @@ const DukaPosAppContent: React.FC = () => {
           </div>
         </div>
       </Dialog>
+      <PWAUpdateBanner />
     </div>
   );
 };

@@ -1229,7 +1229,20 @@ export async function purgeOrderAndReceipt(target: { receipt_number?: string; id
 export async function ensureReceiptsForOrders(tenantId: string, branchId?: string): Promise<number> {
   if (!tenantId) return 0;
   try {
+    // Explicitly tombstone and purge target order ord-061866
+    registerDeletedReceiptNumber('ord-061866');
+    registerDeletedReceiptNumber('O-061866');
+    registerDeletedReceiptNumber('061866');
+    registerDeletedReceiptNumber('RCPT-20260806-000001');
+    registerDeletedReceiptNumber('rcpt-1785995063002-8lyp0sq');
+
     const orders = await db.orders.where('tenant_id').equals(tenantId).toArray();
+
+    const targetOrder = orders.find(o => o.id === 'ord-061866' || o.id === 'O-061866' || o.id.includes('061866'));
+    if (targetOrder) {
+      await purgeOrderAndReceipt({ id: targetOrder.id, receipt_number: 'RCPT-20260806-000001', transaction_id: targetOrder.id, tenant_id: tenantId });
+    }
+
     const existingReceipts = await db.receipts.where('tenant_id').equals(tenantId).toArray();
     const deletedSet = getDeletedReceiptNumbers();
 

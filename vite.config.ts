@@ -221,6 +221,19 @@ export default defineConfig({
               return
             }
 
+            // ── GET /api/version — PWA Version Probe ──
+            if (url.pathname === '/api/version' && (req.method === 'GET' || req.method === 'HEAD')) {
+              res.statusCode = 200
+              res.end(JSON.stringify({
+                version: pkg.version,
+                buildNumber: dynamicBuildNumber,
+                commitSha,
+                buildDate: buildDateStr,
+                timestamp: Date.now()
+              }))
+              return
+            }
+
             // ── POST /api/bootstrap — Fast Bootstrap Snapshot Endpoint ──
             if (url.pathname === '/api/bootstrap' && (req.method === 'POST' || req.method === 'GET')) {
               const tenantId = reqTenantId || '8f1109a3-9ab8-4922-a4e0-d706a3a2d85d'
