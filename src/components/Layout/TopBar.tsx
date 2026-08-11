@@ -30,7 +30,7 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenSearch }) => {
     currentIndustry,
     switchContext
   } = useAuth();
-  const { activeModule, setActiveModule, isMobileSidebarOpen, setIsMobileSidebarOpen } = useModule();
+  const { manifest, activeModule, setActiveModule, isMobileSidebarOpen, setIsMobileSidebarOpen } = useModule();
   const { isOnline, isSyncing, syncProgress, pendingCount, toggleOfflineSimulation, syncLogs, syncData } = useSyncState();
 
   const [showBranchDropdown, setShowBranchDropdown] = useState(false);
@@ -419,9 +419,14 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenSearch }) => {
           <div className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl bg-white p-0.5 shadow-md border border-slate-200/80 dark:border-darkbg-border overflow-hidden shrink-0">
             <img src={(currentTenant as any)?.logo_url || (currentTenant as any)?.logoUrl || "/dukapos-logo.png"} alt={currentTenant.name || "Tenant Logo"} className="h-full w-full object-contain" />
           </div>
-          <span className="font-bold text-sm text-slate-800 dark:text-white truncate max-w-[140px] sm:max-w-[200px]">
-            {currentTenant.name || 'DukaPos'}
-          </span>
+          <div className="truncate max-w-[150px] sm:max-w-[240px]">
+            <h2 className="font-extrabold text-xs sm:text-sm text-slate-900 dark:text-white truncate leading-tight">
+              {getShortModuleName(manifest.name) || currentTenant.name || 'DukaPos'}
+            </h2>
+            <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-400 truncate hidden sm:block">
+              {currentTenant.name ? `${currentTenant.name} • ${role}` : role}
+            </p>
+          </div>
         </div>
 
         {/* Center Search Everything Trigger (Ctrl+K) */}
