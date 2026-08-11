@@ -231,6 +231,7 @@ export const Sidebar: React.FC<SidebarProps> = () => {
               'Tax & Billing',
               'Security Policies',
               'Terminals & Sessions',
+              'Trash Can & Recovery',
               'Subscriptions & Billing',
               'Developer Options',
               'User Manual & Guide',

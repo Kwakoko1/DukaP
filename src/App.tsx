@@ -30,6 +30,7 @@ const TechnicalCompany = lazy(() => import('./components/Views/TechnicalCompany'
 const AIInsightsView = lazy(() => import('./components/Views/AIInsightsView').then(m => ({ default: m.AIInsightsView })));
 const CashDrawer = lazy(() => import('./components/Views/CashDrawer/CashDrawer').then(m => ({ default: m.CashDrawer })));
 const Receipts = lazy(() => import('./components/Views/Receipts').then(m => ({ default: m.Receipts })));
+const TrashCan = lazy(() => import('./components/Views/TrashCan').then(m => ({ default: m.TrashCan })));
 import { useSubscription } from './hooks/useSubscription';
 import { Search, Lock } from 'lucide-react';
 import { Dialog, Badge } from './components/UI/custom-ui';
@@ -286,6 +287,12 @@ const DukaPosAppContent: React.FC = () => {
         return <Settings initialTab="security" />;
       case 'Terminals & Sessions':
         return <Settings initialTab="devices" />;
+      case 'Trash Can & Recovery':
+      case 'Trash Can':
+      case 'Recycle Bin':
+      case 'Trash':
+      case 'Archive':
+        return <TrashCan />;
       case 'Subscriptions & Billing':
         return <Settings initialTab="subscriptions" />;
       case 'Developer Options':
