@@ -124,6 +124,17 @@ export const UsersRoles: React.FC = () => {
 
     const checkUserValid = (u: any) => {
       if (u.deleted_at || u.status === 'Deleted') return false;
+
+      try {
+        const rawT = typeof window !== 'undefined' ? localStorage.getItem('DUKAPOS_DELETED_TENANTS') || '[]' : '[]';
+        const deletedTenants = new Set<string>(JSON.parse(rawT));
+        const rawE = typeof window !== 'undefined' ? localStorage.getItem('DUKAPOS_DELETED_USER_EMAILS') || '[]' : '[]';
+        const deletedEmails = new Set<string>(JSON.parse(rawE));
+
+        if (u.tenant_id && deletedTenants.has(u.tenant_id)) return false;
+        if (u.email && deletedEmails.has(u.email.toLowerCase())) return false;
+      } catch (_) {}
+
       if (!isSuperAdminView) {
         // Tenant View: ONLY show users for current tenant, hide Super Admin platform accounts
         if (u.tenant_id !== currentTenant.id) return false;
@@ -782,6 +793,35 @@ export const UsersRoles: React.FC = () => {
     if (enteredPin.length < 4) setEnteredPin(prev => prev + val);
   };
   const handleKeypadClear = () => { setEnteredPin(''); setPinError(''); setPinSuccess(''); };
+
+  // Physical Keyboard Listener for POS PIN Switcher
+  useEffect(() => {
+    if (activeSubTab !== 'POS PIN Switcher') return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const targetTag = (e.target as HTMLElement)?.tagName?.toLowerCase();
+      if (targetTag === 'input' || targetTag === 'textarea' || targetTag === 'select') return;
+
+      if (e.key >= '0' && e.key <= '9') {
+        e.preventDefault();
+        setPinError('');
+        setEnteredPin(prev => prev.length < 4 ? prev + e.key : prev);
+      } else if (e.key === 'Backspace') {
+        e.preventDefault();
+        setPinError('');
+        setEnteredPin(prev => prev.slice(0, -1));
+      } else if (e.key === 'Escape' || e.key === 'Delete' || e.key.toLowerCase() === 'c') {
+        e.preventDefault();
+        handleKeypadClear();
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        handlePINSubmit();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeSubTab, switcherUserId, enteredPin]);
 
   const handlePINSubmit = async () => {
     if (!switcherUserId) { setPinError('Select an employee first.'); return; }

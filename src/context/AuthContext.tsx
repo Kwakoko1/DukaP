@@ -8,6 +8,7 @@ import { tenantRecoveryService } from '../services/tenantRecoveryService';
 import { tenantHealthMonitor } from '../services/tenantHealthMonitor';
 import { stockLedgerSyncEngine } from '../services/stockLedgerSyncEngine';
 import { bootstrapEngine } from '../services/bootstrapEngine';
+import { tenantSecurityBroadcast } from '../utils/tenantSecurityBroadcast';
 
 export type UserRole = 'Super Admin' | 'Business Owner' | 'Tenant Owner' | 'Business Administrator' | 'Branch Manager' | 'Cashier' | 'Inventory Officer' | 'Accountant' | (string & {});
 
@@ -314,7 +315,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     const saved = localStorage.getItem('dukapos_theme');
     if (saved === 'dark' || saved === 'light') return saved;
-    return 'dark';
+    return 'light';
   });
   const [isOfflineLocked, setIsOfflineLocked] = useState<boolean>(false);
 
@@ -333,6 +334,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     localStorage.setItem('dukapos_theme', theme);
   }, [theme]);
+
+  // Listen for real-time cross-tab workspace revocation signals
+  useEffect(() => {
+    const unsubscribe = tenantSecurityBroadcast.subscribe((evt) => {
+      if (evt.type === 'TENANT_PURGED') {
+        const myTenantId = currentTenant?.id || user?.tenant_id;
+        if (myTenantId && myTenantId === evt.tenantId && user?.role !== 'Super Admin') {
+          console.warn(`[AuthContext] Tenant ${evt.tenantId} purged by another browser session. Revoking session.`);
+          localStorage.removeItem('dukapos_session');
+          localStorage.removeItem('activeTenant');
+          localStorage.removeItem('user');
+          setUserState(null);
+          setTenantState(defaultTenant);
+          alert('⚠️ Workspace Revoked: Your organization workspace was deleted by an administrator. Session terminated.');
+          window.location.href = '/';
+        }
+      }
+    });
+
+    return () => unsubscribe();
+  }, [currentTenant?.id, user?.tenant_id, user?.role]);
 
   // Load session and restore user state on initialization
   useEffect(() => {
@@ -375,6 +397,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const restoreSessionData = (sess: any) => {
           const normRole = normalizeRoleName(sess.role || sess.user?.role);
           const normUser = sess.user ? { ...sess.user, role: normRole } : null;
+
+          // Check if session tenant or user email is in revoked/deleted tombstones
+          if (sess.tenant?.id && normRole !== 'Super Admin') {
+            try {
+              const rawDeleted = localStorage.getItem('DUKAPOS_DELETED_TENANTS') || '[]';
+              const deletedList: string[] = JSON.parse(rawDeleted);
+              const rawEmails = localStorage.getItem('DUKAPOS_DELETED_USER_EMAILS') || '[]';
+              const deletedEmails: string[] = JSON.parse(rawEmails);
+
+              if (deletedList.includes(sess.tenant.id) || (sess.user?.email && deletedEmails.includes(sess.user.email.toLowerCase()))) {
+                console.warn('[AuthContext] Restored session belongs to deleted workspace. Revoking.');
+                localStorage.removeItem('dukapos_session');
+                setUserState(null);
+                setTenantState(defaultTenant);
+                finalizeInit();
+                return;
+              }
+            } catch (_) {}
+          }
+
           setUserState(normUser);
           setRoleState(normRole);
           setTenantState(sess.tenant);
@@ -800,8 +842,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsOfflineLocked(false);
     setIsInitializing(false);
     localStorage.removeItem('dukapos_session');
-    localStorage.removeItem('dukapos_active_tab');
-    localStorage.removeItem('dukapos_active_module');
+    // Dev superuser: preserve module+tab state across logout so last active context
+    // is automatically restored on next login (never falls back to Retail).
+    const isDevSuperuser = user?.email === 'yannick@kwakoko.co.tz';
+    if (!isDevSuperuser) {
+      localStorage.removeItem('dukapos_active_tab');
+      localStorage.removeItem('dukapos_active_module');
+    }
   };
 
   const hasBranchAccess = (targetBranchId: string): boolean => {
@@ -859,10 +906,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const { data: cloudVariants, error: varError } = await supabase.from('product_variants').select('*').eq('tenant_id', tenantId);
       if (varError) throw new Error(varError.message);
 
-      // Reconcile tenant metadata: tenants
+      // Reconcile tenant metadata: tenants (and purge local tombstones)
       const { data: cloudTenants, error: tError } = await supabase.from('tenants').select('*');
-      if (!tError && cloudTenants && cloudTenants.length > 0) {
-        await db.tenants.bulkPut(cloudTenants);
+      if (!tError && cloudTenants) {
+        const activeCloudTenantIds = new Set(cloudTenants.filter((t: any) => !t.deleted_at && t.status !== 'Deleted' && t.status !== 'Archived').map((t: any) => t.id));
+        const localTenants = await db.tenants.toArray();
+        for (const lt of localTenants) {
+          if (!activeCloudTenantIds.has(lt.id) && lt.id !== 'tenant-admin-system') {
+            await db.tenants.delete(lt.id);
+            await db.users.where('tenant_id').equals(lt.id).delete().catch(() => {});
+            await db.branches.where('tenant_id').equals(lt.id).delete().catch(() => {});
+            await db.userBranchRoles.where('tenant_id').equals(lt.id).delete().catch(() => {});
+          }
+        }
+        if (cloudTenants.length > 0) {
+          await db.tenants.bulkPut(cloudTenants.filter((t: any) => !t.deleted_at && t.status !== 'Deleted'));
+        }
       }
 
       // Reconcile platform metadata: subscription plans

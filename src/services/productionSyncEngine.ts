@@ -184,23 +184,25 @@ class ProductionSyncEngine {
               }
             } else {
               // 2. Fallback to direct Supabase RLS client call
-              if (entityName === 'stock_ledger' || item.operation === 'STOCK_IN' || item.operation === 'STOCK_OUT' || item.operation === 'TRANSFER') {
+              const targetTable = entityName === 'productVariants' ? 'product_variants' : (entityName === 'stockLedger' ? 'stock_ledger' : entityName);
+              if (targetTable === 'stock_ledger' || item.operation === 'STOCK_IN' || item.operation === 'STOCK_OUT' || item.operation === 'TRANSFER') {
                 const { error } = await supabase.from('stock_ledger').upsert(payload, { onConflict: 'id' });
                 opError = error;
               } else {
                 const action = item.operation || item.actionType || 'UPDATE';
                 if (action === 'DELETE') {
-                  const { error } = await supabase.from(entityName).delete().eq('id', item.entity_id || payload.id);
+                  const { error } = await supabase.from(targetTable).delete().eq('id', item.entity_id || payload.id);
                   opError = error;
                 } else {
-                  const { error } = await supabase.from(entityName).upsert(payload, { onConflict: 'id' });
+                  const { error } = await supabase.from(targetTable).upsert(payload, { onConflict: 'id' });
                   opError = error;
                 }
               }
             }
           } catch (netErr) {
             // Direct Supabase fallback
-            const { error } = await supabase.from(entityName).upsert(payload, { onConflict: 'id' });
+            const targetTable = entityName === 'productVariants' ? 'product_variants' : (entityName === 'stockLedger' ? 'stock_ledger' : entityName);
+            const { error } = await supabase.from(targetTable).upsert(payload, { onConflict: 'id' });
             opError = error;
           }
 

@@ -32,6 +32,8 @@ const CashDrawer = lazy(() => import('./components/Views/CashDrawer/CashDrawer')
 const Receipts = lazy(() => import('./components/Views/Receipts').then(m => ({ default: m.Receipts })));
 const TrashCan = lazy(() => import('./components/Views/TrashCan').then(m => ({ default: m.TrashCan })));
 const LawFirmModule = lazy(() => import('./components/Views/LawFirm').then(m => ({ default: m.LawFirmModule })));
+const PharmacyModule = lazy(() => import('./components/Views/Pharmacy').then(m => ({ default: m.PharmacyModule })));
+const PoultryLivestockModule = lazy(() => import('./components/Views/PoultryLivestock').then(m => ({ default: m.PoultryLivestockModule })));
 const HelpManualConsole = lazy(() => import('./components/Views/HelpManual/HelpManualConsole').then(m => ({ default: m.HelpManualConsole })));
 import { PWAUpdateBanner } from './components/PWA/PWAUpdateBanner';
 import { useSubscription } from './hooks/useSubscription';
@@ -615,6 +617,36 @@ const DukaPosAppContent: React.FC = () => {
       case 'Legal Reports':
       case 'Legal Settings':
         return <LawFirmModule />;
+      // Pharmacy module routes
+      case 'Pharmacy':
+      case 'Pharmacy Dashboard':
+      case 'Pharmacy POS':
+      case 'Medicines Master':
+      case 'Batch & Expiry':
+      case 'Prescriptions':
+      case 'Doctors':
+      case 'Drug Safety':
+      case 'Pharmacy Inventory':
+      case 'Insurance & NHIF':
+      case 'Controlled Drugs':
+      case 'Pharmacy Reports':
+      case 'Pharmacy Settings':
+        return <PharmacyModule />;
+      // Poultry & Livestock module routes
+      case 'Poultry':
+      case 'Poultry Dashboard':
+      case 'Farm Management':
+      case 'Poultry Flocks':
+      case 'Livestock Registry':
+      case 'Feed & Water':
+      case 'Health & Veterinary':
+      case 'Breeding & Hatchery':
+      case 'Production Ledger':
+      case 'Farm Tasks':
+      case 'Livestock POS':
+      case 'Livestock Reports':
+      case 'Poultry Settings':
+        return <PoultryLivestockModule />;
       // Help & User Manual Console routes
       case 'Help & Manuals':
       case 'User Manual':

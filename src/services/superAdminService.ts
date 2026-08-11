@@ -10,6 +10,7 @@ import {
 import { supabase } from '../db/supabaseClient';
 import { db } from '../db/dexie';
 import { getSyncRealClientIp } from './clientIpService';
+import { tenantSecurityBroadcast } from '../utils/tenantSecurityBroadcast';
 
 export interface SuperAdminUserContext {
   id: string;
@@ -36,12 +37,79 @@ export class SuperAdminService {
   static async syncPlatformRegistry(): Promise<void> {
     try {
       console.log('[SuperAdminService] Synchronizing central platform registry...');
+      const rawDeleted = typeof window !== 'undefined' ? localStorage.getItem('DUKAPOS_DELETED_TENANTS') || '[]' : '[]';
+      const deletedSet = new Set<string>(JSON.parse(rawDeleted));
+
+      // Reconcile local Dexie tenants into cloudDb.cloud_tenants so Super Admin CPanel displays all registrations
+      const [localTs, cloudTs] = await Promise.all([
+        db.tenants.toArray().catch(() => []),
+        cloudDb.cloud_tenants.toArray().catch(() => [])
+      ]);
+
+      for (const lt of localTs) {
+        if (
+          lt.id && 
+          !deletedSet.has(lt.id) && 
+          lt.status !== 'Deleted' && 
+          lt.status !== 'Archived' && 
+          lt.status !== 'Draft' && 
+          lt.status !== 'DRAFT' && 
+          lt.registration_completed !== false && 
+          !(lt as any).deleted_at
+        ) {
+          const exists = await cloudDb.cloud_tenants.get(lt.id);
+          if (!exists) {
+            await cloudDb.cloud_tenants.put({
+              id: lt.id,
+              name: lt.name,
+              slug: lt.slug || lt.name.toLowerCase().replace(/\s+/g, '-'),
+              status: lt.status,
+              plan: lt.plan,
+              business_type: lt.business_type || (lt as any).industry || 'Retail',
+              email: lt.email || '',
+              created_at: lt.created_at || Date.now(),
+              updated_at: Date.now(),
+              registration_completed: true
+            } as any).catch(() => {});
+          }
+        }
+      }
+
+      for (const ct of cloudTs) {
+        if (
+          ct.id && 
+          !deletedSet.has(ct.id) && 
+          ct.status !== 'Deleted' && 
+          ct.status !== 'Archived' && 
+          ct.status !== 'Draft' && 
+          ct.status !== 'DRAFT' && 
+          ct.registration_completed !== false && 
+          !(ct as any).deleted_at
+        ) {
+          const exists = await db.tenants.get(ct.id);
+          if (!exists) {
+            await db.tenants.put({
+              id: ct.id,
+              name: ct.name,
+              slug: ct.slug,
+              status: ct.status as any,
+              plan: ct.plan as any,
+              business_type: ct.business_type || 'Retail',
+              email: ct.email || '',
+              created_at: ct.created_at || Date.now(),
+              updated_at: Date.now(),
+              registration_completed: true
+            } as any).catch(() => {});
+          }
+        }
+      }
+
       await Promise.all([
-        supabase.from('tenants').select(),
-        supabase.from('branches').select(),
-        supabase.from('users').select(),
-        supabase.from('tenantSubscriptions').select(),
-        supabase.from('subscriptionPlans').select()
+        supabase.from('tenants').select().catch(() => {}),
+        supabase.from('branches').select().catch(() => {}),
+        supabase.from('users').select().catch(() => {}),
+        supabase.from('tenantSubscriptions').select().catch(() => {}),
+        supabase.from('subscriptionPlans').select().catch(() => {})
       ]);
       console.log('[SuperAdminService] Platform registry synchronization complete.');
     } catch (err) {
@@ -54,7 +122,14 @@ export class SuperAdminService {
    */
   static async getAllTenants(): Promise<CloudTenant[]> {
     const { data } = await supabase.from('tenants').select();
-    return (data || []).filter((t: any) => !t.deleted_at);
+    return (data || []).filter((t: any) => 
+      !t.deleted_at && 
+      t.status !== 'Deleted' && 
+      t.status !== 'Archived' && 
+      t.status !== 'Draft' && 
+      t.status !== 'DRAFT' && 
+      t.registration_completed !== false
+    );
   }
 
   /**
@@ -236,15 +311,27 @@ export class SuperAdminService {
         }
       } catch (_) {}
 
-      // 2. Record tenantId and user emails in persistent localStorage tombstones
+      // 2. Record all tenant identifier aliases and user emails in persistent localStorage tombstones
       if (typeof window !== 'undefined') {
         try {
+          const tenantAliases = new Set<string>([tenantId]);
+          const localT = await db.tenants.get(tenantId).catch(() => null);
+          if (localT) {
+            if (localT.id) tenantAliases.add(localT.id);
+            if ((localT as any).tenant_code) tenantAliases.add((localT as any).tenant_code);
+            if ((localT as any).business_code) tenantAliases.add((localT as any).business_code);
+            if (localT.slug) tenantAliases.add(localT.slug);
+            if ((localT as any).tenant_uuid) tenantAliases.add((localT as any).tenant_uuid);
+          }
+
           const rawTenants = localStorage.getItem('DUKAPOS_DELETED_TENANTS') || '[]';
           const tenantList: string[] = JSON.parse(rawTenants);
-          if (!tenantList.includes(tenantId)) {
-            tenantList.push(tenantId);
-            localStorage.setItem('DUKAPOS_DELETED_TENANTS', JSON.stringify(tenantList));
-          }
+          tenantAliases.forEach(alias => {
+            if (alias && !tenantList.includes(alias)) {
+              tenantList.push(alias);
+            }
+          });
+          localStorage.setItem('DUKAPOS_DELETED_TENANTS', JSON.stringify(tenantList));
 
           const rawEmails = localStorage.getItem('DUKAPOS_DELETED_USER_EMAILS') || '[]';
           const emailList: string[] = JSON.parse(rawEmails);
@@ -254,50 +341,153 @@ export class SuperAdminService {
             }
           });
           localStorage.setItem('DUKAPOS_DELETED_USER_EMAILS', JSON.stringify(emailList));
+
+          // Purge session if active user belongs to deleted tenant
+          const rawSess = localStorage.getItem('dukapos_session');
+          if (rawSess) {
+            const sess = JSON.parse(rawSess);
+            if (sess?.user?.tenant_id && tenantAliases.has(sess.user.tenant_id)) {
+              localStorage.removeItem('dukapos_session');
+              localStorage.removeItem('dukapos_tenant');
+            }
+          }
         } catch (_) {}
       }
 
+      // Broadcast tenant purge signal to all open tabs/browsers in real time
+      try {
+        tenantSecurityBroadcast.broadcastTenantPurged(tenantId, Array.from(userEmails));
+      } catch (_) {}
+
+      // 0. Pre-Purge System Audit Trail Logging
+      try {
+        const adminId = 'usr-superadmin';
+        const NOW = Date.now();
+        await db.auditLogs.add({
+          id: `al-${NOW}-purge-${Math.random().toString(36).substr(2, 5)}`,
+          tenant_id: tenantId,
+          user_id: adminId,
+          user_name: 'Super Admin Engine',
+          action: 'TENANT_HARD_PURGE',
+          entity: 'tenant',
+          entity_id: tenantId,
+          metadata: {
+            tenantId,
+            userEmails: Array.from(userEmails),
+            timestamp: NOW
+          },
+          created_at: NOW
+        }).catch(() => {});
+
+        logCloudAudit({
+          tenant_id: tenantId,
+          user_id: adminId,
+          action: 'TENANT_HARD_PURGE',
+          ip_address: '127.0.0.1',
+          status: 'SUCCESS',
+          details: `Hard purged tenant workspace ${tenantId} and all associated data.`
+        }).catch(() => {});
+      } catch (_) {}
+
       // 3. Purge all tenant data and employee accounts from local Dexie IndexedDB
       await db.transaction('rw', [
-        db.tenants, db.branches, db.users, db.tenantUsers, db.userBranchRoles, db.tenantUserBranches, db.userSecurity,
-        db.products, db.productVariants, db.orders, db.categories, db.brands, db.stockLedger, db.cashDrawers, db.expenses
+        db.tenants, db.branches, db.users, db.tenantUsers, db.employees, db.userBranchRoles, db.tenantUserBranches, db.userSecurity, db.securityAuditLogs,
+        db.products, db.productVariants, db.orders, db.customers, db.suppliers, db.supplierContacts, db.purchaseOrders, db.goodsReceipts, db.supplierInvoices, db.supplierLedger, db.supplierPayments, db.warehouses,
+        db.batchLots, db.serialNumbers, db.stockTransfers, db.physicalCounts, db.reorderRules, db.posShifts, db.heldCarts, db.wastageLogs, db.tabs, db.barTables, db.pricingRules, db.tips, db.expenses,
+        db.categories, db.brands, db.stockLedger, db.stockBalance, db.tenantModules, db.tenantSettings, db.featureFlags, db.tenantSubscriptions,
+        db.cashDrawers, db.cashDrawerSessions, db.cashDrawerEvents, db.cashTransactions, db.receipts, db.receiptItems, db.receiptPrintLogs, db.receiptShareLogs, db.receiptAuditLogs, db.receiptQrCodes, db.receiptSignatures, db.securityIncidents
       ], async () => {
         await db.tenants.delete(tenantId);
-        await db.branches.where('tenant_id').equals(tenantId).delete();
-        await db.users.where('tenant_id').equals(tenantId).delete();
-        await db.tenantUsers.where('tenant_id').equals(tenantId).delete();
-        await db.userBranchRoles.where('tenant_id').equals(tenantId).delete();
-        await db.tenantUserBranches.where('tenant_id').equals(tenantId).delete();
+        await db.branches.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await db.users.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await db.tenantUsers.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await db.employees.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await db.userBranchRoles.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await db.tenantUserBranches.where('tenant_id').equals(tenantId).delete().catch(() => {});
         for (const uid of Array.from(userIds)) {
           await db.userSecurity.delete(uid).catch(() => {});
+          await db.securityAuditLogs.where('userId').equals(uid).delete().catch(() => {});
         }
-        await db.products.where('tenant_id').equals(tenantId).delete();
-        await db.orders.where('tenant_id').equals(tenantId).delete();
-        await db.categories.where('tenant_id').equals(tenantId).delete();
-        await db.brands.where('tenant_id').equals(tenantId).delete();
-        await db.stockLedger.where('tenant_id').equals(tenantId).delete();
-        await db.cashDrawers.where('tenant_id').equals(tenantId).delete();
-        await db.expenses.where('tenant_id').equals(tenantId).delete();
+        await db.products.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await db.productVariants.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await db.orders.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await db.customers.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await db.suppliers.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await db.supplierContacts.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await db.purchaseOrders.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await db.goodsReceipts.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await db.supplierInvoices.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await db.supplierLedger.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await db.supplierPayments.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await db.warehouses.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await db.batchLots.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await db.serialNumbers.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await db.stockTransfers.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await db.physicalCounts.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await db.reorderRules.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await db.posShifts.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await db.heldCarts.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await db.wastageLogs.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await db.tabs.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await db.barTables.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await db.pricingRules.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await db.tips.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await db.expenses.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await db.categories.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await db.brands.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await db.stockLedger.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await db.stockBalance.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await db.tenantModules.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await db.tenantSettings.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await db.featureFlags.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await db.tenantSubscriptions.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await db.cashDrawers.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await db.cashDrawerSessions.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await db.cashDrawerEvents.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await db.cashTransactions.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await db.receipts.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await db.receiptItems.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await db.receiptPrintLogs.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await db.receiptShareLogs.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await db.receiptAuditLogs.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await db.receiptQrCodes.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await db.receiptSignatures.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await db.securityIncidents.where('tenant_id').equals(tenantId).delete().catch(() => {});
       });
 
       // 4. Purge central Cloud Database entries
       try {
-        await cloudDb.cloud_tenants.delete(tenantId);
-        const cUsers = await cloudDb.cloud_users.where('tenant_id').equals(tenantId).toArray();
-        for (const u of cUsers) {
-          await cloudDb.cloud_users.delete(u.id);
-        }
+        await cloudDb.cloud_tenants.delete(tenantId).catch(() => {});
+        await cloudDb.cloud_branches.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await cloudDb.cloud_users.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await cloudDb.cloud_tenant_users.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await cloudDb.cloud_user_branch_roles.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await cloudDb.cloud_tenant_modules.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await cloudDb.cloud_tenant_settings.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await cloudDb.cloud_feature_flags.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await cloudDb.cloud_products.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await cloudDb.cloud_product_variants.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await cloudDb.cloud_customers.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await cloudDb.cloud_orders.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await cloudDb.cloud_subscriptions.where('tenant_id').equals(tenantId).delete().catch(() => {});
+        await cloudDb.cloud_user_sessions.where('tenantId').equals(tenantId).delete().catch(() => {});
+        await cloudDb.cloud_stock_ledger.where('tenant_id').equals(tenantId).delete().catch(() => {});
       } catch (_) {}
 
       // 5. Purge Supabase remote entries
       try {
-        await supabase.from('tenants').delete().eq('id', tenantId);
-        await supabase.from('users').delete().eq('tenant_id', tenantId);
-        await supabase.from('userBranchRoles').delete().eq('tenant_id', tenantId);
-        await supabase.from('tenantUsers').delete().eq('tenant_id', tenantId);
+        await supabase.from('tenants').delete().eq('id', tenantId).catch(() => {});
+        await supabase.from('branches').delete().eq('tenant_id', tenantId).catch(() => {});
+        await supabase.from('users').delete().eq('tenant_id', tenantId).catch(() => {});
+        await supabase.from('userBranchRoles').delete().eq('tenant_id', tenantId).catch(() => {});
+        await supabase.from('tenantUsers').delete().eq('tenant_id', tenantId).catch(() => {});
+        await supabase.from('tenantModules').delete().eq('tenant_id', tenantId).catch(() => {});
+        await supabase.from('tenantSettings').delete().eq('tenant_id', tenantId).catch(() => {});
+        await supabase.from('featureFlags').delete().eq('tenant_id', tenantId).catch(() => {});
+        await supabase.from('tenantSubscriptions').delete().eq('tenant_id', tenantId).catch(() => {});
       } catch (_) {}
 
-      // 6. Purge PostgreSQL backend records
+      // 6. Purge PostgreSQL backend records & file assets
       try {
         await fetch(`/api/tenants/${tenantId}`, {
           method: 'DELETE',

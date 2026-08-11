@@ -195,7 +195,7 @@ export interface Tenant {
   id: string;
   name: string;
   slug: string;
-  status: 'Active' | 'Suspended' | 'Trial' | 'Registered' | 'Cancelled' | 'Demo' | 'DEMO' | 'ACTIVE' | 'TRIAL' | 'SUSPENDED' | 'EXPIRED' | 'ARCHIVED' | 'Expired' | 'Archived' | 'Prospect' | 'Registration' | 'Verification' | 'Provisioning' | 'Demo Mode' | 'Subscribed' | 'Deleted';
+  status: 'Active' | 'Suspended' | 'Trial' | 'Registered' | 'Cancelled' | 'Demo' | 'DEMO' | 'ACTIVE' | 'TRIAL' | 'SUSPENDED' | 'EXPIRED' | 'ARCHIVED' | 'Expired' | 'Archived' | 'Prospect' | 'Registration' | 'Verification' | 'Provisioning' | 'Demo Mode' | 'Subscribed' | 'Deleted' | 'Draft' | 'DRAFT';
   plan: 'Basic' | 'Professional' | 'Enterprise';
   // Extended SaaS fields
   business_type?: string;
@@ -243,6 +243,7 @@ export interface Tenant {
   created_by?: string;
   registration_ip?: string;
   registration_device?: string;
+  registration_completed?: boolean;
 }
 
 export interface TenantBackup {
@@ -1205,6 +1206,10 @@ export interface ExpiryAlert {
   quantity_remaining: number;
   alert_level: 'EXPIRED' | 'TODAY' | 'WEEK' | 'MONTH';
   is_dismissed: boolean;
+  // Extended pharmacy fields (optional for backward compatibility)
+  days_to_expiry?: number;
+  is_resolved?: boolean;
+  resolved_at?: number;
   created_at: number;
 }
 
@@ -1960,6 +1965,39 @@ class DukaPosDatabase extends Dexie {
   legalRetainers!: Table<LegalRetainer>;
   legalTimeline!: Table<LegalTimelineEntry>;
 
+  // ── Pharmacy Management Module Tables (v36) ─────────────────────────────────
+  pharmacyPatients!: Table<PharmacyPatient>;
+  pharmacyDoctors!: Table<PharmacyDoctor>;
+  medicineBatches!: Table<MedicineBatch>;
+  prescriptions!: Table<Prescription>;
+  prescriptionItems!: Table<PrescriptionItem>;
+  dispensings!: Table<Dispensing>;
+  dispensingItems!: Table<DispensingItem>;
+  drugInteractions!: Table<DrugInteraction>;
+  insuranceProviders!: Table<InsuranceProvider>;
+  insuranceClaims!: Table<InsuranceClaim>;
+  controlledDrugRegister!: Table<ControlledDrugEntry>;
+  pharmacyAuditLogs!: Table<PharmacyAuditLog>;
+  documentAttachments!: Table<DocumentAttachment>;
+  farms!: Table<Farm>;
+  farmHouses!: Table<FarmHouse>;
+  birdBatches!: Table<BirdBatch>;
+  livestockAnimals!: Table<LivestockAnimal>;
+  livestockBreeds!: Table<LivestockBreed>;
+  feedItems!: Table<FeedItem>;
+  feedConsumptions!: Table<FeedConsumption>;
+  waterConsumptions!: Table<WaterConsumption>;
+  vaccinationRecords!: Table<VaccinationRecord>;
+  livestockHealthRecords!: Table<LivestockHealthRecord>;
+  veterinaryVisits!: Table<VeterinaryVisit>;
+  breedingRecords!: Table<BreedingRecord>;
+  hatcheryIncubators!: Table<HatcheryIncubator>;
+  hatchCycles!: Table<HatchCycle>;
+  eggProductions!: Table<EggProduction>;
+  milkProductions!: Table<MilkProduction>;
+  weightRecords!: Table<WeightRecord>;
+  livestockTasks!: Table<LivestockTask>;
+
   constructor() {
     super('DukaPosDatabase');
 
@@ -2696,6 +2734,59 @@ class DukaPosDatabase extends Dexie {
       legalTimeline: 'id, tenant_id, case_id, timestamp'
     });
 
+    // Version 36: Pharmacy Management Module Schema
+    this.version(36).stores({
+      pharmacyPatients: 'id, tenant_id, branch_id, patient_code, name, phone, nhif_number, status, created_at',
+      pharmacyDoctors: 'id, tenant_id, registration_number, name, specialty, hospital, status, created_at',
+      medicineBatches: [
+        'id',
+        'tenant_id',
+        'branch_id',
+        'product_id',
+        'batch_number',
+        'expiry_date',
+        'status',
+        'supplier_id',
+        'created_at',
+        '[tenant_id+branch_id+status]',
+        '[tenant_id+product_id+expiry_date]',
+        '[tenant_id+branch_id+expiry_date]'
+      ].join(', '),
+      prescriptions: 'id, tenant_id, branch_id, prescription_number, patient_id, doctor_id, status, created_at',
+      prescriptionItems: 'id, prescription_id, tenant_id, product_id, batch_id, dispensed_qty, status',
+      dispensings: 'id, tenant_id, branch_id, prescription_id, patient_id, pharmacist_id, status, created_at',
+      dispensingItems: 'id, dispensing_id, tenant_id, product_id, batch_id, created_at',
+      drugInteractions: 'id, tenant_id, drug_a_id, drug_b_id, severity, created_at',
+      insuranceProviders: 'id, tenant_id, name, code, type, status, created_at',
+      insuranceClaims: 'id, tenant_id, branch_id, provider_id, patient_id, sale_id, status, submitted_at, created_at',
+      controlledDrugRegister: 'id, tenant_id, branch_id, product_id, batch_id, prescription_id, patient_id, pharmacist_id, created_at',
+      medicineRecalls: 'id, tenant_id, product_id, batch_id, reason, status, initiated_at, created_at',
+      expiryAlerts: 'id, tenant_id, branch_id, product_id, batch_id, expiry_date, alert_level, is_resolved, created_at',
+      pharmacyAuditLogs: 'id, tenant_id, branch_id, user_id, action, entity_type, entity_id, created_at'
+    });
+
+    this.version(37).stores({
+      documentAttachments: 'id, tenant_id, branch_id, module, entity_type, entity_id, is_confidential, created_at',
+      farms: 'id, tenant_id, branch_id, farm_code, farm_type, status, created_at',
+      farmHouses: 'id, tenant_id, farm_id, house_type, status, created_at',
+      birdBatches: 'id, tenant_id, branch_id, farm_id, house_id, batch_number, breed, status, arrival_date, created_at',
+      livestockAnimals: 'id, tenant_id, branch_id, farm_id, house_id, animal_id, tag_number, species, breed, gender, status, created_at',
+      livestockBreeds: 'id, tenant_id, species, breed_name, created_at',
+      feedItems: 'id, tenant_id, branch_id, feed_name, category, created_at',
+      feedConsumptions: 'id, tenant_id, branch_id, farm_id, batch_id, animal_id, date, created_at',
+      waterConsumptions: 'id, tenant_id, branch_id, farm_id, house_id, date, created_at',
+      vaccinationRecords: 'id, tenant_id, branch_id, farm_id, batch_id, animal_id, vaccine_name, status, scheduled_date, created_at',
+      livestockHealthRecords: 'id, tenant_id, branch_id, farm_id, batch_id, animal_id, diagnosis, status, created_at',
+      veterinaryVisits: 'id, tenant_id, branch_id, farm_id, veterinarian_name, visit_date, created_at',
+      breedingRecords: 'id, tenant_id, branch_id, farm_id, female_animal_id, male_animal_id, mating_type, status, expected_delivery_date, created_at',
+      hatcheryIncubators: 'id, tenant_id, farm_id, incubator_name, status, created_at',
+      hatchCycles: 'id, tenant_id, branch_id, farm_id, incubator_id, batch_number, status, set_date, expected_hatch_date, created_at',
+      eggProductions: 'id, tenant_id, branch_id, farm_id, house_id, batch_id, collection_date, created_at',
+      milkProductions: 'id, tenant_id, branch_id, farm_id, animal_id, session_date, created_at',
+      weightRecords: 'id, tenant_id, branch_id, farm_id, batch_id, animal_id, weigh_date, created_at',
+      livestockTasks: 'id, tenant_id, branch_id, farm_id, task_type, priority, status, due_date, assigned_to, created_at'
+    });
+
     const tablesWithOrigin = [
       'products', 'productVariants', 'customers', 'orders',
       'stockLedger', 'invoices', 'payments', 'suppliers',
@@ -3170,13 +3261,26 @@ export async function initProductionDatabase() {
   if (isSeedingInProgress) return;
   isSeedingInProgress = true;
 
-  // Apply production lock immediately and unconditionally
   if (typeof window !== 'undefined') {
     localStorage.setItem('DUKAPOS_PRODUCTION_LOCKED', 'true');
   }
 
   try {
-
+    // ── Orphan & Partial Registration Cleanup ────────────────────────────────
+    // Purges any partial/unfinalized tenant records missing required credentials or marked as draft
+    try {
+      const existingTenants = await db.tenants.toArray();
+      for (const t of existingTenants) {
+        if (
+          t.status === 'Draft' || 
+          t.status === 'DRAFT' || 
+          t.registration_completed === false || 
+          (!t.email && !(t as any).owner_email)
+        ) {
+          await db.tenants.delete(t.id).catch(() => {});
+        }
+      }
+    } catch (_) {}
 
     const rolesCount = await db.roles.count();
 
@@ -3991,6 +4095,7 @@ export interface LegalRetainer {
   updated_at: number;
 }
 
+
 export interface LegalTimelineEntry {
   id: string;
   tenant_id: string;
@@ -3999,4 +4104,606 @@ export interface LegalTimelineEntry {
   event_type: string;
   description: string;
   timestamp: number;
+}
+
+// ─── Pharmacy Management Module Interfaces (v36) ──────────────────────────────
+
+export interface PharmacyPatient {
+  id: string;
+  tenant_id: string;
+  branch_id?: string;
+  patient_code: string;
+  name: string;
+  gender?: 'Male' | 'Female' | 'Other';
+  date_of_birth?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  emergency_contact_name?: string;
+  emergency_contact_phone?: string;
+  allergies?: string[];
+  chronic_diseases?: string[];
+  blood_group?: string;
+  nhif_number?: string;
+  insurance_provider_id?: string;
+  insurance_member_no?: string;
+  credit_limit?: number;
+  outstanding_credit?: number;
+  loyalty_points?: number;
+  notes?: string;
+  status: 'Active' | 'Inactive';
+  created_at: number;
+  updated_at: number;
+}
+
+export interface PharmacyDoctor {
+  id: string;
+  tenant_id: string;
+  registration_number: string;
+  name: string;
+  specialty?: string;
+  hospital?: string;
+  clinic?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  status: 'Active' | 'Inactive';
+  notes?: string;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface MedicineBatch {
+  id: string;
+  tenant_id: string;
+  branch_id: string;
+  product_id: string;
+  product_name?: string;
+  batch_number: string;
+  manufacturing_date?: string;
+  expiry_date: string;
+  supplier_id?: string;
+  supplier_name?: string;
+  purchase_order_id?: string;
+  goods_receipt_id?: string;
+  quantity_received: number;
+  quantity_remaining: number;
+  cost_price: number;
+  selling_price?: number;
+  warehouse_id?: string;
+  warehouse_name?: string;
+  is_controlled?: boolean;
+  is_locked?: boolean;
+  lock_reason?: string;
+  status: 'Active' | 'Low' | 'Expired' | 'Recalled' | 'Disposed' | 'Locked';
+  created_at: number;
+  updated_at: number;
+}
+
+export interface Prescription {
+  id: string;
+  tenant_id: string;
+  branch_id: string;
+  prescription_number: string;
+  patient_id?: string;
+  patient_name?: string;
+  doctor_id?: string;
+  doctor_name?: string;
+  hospital?: string;
+  diagnosis?: string;
+  prescription_date: string;
+  expiry_date?: string;
+  image_url?: string;
+  attachment_url?: string;
+  is_repeat?: boolean;
+  repeat_count?: number;
+  refills_allowed?: number;
+  refills_used?: number;
+  notes?: string;
+  status: 'Pending' | 'Verified' | 'Dispensing' | 'Partial' | 'Completed' | 'Expired' | 'Cancelled';
+  created_by?: string;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface PrescriptionItem {
+  id: string;
+  prescription_id: string;
+  tenant_id: string;
+  product_id: string;
+  product_name?: string;
+  generic_name?: string;
+  dosage_form?: string;
+  strength?: string;
+  quantity_prescribed: number;
+  quantity_dispensed: number;
+  batch_id?: string;
+  batch_number?: string;
+  dosage_instructions?: string;
+  frequency?: string;
+  duration?: string;
+  status: 'Pending' | 'Partial' | 'Dispensed';
+  created_at: number;
+}
+
+export interface Dispensing {
+  id: string;
+  tenant_id: string;
+  branch_id: string;
+  dispensing_number?: string;
+  prescription_id?: string;
+  patient_id?: string;
+  patient_name?: string;
+  pharmacist_id?: string;
+  pharmacist_name?: string;
+  is_otc: boolean;
+  total_amount: number;
+  insurance_amount?: number;
+  patient_amount?: number;
+  insurance_provider_id?: string;
+  claim_id?: string;
+  payment_method?: string;
+  notes?: string;
+  status: 'In Progress' | 'Completed' | 'Cancelled';
+  created_at: number;
+  updated_at: number;
+}
+
+export interface DispensingItem {
+  id: string;
+  dispensing_id: string;
+  tenant_id: string;
+  product_id: string;
+  product_name?: string;
+  batch_id: string;
+  batch_number?: string;
+  expiry_date?: string;
+  quantity: number;
+  unit_price: number;
+  total_price: number;
+  label_printed?: boolean;
+  dosage_instructions?: string;
+  created_at: number;
+}
+
+export interface DrugInteraction {
+  id: string;
+  tenant_id: string;
+  drug_a_id: string;
+  drug_a_name?: string;
+  drug_b_id: string;
+  drug_b_name?: string;
+  severity: 'Mild' | 'Moderate' | 'Severe' | 'Contraindicated';
+  description: string;
+  clinical_effect?: string;
+  management?: string;
+  created_at: number;
+}
+
+export interface InsuranceProvider {
+  id: string;
+  tenant_id: string;
+  name: string;
+  code: string;
+  type: 'NHIF' | 'Private' | 'Corporate' | 'Government';
+  contact_person?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  claim_submission_email?: string;
+  payment_terms_days?: number;
+  coverage_percentage?: number;
+  status: 'Active' | 'Inactive';
+  created_at: number;
+  updated_at: number;
+}
+
+export interface InsuranceClaim {
+  id: string;
+  tenant_id: string;
+  branch_id: string;
+  claim_number?: string;
+  provider_id: string;
+  provider_name?: string;
+  patient_id?: string;
+  patient_name?: string;
+  insurance_member_no?: string;
+  sale_id?: string;
+  dispensing_id?: string;
+  prescription_id?: string;
+  claim_amount: number;
+  approved_amount?: number;
+  rejection_reason?: string;
+  submitted_at?: number;
+  approved_at?: number;
+  paid_at?: number;
+  notes?: string;
+  status: 'Draft' | 'Submitted' | 'Approved' | 'Rejected' | 'Paid' | 'Cancelled';
+  created_at: number;
+  updated_at: number;
+}
+
+export interface ControlledDrugEntry {
+  id: string;
+  tenant_id: string;
+  branch_id: string;
+  product_id: string;
+  product_name?: string;
+  batch_id: string;
+  batch_number?: string;
+  prescription_id?: string;
+  prescription_number?: string;
+  patient_id?: string;
+  patient_name?: string;
+  patient_id_number?: string;
+  doctor_id?: string;
+  doctor_name?: string;
+  doctor_registration?: string;
+  pharmacist_id?: string;
+  pharmacist_name?: string;
+  quantity_dispensed: number;
+  balance_before: number;
+  balance_after: number;
+  witness_name?: string;
+  notes?: string;
+  approved_by?: string;
+  created_at: number;
+}
+
+export interface MedicineRecall {
+  id: string;
+  tenant_id: string;
+  product_id: string;
+  product_name?: string;
+  batch_id?: string;
+  batch_number?: string;
+  recall_type: 'Voluntary' | 'Regulatory' | 'Precautionary';
+  reason: string;
+  regulatory_body?: string;
+  notice_number?: string;
+  affected_quantity?: number;
+  returned_quantity?: number;
+  status: 'Initiated' | 'In Progress' | 'Completed' | 'Closed';
+  initiated_by?: string;
+  initiated_at: number;
+  completed_at?: number;
+  notes?: string;
+  created_at: number;
+}
+
+// ExpiryAlert is defined earlier in this file — do not redefine here.
+
+export interface PharmacyAuditLog {
+  id: string;
+  tenant_id: string;
+  branch_id?: string;
+  user_id: string;
+  user_name?: string;
+  action: string;
+  entity_type: string;
+  entity_id?: string;
+  old_value?: string;
+  new_value?: string;
+  ip_address?: string;
+  notes?: string;
+  created_at: number;
+}
+
+// ─── Enterprise Document Handling ─────────────────────────────────────────────
+export interface DocumentAttachment {
+  id: string;
+  tenant_id: string;
+  branch_id?: string;
+  module: 'General' | 'POS' | 'Inventory' | 'Purchasing' | 'Expenses' | 'Pharmacy' | 'PoultryLivestock' | 'LawFirm';
+  entity_type: string; // 'Animal' | 'BirdBatch' | 'VeterinaryVisit' | 'Prescription' | 'PurchaseOrder' | 'Expense' | 'Customer' | 'Employee'
+  entity_id: string;
+  file_name: string;
+  file_type: string;
+  file_size_bytes: number;
+  storage_provider: 'local_indexeddb' | 'gcs_cloud' | 's3_aws';
+  storage_path: string; // Remote URL or Base64 / Blob Data key
+  data_base64?: string; // Offline preview payload
+  sha256_hash?: string;
+  ocr_extracted_text?: string;
+  tags?: string[];
+  is_confidential?: boolean;
+  uploaded_by?: string;
+  created_at: number;
+  updated_at?: number;
+  deleted_at?: number | null;
+}
+
+// ─── Poultry & Livestock Module Schemas ────────────────────────────────────────
+
+export interface Farm {
+  id: string;
+  tenant_id: string;
+  branch_id: string;
+  farm_name: string;
+  farm_code: string;
+  farm_type: 'Poultry' | 'Dairy' | 'Beef Cattle' | 'Goat' | 'Sheep' | 'Piggery' | 'Rabbit' | 'Hatchery' | 'Mixed';
+  owner_name?: string;
+  manager_name?: string;
+  address?: string;
+  gps_coordinates?: string;
+  capacity_units?: number;
+  status: 'Active' | 'Inactive' | 'Under Maintenance';
+  description?: string;
+  created_at: number;
+}
+
+export interface FarmHouse {
+  id: string;
+  tenant_id: string;
+  farm_id: string;
+  house_name: string;
+  house_type: 'Poultry House' | 'Dairy Unit' | 'Pig Pen' | 'Goat House' | 'Sheep Barn' | 'Hatchery' | 'Storage' | 'Paddock';
+  capacity: number;
+  current_occupancy: number;
+  temperature_celsius?: number;
+  humidity_percent?: number;
+  status: 'Active' | 'Sanitizing' | 'Empty' | 'Maintenance';
+  created_at: number;
+}
+
+export interface BirdBatch {
+  id: string;
+  tenant_id: string;
+  branch_id: string;
+  farm_id: string;
+  house_id?: string;
+  batch_number: string;
+  bird_type: 'Broiler' | 'Layer' | 'Breeder' | 'Duck' | 'Turkey' | 'Quail';
+  breed: string;
+  supplier?: string;
+  arrival_date: string;
+  initial_quantity: number;
+  current_quantity: number;
+  accumulated_mortality: number;
+  accumulated_culled: number;
+  initial_cost: number;
+  total_feed_consumed_kg: number;
+  current_total_weight_kg: number;
+  fcr?: number; // Feed Conversion Ratio
+  status: 'Active' | 'Sold' | 'Closed' | 'Quarantined';
+  created_at: number;
+}
+
+export interface LivestockAnimal {
+  id: string;
+  tenant_id: string;
+  branch_id: string;
+  farm_id: string;
+  house_id?: string;
+  animal_id: string; // e.g. COW-0042
+  tag_number: string;
+  rfid_tag?: string;
+  qr_code?: string;
+  name?: string;
+  species: 'Cattle' | 'Goat' | 'Sheep' | 'Pig' | 'Horse' | 'Rabbit';
+  breed: string;
+  gender: 'Male' | 'Female';
+  birth_date?: string;
+  color?: string;
+  weight_kg: number;
+  dam_id?: string; // Mother
+  sire_id?: string; // Father
+  purchase_date?: string;
+  purchase_cost?: number;
+  status: 'Healthy' | 'Sick' | 'Pregnant' | 'Lactating' | 'Quarantined' | 'Sold' | 'Deceased';
+  created_at: number;
+}
+
+export interface LivestockBreed {
+  id: string;
+  tenant_id: string;
+  species: string;
+  breed_name: string;
+  avg_weight_kg?: number;
+  avg_production_daily?: string;
+  expected_lifespan_months?: number;
+  created_at: number;
+}
+
+export interface FeedItem {
+  id: string;
+  tenant_id: string;
+  branch_id: string;
+  feed_name: string;
+  category: 'Starter' | 'Grower' | 'Finisher' | 'Layer Mash' | 'Dairy Meal' | 'Silage' | 'Hay' | 'Concentrate';
+  manufacturer?: string;
+  protein_percent?: number;
+  energy_kcal?: number;
+  unit_of_measure: 'KG' | 'BAG_50KG' | 'TON';
+  stock_quantity: number;
+  reorder_level: number;
+  cost_per_unit: number;
+  created_at: number;
+}
+
+export interface FeedConsumption {
+  id: string;
+  tenant_id: string;
+  branch_id: string;
+  farm_id: string;
+  batch_id?: string;
+  animal_id?: string;
+  feed_id: string;
+  feed_name: string;
+  quantity_kg: number;
+  cost_amount: number;
+  date: string;
+  created_at: number;
+}
+
+export interface WaterConsumption {
+  id: string;
+  tenant_id: string;
+  branch_id: string;
+  farm_id: string;
+  house_id?: string;
+  liters_used: number;
+  water_source?: string;
+  cost_amount: number;
+  date: string;
+  created_at: number;
+}
+
+export interface VaccinationRecord {
+  id: string;
+  tenant_id: string;
+  branch_id: string;
+  farm_id: string;
+  batch_id?: string;
+  animal_id?: string;
+  vaccine_name: string;
+  dosage: string;
+  scheduled_date: string;
+  administered_date?: string;
+  administered_by?: string;
+  status: 'Scheduled' | 'Completed' | 'Overdue' | 'Skipped';
+  notes?: string;
+  created_at: number;
+}
+
+export interface LivestockHealthRecord {
+  id: string;
+  tenant_id: string;
+  branch_id: string;
+  farm_id: string;
+  batch_id?: string;
+  animal_id?: string;
+  diagnosis: string;
+  symptoms?: string;
+  treatment_administered?: string;
+  medication_name?: string;
+  cost: number;
+  veterinarian_name?: string;
+  status: 'Under Treatment' | 'Recovered' | 'Quarantined' | 'Deceased';
+  created_at: number;
+}
+
+export interface VeterinaryVisit {
+  id: string;
+  tenant_id: string;
+  branch_id: string;
+  farm_id: string;
+  veterinarian_name: string;
+  clinic_company?: string;
+  visit_date: string;
+  purpose: string;
+  findings?: string;
+  recommendations?: string;
+  total_cost: number;
+  created_at: number;
+}
+
+export interface BreedingRecord {
+  id: string;
+  tenant_id: string;
+  branch_id: string;
+  farm_id: string;
+  female_animal_id: string;
+  male_animal_id?: string;
+  mating_type: 'Natural' | 'Artificial Insemination';
+  mating_date: string;
+  expected_delivery_date: string;
+  actual_delivery_date?: string;
+  offspring_count?: number;
+  status: 'Serviced' | 'Confirmed Pregnant' | 'Delivered' | 'Failed / Repeat';
+  notes?: string;
+  created_at: number;
+}
+
+export interface HatcheryIncubator {
+  id: string;
+  tenant_id: string;
+  farm_id: string;
+  incubator_name: string;
+  capacity_eggs: number;
+  temperature_setting: number;
+  humidity_setting: number;
+  status: 'Running' | 'Idle' | 'Maintenance';
+  created_at: number;
+}
+
+export interface HatchCycle {
+  id: string;
+  tenant_id: string;
+  branch_id: string;
+  farm_id: string;
+  incubator_id: string;
+  batch_number: string;
+  total_eggs_set: number;
+  fertile_eggs_candled?: number;
+  hatched_chicks?: number;
+  cull_chicks?: number;
+  hatchability_percent?: number;
+  fertility_percent?: number;
+  set_date: string;
+  expected_hatch_date: string;
+  actual_hatch_date?: string;
+  status: 'Incubating' | 'Candled' | 'Hatched' | 'Failed';
+  created_at: number;
+}
+
+export interface EggProduction {
+  id: string;
+  tenant_id: string;
+  branch_id: string;
+  farm_id: string;
+  house_id?: string;
+  batch_id?: string;
+  collection_date: string;
+  grade_a_count: number;
+  grade_b_count: number;
+  damaged_count: number;
+  total_eggs: number;
+  trays_count: number; // 30 eggs per tray
+  collector_name?: string;
+  created_at: number;
+}
+
+export interface MilkProduction {
+  id: string;
+  tenant_id: string;
+  branch_id: string;
+  farm_id: string;
+  animal_id: string;
+  session: 'Morning' | 'Afternoon' | 'Evening';
+  liters_yield: number;
+  fat_percent?: number;
+  protein_percent?: number;
+  session_date: string;
+  milker_name?: string;
+  created_at: number;
+}
+
+export interface WeightRecord {
+  id: string;
+  tenant_id: string;
+  branch_id: string;
+  farm_id: string;
+  batch_id?: string;
+  animal_id?: string;
+  weigh_date: string;
+  weight_kg: number;
+  average_daily_gain_kg?: number;
+  notes?: string;
+  created_at: number;
+}
+
+export interface LivestockTask {
+  id: string;
+  tenant_id: string;
+  branch_id: string;
+  farm_id: string;
+  task_title: string;
+  task_type: 'Feeding' | 'Cleaning' | 'Vaccination' | 'Milking' | 'Egg Collection' | 'Inspection' | 'Maintenance';
+  assigned_to?: string;
+  priority: 'Low' | 'Medium' | 'High' | 'Urgent';
+  due_date: string;
+  status: 'Pending' | 'In Progress' | 'Completed' | 'Overdue';
+  notes?: string;
+  created_at: number;
 }

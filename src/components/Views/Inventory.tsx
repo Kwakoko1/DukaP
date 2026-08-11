@@ -13,7 +13,7 @@ import {
   ProductService, cleanDuplicateVariants, getVariantAttrSig,
   createCategory, updateCategory, deleteCategory,
   createBrand, updateBrand, deleteBrand,
-  seedIndustryCategoryPresets, mergeDuplicateCategories, mergeDuplicateBrands
+  mergeDuplicateCategories, mergeDuplicateBrands, deleteAllCategoriesAndBrands
 } from '../../services/productService';
 import { Html5Qrcode } from 'html5-qrcode';
 import {
@@ -1892,14 +1892,13 @@ export const Inventory: React.FC = () => {
     document.body.removeChild(link);
   };
 
-  const handleSeedPresets = async () => {
+  const handleDeleteAllCategoriesAndBrands = async () => {
     if (!currentTenant?.id) return;
-    const added = await seedIndustryCategoryPresets(currentTenant.id, activeModule);
-    if (added > 0) {
-      alert(`🌱 Successfully seeded ${added} standard category preset(s) for ${activeModule}!`);
-    } else {
-      alert(`ℹ️ Category presets for ${activeModule} are already loaded in your catalog.`);
+    if (!confirm('⚠️ Are you sure you want to delete ALL Categories and Brands for this workspace? Products will remain intact with General taxonomy.')) {
+      return;
     }
+    const res = await deleteAllCategoriesAndBrands(currentTenant.id);
+    alert(`🗑️ Successfully deleted ${res.categoriesDeleted} categories and ${res.brandsDeleted} brands.`);
   };
 
   const handleMergeDuplicates = async () => {
@@ -1962,11 +1961,11 @@ export const Inventory: React.FC = () => {
               🏷️ {allBrands.length} Brands
             </span>
             <button
-              onClick={handleSeedPresets}
-              className="px-3 py-1.5 text-xs font-bold rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/50 dark:hover:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 transition flex items-center gap-1.5 cursor-pointer"
-              title="Seed standard category presets for current industry module"
+              onClick={handleDeleteAllCategoriesAndBrands}
+              className="px-3 py-1.5 text-xs font-bold rounded-xl bg-red-50 hover:bg-red-100 dark:bg-red-950/50 dark:hover:bg-red-900/50 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800 transition flex items-center gap-1.5 cursor-pointer"
+              title="Delete all categories and brands for current workspace"
             >
-              🌱 Seed {activeModule} Presets
+              <Trash2 className="h-3.5 w-3.5" /> Clear All Categories &amp; Brands
             </button>
             <button
               onClick={handleMergeDuplicates}
@@ -3475,19 +3474,45 @@ export const Inventory: React.FC = () => {
       </div>
 
       {/* Product Editor Dialog */}
-      <Dialog isOpen={isEditorOpen} onClose={() => setIsEditorOpen(false)} title={selectedProduct ? `Edit: ${pName}` : 'New Product'} size="full">
-        <div className="inv-editor">
-          {/* Tab Nav */}
-          <div className="inv-editor-tabs">
+      <Dialog
+        isOpen={isEditorOpen}
+        onClose={() => setIsEditorOpen(false)}
+        title={selectedProduct ? `Edit Product: ${pName}` : 'Add New Product'}
+        size="full"
+        subHeader={
+          <div className="inv-editor-tabs flex items-center gap-1 overflow-x-auto border-b-0 bg-transparent">
             {PRODUCT_TABS.map(t => (
               <button key={t.id} className={`inv-editor-tab ${editorTab === t.id ? 'active' : ''}`}
                 onClick={() => setEditorTab(t.id)}>
-                {t.icon} {t.label}
+                {t.icon} <span>{t.label}</span>
               </button>
             ))}
           </div>
-
-          <div className="inv-editor-body">
+        }
+        footer={
+          <div className="flex items-center justify-end gap-3 w-full">
+            <button
+              type="button"
+              className="px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all"
+              onClick={() => setIsEditorOpen(false)}
+            >
+              Cancel
+            </button>
+            {editorTab !== 'history' && editorTab !== 'batch' && editorTab !== 'serials' && editorTab !== 'reorder' && (
+              <button
+                type="button"
+                className="px-5 py-2 text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl shadow-md flex items-center gap-1.5 transition-all disabled:opacity-50"
+                onClick={handleSaveProduct}
+                disabled={isSaving}
+              >
+                {isSaving ? <RefreshCw size={14} className="spin animate-spin" /> : <Check size={14} />}
+                <span>{selectedProduct ? 'Update Product' : 'Create Product'}</span>
+              </button>
+            )}
+          </div>
+        }
+      >
+        <div className="inv-editor-body">
             {/* General Tab */}
             {editorTab === 'general' && (
               <div className="inv-form-grid">
@@ -4755,17 +4780,6 @@ export const Inventory: React.FC = () => {
                 )}
               </div>
             )}
-          </div>
-
-          <div className="inv-editor-footer">
-            <button className="inv-cancel-btn" onClick={() => setIsEditorOpen(false)}>Cancel</button>
-            {editorTab !== 'history' && editorTab !== 'batch' && editorTab !== 'serials' && editorTab !== 'reorder' && (
-              <button className="inv-save-btn" onClick={handleSaveProduct} disabled={isSaving}>
-                {isSaving ? <RefreshCw size={14} className="spin"/> : <Check size={14}/>}
-                {selectedProduct ? 'Update Product' : 'Create Product'}
-              </button>
-            )}
-          </div>
         </div>
       </Dialog>
 

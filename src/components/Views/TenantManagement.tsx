@@ -18,7 +18,7 @@ import {
   Building2, Users, Globe, 
   GitBranch, LayoutGrid, List, Workflow, 
   Plus, Zap, ExternalLink, ArrowLeft, BarChart2,
-  LogOut, Search, ChevronRight, ChevronDown, Shield, Store, Trash2,
+  LogOut, Search, ChevronRight, ChevronDown, Shield, Store,
   Calendar, Filter, ArrowUp, ArrowDown, ShieldCheck, Info
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
@@ -137,6 +137,12 @@ export const TenantManagement: React.FC = () => {
   const [sortDirection, setSortDirection] = useState<'DESC' | 'ASC'>('DESC');
   const [selectedAuditTenant, setSelectedAuditTenant] = useState<any | null>(null);
 
+  // Two-Factor Tenant Deletion Modal States
+  const [deleteModalTenant, setDeleteModalTenant] = useState<Tenant | null>(null);
+  const [deleteConfirmationText, setDeleteConfirmationText] = useState('');
+  const [deleteMode, setDeleteMode] = useState<'SOFT_DELETE' | 'HARD_PURGE'>('HARD_PURGE');
+  const [isDeleting, setIsDeleting] = useState(false);
+
   // PostgreSQL live tenant registry (authoritative source for online registrations)
   const [pgTenants, setPgTenants] = useState<any[]>([]);
   const [isFetchingPg, setIsFetchingPg] = useState(false);
@@ -251,13 +257,32 @@ export const TenantManagement: React.FC = () => {
     return list;
   }, [cloudPlans, localPlans]);
 
+  const isTenantDeleted = (t: any): boolean => {
+    if (!t) return true;
+    if (t.deleted_at || t.deletedAt || t.status === 'Deleted' || t.status === 'Archived') return true;
+    if (t.status === 'Draft' || t.status === 'DRAFT' || t.registration_completed === false) return true;
+    if (deletedTenantIds.has(t.id)) return true;
+    if (t.tenant_code && deletedTenantIds.has(t.tenant_code)) return true;
+    if (t.business_code && deletedTenantIds.has(t.business_code)) return true;
+    if (t.tenant_uuid && deletedTenantIds.has(t.tenant_uuid)) return true;
+    if (t.slug && deletedTenantIds.has(t.slug)) return true;
+    if (t.email && typeof window !== 'undefined') {
+      try {
+        const rawEmails = localStorage.getItem('DUKAPOS_DELETED_USER_EMAILS') || '[]';
+        const emailList: string[] = JSON.parse(rawEmails);
+        if (emailList.includes(t.email.trim().toLowerCase())) return true;
+      } catch (_) {}
+    }
+    return false;
+  };
+
   // Merge: PostgreSQL (authoritative) → cloudDb cache → local Dexie → currentTenant
   const tenants = useMemo(() => {
     const map = new Map<string, any>();
 
     // 1. PostgreSQL live records — primary source of truth for online registrations
     for (const pg of pgTenants) {
-      if (pg.deleted_at || pg.status === 'Deleted' || pg.status === 'Archived' || deletedTenantIds.has(pg.id)) continue;
+      if (isTenantDeleted(pg)) continue;
       map.set(pg.id, {
         id: pg.id,
         name: pg.name,
@@ -267,7 +292,7 @@ export const TenantManagement: React.FC = () => {
         business_type: pg.business_type || 'Retail',
         industry: pg.business_type || 'Retail',
         tenant_code: pg.tenant_code || pg.business_code || pg.id,
-        owner_name: pg.owner_name || '',
+        owner_name: pg.owner_name || pg.email || '',
         email: pg.email || '',
         created_at: pg.created_at ? Number(pg.created_at) : Date.now(),
         updated_at: pg.updated_at ? Number(pg.updated_at) : undefined,
@@ -282,7 +307,7 @@ export const TenantManagement: React.FC = () => {
 
     // 2. Dexie cloudDb cache — fills gaps for tenants provisioned locally
     for (const ct of cloudTenants) {
-      if (ct.deleted_at || ct.status === 'Deleted' || ct.status === 'Archived' || deletedTenantIds.has(ct.id)) continue;
+      if (isTenantDeleted(ct)) continue;
       if (!map.has(ct.id)) {
         map.set(ct.id, {
           id: ct.id,
@@ -293,8 +318,8 @@ export const TenantManagement: React.FC = () => {
           business_type: ct.business_type || 'Retail',
           industry: ct.industry || ct.business_type || 'Retail',
           tenant_code: ct.tenant_code,
-          owner_name: ct.owner_name,
-          email: ct.email,
+          owner_name: ct.owner_name || ct.email || '',
+          email: ct.email || '',
           created_at: ct.created_at || Date.now(),
           updated_at: ct.updated_at,
           deleted_at: ct.deleted_at,
@@ -310,10 +335,11 @@ export const TenantManagement: React.FC = () => {
 
     // 3. Local Dexie tenants
     for (const dt of dbTenants) {
-      if ((dt as any).deleted_at || dt.status === 'Deleted' || dt.status === 'Archived' || deletedTenantIds.has(dt.id)) continue;
+      if (isTenantDeleted(dt)) continue;
       if (!map.has(dt.id)) {
         map.set(dt.id, {
           ...dt,
+          owner_name: dt.owner_name || dt.email || '',
           created_at: dt.created_at || Date.now(),
           registration_source: (dt as any).registration_source || 'SUPER_ADMIN_CPANEL',
           created_by: (dt as any).created_by || 'usr-superadmin',
@@ -327,7 +353,7 @@ export const TenantManagement: React.FC = () => {
 
     // 4. Current session tenant as fallback (ONLY in tenant view, NEVER in Super Admin view)
     const curT = currentTenant as any;
-    if (!isSuperAdminView && curT && curT.id && !map.has(curT.id) && !deletedTenantIds.has(curT.id)) {
+    if (!isSuperAdminView && curT && curT.id && !map.has(curT.id) && !isTenantDeleted(curT)) {
       map.set(curT.id, {
         id: curT.id,
         name: curT.name || 'Current Tenant',
@@ -337,7 +363,7 @@ export const TenantManagement: React.FC = () => {
         business_type: curT.business_type || curT.industry || 'Retail',
         industry: curT.industry || curT.business_type || 'Retail',
         tenant_code: curT.tenant_code || curT.id,
-        owner_name: curT.owner_name || '',
+        owner_name: curT.owner_name || curT.email || '',
         email: curT.email || '',
         created_at: curT.created_at || Date.now(),
         registration_source: 'LOCAL_DEV_WORKSPACE',
@@ -350,7 +376,7 @@ export const TenantManagement: React.FC = () => {
     }
 
     return Array.from(map.values());
-  }, [pgTenants, cloudTenants, dbTenants, currentTenant, deletedTenantIds]);
+  }, [pgTenants, cloudTenants, dbTenants, currentTenant, deletedTenantIds, isSuperAdminView]);
 
   // Enriched Tenants with meta counts
   const enrichedTenants = useMemo(() => {
@@ -696,34 +722,56 @@ export const TenantManagement: React.FC = () => {
     }
   };
 
-  // Delete Action (Soft Delete & Permanent Purge Engine)
-  const handleDeleteTenant = async (tenant: Tenant) => {
-    if (!window.confirm(`⚠️ CONFIRM TENANT DELETION\n\nAre you sure you want to delete workspace "${tenant.name}" (${tenant.id})?\n\nClick OK to purge tenant workspace and all associated branches/data.`)) {
+  // Delete Action (Two-Factor Confirmation & Hard Purge Engine)
+  const handleDeleteTenant = (tenant: Tenant) => {
+    setDeleteModalTenant(tenant);
+    setDeleteConfirmationText('');
+    setDeleteMode('HARD_PURGE');
+  };
+
+  const executeTenantDeletion = async () => {
+    if (!deleteModalTenant) return;
+    const requiredText = (deleteModalTenant.tenant_code || deleteModalTenant.name).trim();
+    if (deleteConfirmationText.trim().toLowerCase() !== requiredText.toLowerCase() && deleteConfirmationText.trim() !== deleteModalTenant.id) {
+      toast.error('Verification Error', `Confirmation text must match "${requiredText}".`);
       return;
     }
 
+    setIsDeleting(true);
+    const tenant = deleteModalTenant;
+    const adminContext = {
+      id: user?.id || 'usr-superadmin',
+      name: user?.name || 'Super Admin Engine',
+      email: user?.email || 'admin@dukapos.com',
+      role: 'Super Admin' as const,
+      ipAddress: getSyncRealClientIp()
+    };
+
     try {
-      // 1. Instantly hide tenant from UI in state
-      setDeletedTenantIds(prev => new Set(prev).add(tenant.id));
-      setPgTenants(prev => prev.filter(t => t.id !== tenant.id));
+      if (deleteMode === 'SOFT_DELETE') {
+        // Soft Delete: Archive workspace & lock out login tokens
+        await SuperAdminService.softDeleteTenant(tenant.id, adminContext);
+        toast.success('Workspace Archived', `"${tenant.name}" soft-deleted; login access revoked.`);
+      } else {
+        // Hard Purge: 360-degree multi-table cascading purge across IndexedDB, Cloud DB, and Supabase
+        setDeletedTenantIds(prev => new Set(prev).add(tenant.id));
+        setPgTenants(prev => prev.filter(t => t.id !== tenant.id));
+        await SuperAdminService.purgeTenantData(tenant.id);
+        
+        await fetch(`/api/tenants/${tenant.id}`, {
+          method: 'DELETE',
+          headers: { 'x-tenant-id': 'tenant-admin-system' }
+        }).catch(console.warn);
 
-      // 2. Perform deep database purge across IndexedDB & Cloud DB
-      await SuperAdminService.purgeTenantData(tenant.id);
+        toast.success('Tenant Purged', `"${tenant.name}" and all associated workspace data permanently destroyed.`);
+      }
 
-      // 3. Mark soft deleted in local db.tenants
-      try {
-        await db.tenants.update(tenant.id, { status: 'Deleted', deleted_at: Date.now() } as any);
-      } catch (_) {}
-
-      // 4. Send API DELETE call
-      await fetch(`/api/tenants/${tenant.id}`, {
-        method: 'DELETE',
-        headers: { 'x-tenant-id': 'tenant-admin-system' }
-      }).catch(console.warn);
-
-      toast.success('Tenant Purged', `"${tenant.name}" and all associated workspace data have been permanently removed.`);
+      setDeleteModalTenant(null);
+      fetchPgTenants();
     } catch (err: any) {
-      toast.error('Deletion Error', err.message || 'Failed to delete tenant workspace.');
+      toast.error('Deletion Error', err.message || 'Failed to complete workspace deletion.');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -751,37 +799,6 @@ export const TenantManagement: React.FC = () => {
     }
   };
 
-  // Purge Seed Tenants Action
-  const handlePurgeAllSeedTenants = async () => {
-    if (window.confirm('⚠️ PURGE TEST DATA\nAre you sure you want to remove all test data tenants from Super Admin Cpanel? This will purge test tenants like tenant-101, tenant-102, tenant-103, tenant-106, and test workspaces.')) {
-      try {
-        const allTenants = await db.tenants.toArray();
-        const seedIds = ['tenant-101', 'tenant-102', 'tenant-103', 'tenant-104', 'tenant-105', 'tenant-106', 'tenant-bravados'];
-        const seedTenants = allTenants.filter(t => 
-          seedIds.includes(t.id) || 
-          t.id.endsWith('_demo') || 
-          t.name.toLowerCase().includes('demo') || 
-          t.name.toLowerCase().includes('acme') || 
-          t.name.toLowerCase().includes('bravados') || 
-          t.name.toLowerCase().includes('arusha chemist') || 
-          t.name.toLowerCase().includes('dodoma plaza') || 
-          t.name.toLowerCase().includes('bongo liqueur') || 
-          t.name.toLowerCase().includes('mwanza bay') || 
-          t.name.toLowerCase().includes('kilimanjaro sacco')
-        );
-
-        for (const t of seedTenants) {
-          await SuperAdminService.purgeTenantData(t.id);
-          setDeletedTenantIds(prev => new Set(prev).add(t.id));
-        }
-
-        await fetchPgTenants();
-        alert(`✅ Cleaned out ${seedTenants.length} test tenants from Super Admin Cpanel.`);
-      } catch (err: any) {
-        alert(`Error purging test data: ${err.message}`);
-      }
-    }
-  };
 
   // Render Tenant Details View if selected
   if (detailTenantId) {
@@ -860,9 +877,6 @@ export const TenantManagement: React.FC = () => {
               <Workflow className="h-3.5 w-3.5 inline mr-1" /> Visual Flow View
             </button>
           </div>
-          <Button variant="danger" className="h-9 text-xs font-bold" onClick={handlePurgeAllSeedTenants}>
-            <Trash2 className="h-4 w-4 mr-1" /> Purge Seed Data
-          </Button>
           <Button variant="primary" className="h-9 text-xs font-bold" onClick={openCreatePanel}>
             <Plus className="h-4 w-4 mr-1" /> Create Tenant
           </Button>
@@ -1576,6 +1590,104 @@ export const TenantManagement: React.FC = () => {
             <div className="pt-2 flex justify-end">
               <Button size="sm" variant="outline" onClick={() => setSelectedAuditTenant(null)} className="text-xs font-bold">
                 Close Audit View
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* ── Two-Factor Tenant Deletion Confirmation Modal ── */}
+      {deleteModalTenant && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-md p-4 animate-in fade-in">
+          <div className="w-full max-w-lg bg-white dark:bg-darkbg-card rounded-2xl shadow-2xl border border-rose-200 dark:border-rose-900/40 p-6 space-y-5">
+            <div className="flex items-start gap-4">
+              <div className="p-3 bg-rose-100 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 rounded-2xl shrink-0">
+                <Shield className="h-6 w-6" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
+                  <span>Confirm Workspace Deletion</span>
+                  <Badge variant="danger" className="text-[10px]">CRITICAL ACTION</Badge>
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Target: <span className="font-extrabold text-slate-900 dark:text-white">{deleteModalTenant.name}</span> ({deleteModalTenant.tenant_code || deleteModalTenant.id})
+                </p>
+              </div>
+            </div>
+
+            {/* Deletion Mode Selector */}
+            <div className="grid grid-cols-2 gap-3 p-1.5 bg-slate-100 dark:bg-darkbg rounded-xl text-xs font-bold">
+              <button
+                type="button"
+                onClick={() => setDeleteMode('HARD_PURGE')}
+                className={`py-2 px-3 rounded-lg transition ${deleteMode === 'HARD_PURGE' ? 'bg-rose-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'}`}
+              >
+                🔴 Hard Purge (Permanent)
+              </button>
+              <button
+                type="button"
+                onClick={() => setDeleteMode('SOFT_DELETE')}
+                className={`py-2 px-3 rounded-lg transition ${deleteMode === 'SOFT_DELETE' ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'}`}
+              >
+                🟠 Soft Delete (Archive)
+              </button>
+            </div>
+
+            {deleteMode === 'HARD_PURGE' ? (
+              <div className="p-4 bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/30 rounded-xl space-y-2 text-xs text-rose-800 dark:text-rose-300">
+                <p className="font-bold flex items-center gap-1.5">
+                  <Info className="h-4 w-4 shrink-0 text-rose-600" />
+                  Warning: Hard Purge executes irreversible 360° deletion!
+                </p>
+                <ul className="list-disc pl-5 space-y-1 text-[11px] text-slate-600 dark:text-slate-400">
+                  <li>Purges all store branches, cashier accounts, and security keys</li>
+                  <li>Wipes inventory, stock ledgers, sales orders, invoices, and receipts</li>
+                  <li>Clears industry-specific data (Bar, Pharmacy, Restaurant, Hotel, SACCO, etc.)</li>
+                  <li>Revokes active JWT sessions & broadcasts real-time logout to all browsers</li>
+                </ul>
+              </div>
+            ) : (
+              <div className="p-4 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/30 rounded-xl space-y-2 text-xs text-amber-800 dark:text-amber-300">
+                <p className="font-bold flex items-center gap-1.5">
+                  <Info className="h-4 w-4 shrink-0 text-amber-600" />
+                  Soft-Delete Archives the Workspace
+                </p>
+                <p className="text-[11px] text-slate-600 dark:text-slate-400">
+                  Marks status as Archived and immediately revokes all employee login access, keeping data intact for a 30-day recovery grace period.
+                </p>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                To confirm, type the target Business Name <span className="font-mono text-rose-600 dark:text-rose-400 font-extrabold select-all">"{deleteModalTenant.name.trim()}"</span> below:
+              </label>
+              <Input
+                type="text"
+                value={deleteConfirmationText}
+                onChange={e => setDeleteConfirmationText(e.target.value)}
+                placeholder={`Type "${deleteModalTenant.name.trim()}"`}
+                className="h-10 text-xs font-mono border-rose-300 dark:border-rose-900/50"
+              />
+            </div>
+
+            <div className="flex justify-end gap-3 pt-2 border-t border-slate-100 dark:border-darkbg-border">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setDeleteModalTenant(null)}
+                disabled={isDeleting}
+                className="text-xs"
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={executeTenantDeletion}
+                disabled={isDeleting || deleteConfirmationText.trim().toLowerCase() !== (deleteModalTenant.tenant_code || deleteModalTenant.name).trim().toLowerCase() && deleteConfirmationText.trim() !== deleteModalTenant.id}
+                className="text-xs font-bold"
+              >
+                {isDeleting ? 'Purging Workspace...' : deleteMode === 'HARD_PURGE' ? 'Execute Hard Purge' : 'Execute Soft Delete'}
               </Button>
             </div>
           </div>

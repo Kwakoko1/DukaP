@@ -126,7 +126,8 @@ export const tenantProvisioningService = {
           tax_number: additionalMetadata.taxNumber || '',
           industry: additionalMetadata.industry || businessType,
           district: additionalMetadata.district || '',
-          created_at: NOW
+          created_at: NOW,
+          registration_completed: true
         });
 
         // Ensure the industry record exists globally
@@ -504,8 +505,7 @@ export const tenantProvisioningService = {
       });
     });
 
-    // 11. Synchronize to the authoritative Cloud Database
-    // Gather all local records created or retrieved
+    // 11. Synchronize to the authoritative Cloud Database with strict 3.5s timeout fallback
     const tenantRecord = await db.tenants.get(tenantId);
     const branchRecord = await db.branches.get(branchId);
     const userRecord = await db.users.get(userId);
@@ -519,8 +519,7 @@ export const tenantProvisioningService = {
     const flagRecords = await db.featureFlags.where('tenant_id').equals(tenantId).toArray();
     const rolesRecords = await db.roles.where('tenant_id').equals(tenantId).toArray();
 
-    // Push to Cloud. If any insert fails, delete local records to rollback.
-    try {
+    const cloudSyncOperation = async () => {
       setMockAuthOverride({
         tenant_id: 'tenant-admin-system',
         user_id: 'system-provisioner',
@@ -573,8 +572,16 @@ export const tenantProvisioningService = {
         const { error: fErr } = await supabase.from('featureFlags').insert(flagRecords);
         if (fErr) throw new Error(`Cloud feature flags sync failed: ${fErr.message}`);
       }
+    };
+
+    const timeoutLimit = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Cloud sync request limit (3.5s) reached. Continuing offline.')), 3500)
+    );
+
+    try {
+      await Promise.race([cloudSyncOperation(), timeoutLimit]);
     } catch (err: any) {
-      console.warn(`[Provisioning Cloud Sync Warning] Server sync encountered error: ${err.message}. Local IndexedDB workspace preserved for offline operation.`);
+      console.warn(`[Provisioning Cloud Sync Notice] ${err.message}. Local IndexedDB workspace ready.`);
     } finally {
       setMockAuthOverride(null);
     }

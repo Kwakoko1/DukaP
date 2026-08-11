@@ -4,12 +4,21 @@ import { useModule, type IndustryModule, MODULE_MANIFESTS } from '../../context/
 import { useSyncState } from '../../context/SyncContext';
 import { 
   Search, Sun, Moon, Wifi, WifiOff, RefreshCw, 
-  ChevronDown, Layers, MapPin, X, LogOut,
-  Bell, AlertTriangle, PackageX, Clock, CheckCircle2, Zap, Menu
+  ChevronDown, Layers, MapPin, X, LogOut, Lock,
+  Bell, AlertTriangle, PackageX, Clock, CheckCircle2, Zap, Menu,
+  ArrowUpDown, SlidersHorizontal
 } from 'lucide-react';
 import { db, safeGet } from '../../db/dexie';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { getShortModuleName, getShortBranchName } from '../../utils/mobileFormatters';
+import { 
+  getShortModuleName, 
+  getShortBranchName,
+  INDUSTRY_SECTORS,
+  MODULE_SECTOR_MAP,
+  MODULE_POPULARITY_RANK,
+  type IndustrySector,
+  type IndustrySortOption
+} from '../../utils/mobileFormatters';
 
 interface TopBarProps {
   onOpenSearch: () => void;
@@ -30,7 +39,7 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenSearch }) => {
     currentIndustry,
     switchContext
   } = useAuth();
-  const { manifest, activeModule, setActiveModule, isMobileSidebarOpen, setIsMobileSidebarOpen } = useModule();
+  const { manifest, activeModule, setActiveModule, isMobileSidebarOpen, setIsMobileSidebarOpen, isDevSuperuser } = useModule();
   const { isOnline, isSyncing, syncProgress, pendingCount, toggleOfflineSimulation, syncLogs, syncData } = useSyncState();
 
   const [showBranchDropdown, setShowBranchDropdown] = useState(false);
@@ -38,6 +47,11 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenSearch }) => {
   const [showSyncDropdown, setShowSyncDropdown] = useState(false);
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+
+  // Industry Modules Filter & Sort State
+  const [moduleSearchText, setModuleSearchText] = useState('');
+  const [selectedSector, setSelectedSector] = useState<IndustrySector>('ALL');
+  const [moduleSortOption, setModuleSortOption] = useState<IndustrySortOption>('SUBSCRIBED');
 
   // Refs for click-outside detection
   const profileContainerRef = useRef<HTMLDivElement>(null);
@@ -362,22 +376,23 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenSearch }) => {
 
   const displayedModules = useMemo(() => {
     const allKeys = Object.keys(MODULE_MANIFESTS) as IndustryModule[];
-    // For Super Admin view, all modules are accessible; for tenant view, ONLY subscribed modules are shown
-    if (isSuperAdminView) return allKeys;
+    // Dev superuser and Super Admin get all modules regardless of tenant subscription
+    if (isSuperAdminView || isDevSuperuser) return allKeys;
     if (!tenantModules || tenantModules.length === 0) return [(currentIndustry?.name as IndustryModule) || activeModule];
     return allKeys.filter(mod => subscribedModuleKeys.includes(mod));
-  }, [tenantModules, subscribedModuleKeys, activeModule, isSuperAdminView, currentIndustry?.name]);
+  }, [tenantModules, subscribedModuleKeys, activeModule, isSuperAdminView, isDevSuperuser, currentIndustry?.name]);
 
   // Keep activeModule in sync with the tenant's subscribed modules
   useEffect(() => {
-    if (isSuperAdminView) return;
+    // Dev superuser: never auto-reset the module — let their last selection persist
+    if (isSuperAdminView || isDevSuperuser) return;
     if (tenantModules === undefined || tenantModules.length === 0) return;
     
     const isSubscribed = displayedModules.includes(activeModule);
     if (!isSubscribed && displayedModules.length > 0) {
       setActiveModule(displayedModules[0]);
     }
-  }, [activeModule, displayedModules, tenantModules, isSuperAdminView, setActiveModule]);
+  }, [activeModule, displayedModules, tenantModules, isSuperAdminView, isDevSuperuser, setActiveModule]);
 
   return (
     <>
@@ -453,30 +468,220 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenSearch }) => {
                 className="flex items-center space-x-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 dark:border-darkbg-border dark:bg-darkbg/50 dark:text-slate-200"
               >
                 <Layers className="h-3.5 w-3.5 text-primary" />
-                <span className="max-w-[100px] truncate">{getShortModuleName(activeModule)}</span>
+                <span className="max-w-[120px] truncate font-semibold text-left">{getShortModuleName(activeModule)}</span>
                 <ChevronDown className="h-3 w-3 text-slate-400" />
               </button>
 
               {showModuleDropdown && (
-                <div className="absolute right-0 mt-2 w-52 rounded-xl border border-slate-200 bg-white p-1.5 shadow-lg dark:border-darkbg-border dark:bg-darkbg-card z-50">
-                  <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">Industry Modules</div>
-                  {displayedModules.map((mod) => (
-                    <button
-                      key={mod}
-                      onClick={() => {
-                        setActiveModule(mod);
-                        setShowModuleDropdown(false);
-                      }}
-                      className={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-xs font-medium transition ${
-                        activeModule === mod
-                          ? 'bg-primary/10 text-primary font-bold dark:bg-primary/20'
-                          : 'text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-darkbg'
-                      }`}
-                    >
-                      <span>{MODULE_MANIFESTS[mod]?.name || mod}</span>
-                      {activeModule === mod && <span className="h-1.5 w-1.5 rounded-full bg-primary" />}
-                    </button>
-                  ))}
+                <div className="absolute right-0 mt-2 w-72 sm:w-80 max-h-[calc(100vh-90px)] sm:max-h-[520px] overflow-hidden flex flex-col rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-darkbg-border dark:bg-darkbg-card z-50 animate-in fade-in zoom-in-95 duration-100">
+                  {/* Sticky Top Header & Search */}
+                  <div className="p-3 border-b border-slate-100 dark:border-darkbg-border bg-slate-50/60 dark:bg-darkbg/40 space-y-2 shrink-0">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-1.5">
+                        <Layers className="h-3.5 w-3.5 text-primary" />
+                        <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-700 dark:text-slate-200">
+                          Industry Modules
+                        </span>
+                      </div>
+                      <span className="rounded-full bg-primary/10 text-primary px-2 py-0.5 text-[9px] font-black">
+                        {displayedModules.length} Active
+                      </span>
+                    </div>
+
+                    {/* Live Search Input */}
+                    <div className="relative">
+                      <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
+                      <input
+                        type="text"
+                        value={moduleSearchText}
+                        onChange={(e) => setModuleSearchText(e.target.value)}
+                        placeholder="Search 30+ industry verticals..."
+                        className="w-full pl-8 pr-7 py-1.5 text-xs bg-white dark:bg-darkbg border border-slate-200 dark:border-darkbg-border rounded-xl focus:outline-none focus:ring-1 focus:ring-primary font-medium text-slate-800 dark:text-slate-100"
+                      />
+                      {moduleSearchText && (
+                        <button
+                          onClick={() => setModuleSearchText('')}
+                          className="absolute right-2 top-2 text-slate-400 hover:text-slate-600"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Sort Order Selector & Filter Bar */}
+                    <div className="flex items-center justify-between text-[10px]">
+                      <div className="flex items-center space-x-1 text-slate-400 font-bold">
+                        <ArrowUpDown className="h-3 w-3" />
+                        <span>Order:</span>
+                      </div>
+                      <div className="flex items-center space-x-1">
+                        <button
+                          onClick={() => setModuleSortOption('SUBSCRIBED')}
+                          className={`px-2 py-0.5 rounded-md font-extrabold transition ${
+                            moduleSortOption === 'SUBSCRIBED'
+                              ? 'bg-primary text-white shadow-2xs'
+                              : 'bg-slate-200/60 dark:bg-darkbg text-slate-600 dark:text-slate-400 hover:bg-slate-200'
+                          }`}
+                          title="Show subscribed active modules first"
+                        >
+                          Subscribed
+                        </button>
+                        <button
+                          onClick={() => setModuleSortOption('ALPHABETICAL')}
+                          className={`px-2 py-0.5 rounded-md font-extrabold transition ${
+                            moduleSortOption === 'ALPHABETICAL'
+                              ? 'bg-primary text-white shadow-2xs'
+                              : 'bg-slate-200/60 dark:bg-darkbg text-slate-600 dark:text-slate-400 hover:bg-slate-200'
+                          }`}
+                          title="Sort alphabetically (A-Z)"
+                        >
+                          A - Z
+                        </button>
+                        <button
+                          onClick={() => setModuleSortOption('POPULAR')}
+                          className={`px-2 py-0.5 rounded-md font-extrabold transition ${
+                            moduleSortOption === 'POPULAR'
+                              ? 'bg-primary text-white shadow-2xs'
+                              : 'bg-slate-200/60 dark:bg-darkbg text-slate-600 dark:text-slate-400 hover:bg-slate-200'
+                          }`}
+                          title="Sort by market popularity rank"
+                        >
+                          Popular
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Sector Filter Pills */}
+                    <div className="flex items-center space-x-1 overflow-x-auto pb-0.5 no-scrollbar">
+                      {INDUSTRY_SECTORS.map((sec) => (
+                        <button
+                          key={sec.id}
+                          onClick={() => setSelectedSector(sec.id)}
+                          className={`px-2 py-0.5 rounded-lg text-[9px] font-extrabold whitespace-nowrap transition ${
+                            selectedSector === sec.id
+                              ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 shadow-2xs'
+                              : 'bg-slate-100 dark:bg-darkbg text-slate-500 hover:text-slate-800 dark:text-slate-400'
+                          }`}
+                        >
+                          {sec.shortLabel}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Scrollable Modules List */}
+                  <div className="overflow-y-auto flex-1 space-y-0.5 p-1.5 custom-scrollbar">
+                    {(() => {
+                      const allKeys = Object.keys(MODULE_MANIFESTS) as IndustryModule[];
+
+                      // 1. Sector Filter
+                      let list = allKeys.filter((key) => {
+                        if (selectedSector !== 'ALL') {
+                          const sec = MODULE_SECTOR_MAP[key] || 'TRADES';
+                          if (sec !== selectedSector) return false;
+                        }
+                        // 2. Search Text Filter
+                        if (moduleSearchText.trim()) {
+                          const q = moduleSearchText.toLowerCase();
+                          const rawName = (MODULE_MANIFESTS[key]?.name || key).toLowerCase();
+                          const shortName = getShortModuleName(MODULE_MANIFESTS[key]?.name || key).toLowerCase();
+                          return rawName.includes(q) || shortName.includes(q) || key.toLowerCase().includes(q);
+                        }
+                        return true;
+                      });
+
+                      // 3. Apply Sorting Option
+                      if (moduleSortOption === 'ALPHABETICAL') {
+                        list.sort((a, b) => {
+                          const nameA = getShortModuleName(MODULE_MANIFESTS[a]?.name || a);
+                          const nameB = getShortModuleName(MODULE_MANIFESTS[b]?.name || b);
+                          return nameA.localeCompare(nameB);
+                        });
+                      } else if (moduleSortOption === 'POPULAR') {
+                        list.sort((a, b) => (MODULE_POPULARITY_RANK[a] || 99) - (MODULE_POPULARITY_RANK[b] || 99));
+                      } else {
+                        // SUBSCRIBED option: Subscribed first, then locked
+                        list.sort((a, b) => {
+                          const isSubA = displayedModules.includes(a);
+                          const isSubB = displayedModules.includes(b);
+                          if (isSubA && !isSubB) return -1;
+                          if (!isSubA && isSubB) return 1;
+                          return (MODULE_POPULARITY_RANK[a] || 99) - (MODULE_POPULARITY_RANK[b] || 99);
+                        });
+                      }
+
+                      if (list.length === 0) {
+                        return (
+                          <div className="p-6 text-center text-slate-400 dark:text-slate-500 text-xs">
+                            <SlidersHorizontal className="h-6 w-6 mx-auto mb-1.5 opacity-40" />
+                            <p className="font-semibold">No modules match your filter</p>
+                            <button
+                              onClick={() => {
+                                setModuleSearchText('');
+                                setSelectedSector('ALL');
+                              }}
+                              className="mt-2 text-[10px] font-bold text-primary hover:underline"
+                            >
+                              Clear Search & Filters
+                            </button>
+                          </div>
+                        );
+                      }
+
+                      return list.map((modKey) => {
+                        const isAccessible = displayedModules.includes(modKey);
+                        const isActive = activeModule === modKey;
+                        const shortName = getShortModuleName(MODULE_MANIFESTS[modKey]?.name || modKey);
+                        const sectorId = MODULE_SECTOR_MAP[modKey] || 'TRADES';
+                        const sectorDef = INDUSTRY_SECTORS.find(s => s.id === sectorId);
+
+                        if (isAccessible) {
+                          return (
+                            <button
+                              key={modKey}
+                              onClick={() => {
+                                setActiveModule(modKey);
+                                setShowModuleDropdown(false);
+                              }}
+                              className={`w-full flex items-center justify-between text-left rounded-xl px-3 py-2 text-xs transition-all ${
+                                isActive
+                                  ? 'bg-primary/10 text-primary font-bold dark:bg-primary/20'
+                                  : 'text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-darkbg/80 font-medium'
+                              }`}
+                            >
+                              <div className="flex items-center space-x-2 min-w-0 flex-1 text-left">
+                                <span className="truncate text-left font-semibold text-xs">{shortName}</span>
+                                {selectedSector === 'ALL' && (
+                                  <span className="text-[8px] font-extrabold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-darkbg text-slate-400 shrink-0">
+                                    {sectorDef?.shortLabel}
+                                  </span>
+                                )}
+                              </div>
+                              {isActive && <span className="h-2 w-2 rounded-full bg-primary shrink-0 ml-2" />}
+                            </button>
+                          );
+                        }
+
+                        return (
+                          <div
+                            key={modKey}
+                            title="Module not included in current workspace subscription plan."
+                            className="w-full flex items-center justify-between text-left rounded-xl px-3 py-1.5 text-xs text-slate-400 dark:text-slate-600 opacity-60 bg-slate-50/40 dark:bg-darkbg/20 select-none cursor-not-allowed"
+                          >
+                            <div className="flex items-center space-x-2 min-w-0 flex-1 text-left">
+                              <span className="truncate text-left font-medium text-xs">{shortName}</span>
+                              {selectedSector === 'ALL' && (
+                                <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-slate-100/50 dark:bg-darkbg/50 text-slate-400 shrink-0">
+                                  {sectorDef?.shortLabel}
+                                </span>
+                              )}
+                            </div>
+                            <Lock className="h-3 w-3 text-slate-400 dark:text-slate-600 shrink-0 ml-2" />
+                          </div>
+                        );
+                      });
+                    })()}
+                  </div>
                 </div>
               )}
             </div>

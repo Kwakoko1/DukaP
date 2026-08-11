@@ -391,12 +391,19 @@ export const supabase: SupabaseClient = {
 
           // ─── UPDATE ────────────────────────────────────────────────────────
           if (this.action === 'UPDATE') {
-            // Get current records from server
-            const fetchRes = await fetch(apiPath, { headers });
-            if (!fetchRes.ok) {
-              throw new Error(`DevServer fetch error ${fetchRes.status}`);
+            let records: any[] = [];
+            try {
+              const fetchRes = await fetch(apiPath, { headers });
+              const contentType = fetchRes.headers.get('content-type') || '';
+              if (fetchRes.ok && contentType.includes('application/json')) {
+                records = await fetchRes.json();
+              }
+            } catch (e) {}
+
+            if (!records || records.length === 0) {
+              records = await table.toArray();
             }
-            let records: any[] = await fetchRes.json();
+
             for (const [col, val] of Object.entries(this.filters)) {
               records = records.filter((r: any) => {
                 if (col === 'tenant_id' || col === 'tenantId') {
@@ -426,15 +433,12 @@ export const supabase: SupabaseClient = {
                 version: (r.version || 1) + 1
               };
 
-              // 1. Post to shared Vite API server
-              const postRes = await fetch(apiPath, {
+              // 1. Post to shared Vite API server (if available)
+              await fetch(apiPath, {
                 method: 'POST',
                 headers,
                 body: JSON.stringify(updatedItem)
-              });
-              if (!postRes.ok) {
-                throw new Error(`DevServer update POST error ${postRes.status}`);
-              }
+              }).catch(() => null);
 
               // 2. Mirror to browser local cloudDb cache
               await table.put(updatedItem);
@@ -467,7 +471,8 @@ export const supabase: SupabaseClient = {
             let records: any[] = [];
             try {
               const fetchRes = await fetch(apiPath, { headers });
-              if (fetchRes.ok) {
+              const contentType = fetchRes.headers.get('content-type') || '';
+              if (fetchRes.ok && contentType.includes('application/json')) {
                 records = await fetchRes.json();
               }
             } catch (e) {

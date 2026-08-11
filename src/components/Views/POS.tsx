@@ -438,6 +438,17 @@ export const POS: React.FC = () => {
         } else {
           alert('No completed transaction available to print.');
         }
+      } else if (e.key === 'Enter') {
+        if (isSupervisorModalOpen) {
+          e.preventDefault();
+          handleVerifySupervisor({ preventDefault: () => {} } as React.FormEvent);
+        } else if (isCheckoutOpen) {
+          const targetTag = (e.target as HTMLElement)?.tagName?.toLowerCase();
+          if (targetTag !== 'button') {
+            e.preventDefault();
+            handleCheckout();
+          }
+        }
       } else if (e.key === 'Escape') {
         e.preventDefault();
         setIsCheckoutOpen(false);
@@ -459,7 +470,7 @@ export const POS: React.FC = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [cart, cartTotal, activeShift, lastCompletedOrder, setActiveTab]);
+  }, [cart, cartTotal, activeShift, lastCompletedOrder, isSupervisorModalOpen, isCheckoutOpen, setActiveTab]);
 
   // --- Cart Helpers ---
   const handleItemAddition = (product: Product, variant?: ProductVariant) => {

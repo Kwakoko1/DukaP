@@ -141,11 +141,12 @@ export const Badge: React.FC<{
 };
 
 // Reusable Dialog Modal component
-interface DialogProps {
+export interface DialogProps {
   isOpen: boolean;
   onClose: () => void;
   title: string;
   description?: string;
+  subHeader?: React.ReactNode;
   children: React.ReactNode;
   footer?: React.ReactNode;
   size?: 'sm' | 'md' | 'lg' | 'xl' | 'full';
@@ -156,28 +157,37 @@ export const Dialog: React.FC<DialogProps> = ({
   onClose,
   title,
   description,
+  subHeader,
   children,
   footer,
   size = 'md',
 }) => {
   const firstFocusableRef = useRef<HTMLButtonElement>(null);
 
+  const onCloseRef = useRef(onClose);
+  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
+
   // Escape key + body scroll lock
   useEffect(() => {
     if (!isOpen) return;
-    const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onCloseRef.current(); };
     document.addEventListener('keydown', handleKey);
     document.body.style.overflow = 'hidden';
-    firstFocusableRef.current?.focus();
+
+    const timer = setTimeout(() => {
+      firstFocusableRef.current?.focus();
+    }, 50);
+
     return () => {
+      clearTimeout(timer);
       document.removeEventListener('keydown', handleKey);
       document.body.style.overflow = '';
     };
-  }, [isOpen, onClose]);
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
-  const sizes = {
+  const sizes: Record<string, string> = {
     sm: 'max-w-sm',
     md: 'max-w-lg',
     lg: 'max-w-2xl',
@@ -186,18 +196,21 @@ export const Dialog: React.FC<DialogProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-8 overflow-y-auto">
+    /* Outer overlay — fixed to viewport, NEVER scrolls itself */
+    <div className="fixed inset-0 z-50 flex items-start justify-center p-3 sm:p-5 pt-20 sm:pt-20">
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-sm animate-fade-in"
+        className="absolute inset-0 bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-sm animate-fade-in"
         onClick={onClose}
       />
-      
-      {/* Modal box */}
-      <div className={`relative w-full ${sizes[size]} transform rounded-2xl bg-white dark:bg-darkbg-card border border-slate-200 dark:border-darkbg-border p-6 shadow-2xl z-10 animate-scale-in mb-8`}>
-        {/* Header */}
-        <div className="mb-4">
-          <div className="flex items-center justify-between">
+
+      {/* Modal box — flex column, max height so it never overflows the viewport */}
+      <div
+        className={`relative flex flex-col w-full ${sizes[size]} max-h-[calc(100vh-96px)] rounded-2xl bg-white dark:bg-darkbg-card border border-slate-200 dark:border-darkbg-border shadow-2xl z-10 animate-scale-in overflow-hidden`}
+      >
+        {/* ── Sticky Header ── */}
+        <div className="flex-none border-b border-slate-100 dark:border-darkbg-border/40 bg-slate-50/50 dark:bg-darkbg/50">
+          <div className="px-6 pt-4 pb-3 flex items-center justify-between">
             <h3 className="text-base font-bold text-slate-900 dark:text-white">{title}</h3>
             <button
               ref={firstFocusableRef}
@@ -210,16 +223,23 @@ export const Dialog: React.FC<DialogProps> = ({
             </button>
           </div>
           {description && (
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{description}</p>
+            <p className="px-6 pb-2 text-xs text-slate-500 dark:text-slate-400">{description}</p>
+          )}
+          {subHeader && (
+            <div className="px-6 pt-1 pb-0 bg-white dark:bg-darkbg-card border-t border-slate-100 dark:border-darkbg-border/40">
+              {subHeader}
+            </div>
           )}
         </div>
-        
-        {/* Content */}
-        <div className="my-2">{children}</div>
-        
-        {/* Footer */}
+
+        {/* ── Scrollable Content Area ── */}
+        <div className="flex-1 overflow-y-auto px-6 py-4 min-h-0">
+          {children}
+        </div>
+
+        {/* ── Sticky Footer ── */}
         {footer && (
-          <div className="mt-6 flex items-center justify-end space-x-2 border-t border-slate-100 dark:border-darkbg-border/30 pt-4">
+          <div className="flex-none px-6 py-4 border-t border-slate-100 dark:border-darkbg-border/30 flex items-center justify-end gap-2">
             {footer}
           </div>
         )}

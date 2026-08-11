@@ -1,5 +1,6 @@
 import { db, type Product, type ProductVariant, type Category, type Brand, saveProductAndVariants, syncParentStock } from '../db/dexie';
 import { cloudDb } from '../db/supabaseMock';
+import { supabase } from '../db/supabaseClient';
 
 export interface UserContext {
   id: string;
@@ -152,6 +153,9 @@ async function attemptDirectCloudWrite(
   tenantId: string,
   userId: string
 ): Promise<boolean> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 1200);
+
   try {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -159,22 +163,49 @@ async function attemptDirectCloudWrite(
       'x-user-id': userId,
     };
 
+    let isOk = false;
     if (action === 'DELETE') {
       const res = await fetch(`/api/products/${payload.id}`, {
         method: 'DELETE',
         headers,
-      });
-      return res.ok;
+        signal: controller.signal,
+      }).catch(() => null);
+      if (res && res.ok) isOk = true;
     } else {
       const res = await fetch('/api/products', {
         method: 'POST',
         headers,
         body: JSON.stringify(payload),
-      });
-      return res.ok;
+        signal: controller.signal,
+      }).catch(() => null);
+      if (res && res.ok) isOk = true;
+    }
+
+    clearTimeout(timeoutId);
+
+    if (isOk) return true;
+
+    // Fallback: Direct write to Supabase cloud table
+    if (action === 'DELETE') {
+      const { error } = await supabase.from('products').delete().eq('id', payload.id);
+      return !error;
+    } else {
+      const { error } = await supabase.from('products').upsert(payload, { onConflict: 'id' });
+      return !error;
     }
   } catch {
-    return false;
+    clearTimeout(timeoutId);
+    try {
+      if (action === 'DELETE') {
+        const { error } = await supabase.from('products').delete().eq('id', payload.id);
+        return !error;
+      } else {
+        const { error } = await supabase.from('products').upsert(payload, { onConflict: 'id' });
+        return !error;
+      }
+    } catch {
+      return false;
+    }
   }
 }
 
@@ -270,25 +301,21 @@ export class ProductService {
       details: `Created product '${newProd.name}' (${newProd.id})`,
     } as any);
 
-    if (_isOnline) {
-      try {
-        const success = await attemptDirectCloudWrite('INSERT', mapProductToCloud(newProd), tenantId, user.id);
-        if (success) {
-          await db.products.update(newProd.id, { syncStatus: 'SYNCED', isSynced: 1 } as any);
-          const rawItem = await db.syncQueue
-            .where('entityName').equals('products')
-            .and(item => item.payload?.id === newProd.id && item.status === 'Pending')
-            .last();
-          if (rawItem?.id !== undefined) {
-            await db.syncQueue.delete(rawItem.id);
-          }
+    // Fire-and-forget background cloud sync (non-blocking for instant local persistence & UI responsiveness)
+    attemptDirectCloudWrite('INSERT', mapProductToCloud(newProd), tenantId, user.id).then(async (success) => {
+      if (success) {
+        await db.products.update(newProd.id, { syncStatus: 'SYNCED', isSynced: 1 } as any);
+        const rawItem = await db.syncQueue
+          .where('entityName').equals('products')
+          .and(item => item.payload?.id === newProd.id && item.status === 'Pending')
+          .last();
+        if (rawItem?.id !== undefined) {
+          await db.syncQueue.delete(rawItem.id);
         }
-      } catch (err) {
-        console.warn('[ProductService] Direct cloud write error:', err);
       }
-    } else {
-      attemptDirectCloudWrite('INSERT', mapProductToCloud(newProd), tenantId, user.id).catch(() => {});
-    }
+    }).catch(err => {
+      console.warn('[ProductService] Background cloud write notice:', err);
+    });
 
     return newProd;
   }
@@ -1231,6 +1258,20 @@ export async function mergeDuplicateBrands(tenantId: string): Promise<{ mergedCo
   }
 
   return { mergedCount, updatedProductsCount };
+}
+
+export async function deleteAllCategoriesAndBrands(tenantId: string): Promise<{ categoriesDeleted: number; brandsDeleted: number }> {
+  const cats = await db.categories.where('tenant_id').equals(tenantId).toArray();
+  const brands = await db.brands.where('tenant_id').equals(tenantId).toArray();
+
+  for (const c of cats) {
+    await db.categories.delete(c.id);
+  }
+  for (const b of brands) {
+    await db.brands.delete(b.id);
+  }
+
+  return { categoriesDeleted: cats.length, brandsDeleted: brands.length };
 }
 
 export async function reassignCategoryProducts(tenantId: string, fromCategory: string, toCategory: string): Promise<number> {

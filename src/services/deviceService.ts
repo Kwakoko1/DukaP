@@ -3,6 +3,8 @@
  * Generates and tracks unique device IDs, browser user-agents, OS, IP, and last-seen timestamps.
  */
 
+import { versionMetadata } from '../config/versionMetadata';
+
 export interface DeviceInfo {
   device_id: string;
   name: string;
@@ -45,7 +47,7 @@ export function getDeviceDetails(): DeviceInfo {
     name: `${os} POS Device (${browser})`,
     browser,
     os,
-    app_version: '1.0.1',
+    app_version: versionMetadata.version,
     last_seen: Date.now()
   };
 }

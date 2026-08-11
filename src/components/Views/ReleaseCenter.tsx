@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { releaseService, type QualityGateStatus, type PlatformHealthProbe } from '../../services/releaseService';
 import { type AppVersion, type DeploymentHistory } from '../../db/dexie';
+import { versionMetadata } from '../../config/versionMetadata';
 
 export const ReleaseCenter: React.FC = () => {
   const [currentVersion, setCurrentVersion] = useState<AppVersion | null>(null);
@@ -102,14 +103,14 @@ export const ReleaseCenter: React.FC = () => {
             </div>
             <div className="mt-3 flex items-baseline space-x-2">
               <span className="text-2xl font-black text-slate-900 dark:text-white">
-                v{currentVersion?.version || '1.0.1'}
+                v{currentVersion?.version || versionMetadata.version}
               </span>
               <Badge variant="info" className="text-[10px] font-mono font-bold">
-                {currentVersion?.release_type || 'PATCH'}
+                {currentVersion?.release_type || 'MAJOR'}
               </Badge>
             </div>
             <p className="mt-1 text-[10px] text-slate-400 font-mono">
-              Tag: {currentVersion?.git_tag || 'v1.0.1'} ({currentVersion?.commit_hash || '4d8e12a'})
+              Tag: {currentVersion?.git_tag || `v${versionMetadata.version}`} ({currentVersion?.commit_hash || versionMetadata.commitSha})
             </p>
           </CardContent>
         </Card>

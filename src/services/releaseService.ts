@@ -1,4 +1,5 @@
 import { cloudDb, type AppVersion, type DeploymentHistory } from '../db/supabaseMock';
+import { versionMetadata } from '../config/versionMetadata';
 
 export interface QualityGateStatus {
   build: boolean;
@@ -63,7 +64,24 @@ class ReleaseService {
         created_at: now - 2 * 24 * 60 * 60 * 1000,
       };
 
-      await cloudDb.cloud_app_versions.bulkPut([initialRelease, patchRelease]);
+      const currentRelease: AppVersion = {
+        id: `ver-${versionMetadata.version}`,
+        version: versionMetadata.version,
+        major: 1,
+        minor: 2,
+        patch: 0,
+        release_type: 'MAJOR',
+        git_tag: `v${versionMetadata.version}`,
+        commit_hash: versionMetadata.commitSha,
+        release_notes: 'Enterprise Multi-Tenant Security & Direct Physical Keyboard Integration Release.',
+        release_date: Date.now(),
+        deployment_status: 'SUCCESS',
+        build_number: versionMetadata.buildNumber,
+        created_by: 'usr-superadmin',
+        created_at: Date.now(),
+      };
+
+      await cloudDb.cloud_app_versions.bulkPut([initialRelease, patchRelease, currentRelease]);
 
       const initialDeploy: DeploymentHistory = {
         id: 'dep-1.0.1',
@@ -98,18 +116,18 @@ class ReleaseService {
     const versions = await cloudDb.cloud_app_versions.toArray();
     const sorted = versions.sort((a: AppVersion, b: AppVersion) => b.release_date - a.release_date);
     return sorted[0] || {
-      id: 'ver-1.0.1',
-      version: '1.0.1',
+      id: `ver-${versionMetadata.version}`,
+      version: versionMetadata.version,
       major: 1,
-      minor: 0,
-      patch: 1,
-      release_type: 'PATCH',
-      git_tag: 'v1.0.1',
-      commit_hash: '4d8e12a',
-      release_notes: 'Production-Grade Offline Sync Engine upgrade',
+      minor: 2,
+      patch: 0,
+      release_type: 'MAJOR',
+      git_tag: `v${versionMetadata.version}`,
+      commit_hash: versionMetadata.commitSha,
+      release_notes: 'Enterprise Multi-Tenant Security & Direct Physical Keyboard Integration Release',
       release_date: Date.now(),
       deployment_status: 'SUCCESS',
-      build_number: 'build-20260801-042',
+      build_number: versionMetadata.buildNumber,
       created_by: 'usr-superadmin',
       created_at: Date.now(),
     };

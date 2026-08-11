@@ -768,10 +768,7 @@
 }
 
 .inv-editor-body {
-  padding: 16px;
-  flex: 1;
-  overflow-y: auto;
-  max-height: 60vh;
+  padding: 16px 0;
 }
 .inv-editor-footer {
   display: flex;

@@ -218,7 +218,7 @@ export const TenantVisualFlowView: React.FC<TenantVisualFlowViewProps> = ({
                 </h4>
               </div>
               <div className="flex items-center gap-2 text-xs bg-slate-50 dark:bg-darkbg border border-slate-200 dark:border-darkbg-border px-3 py-1.5 rounded-xl text-slate-600 dark:text-slate-300 font-bold">
-                <span>Owner: {activeTenant.ownerName || 'SACCO VICOBA'}</span>
+                <span>Owner: {activeTenant.ownerName || (activeTenant as any).owner_name || activeTenant.email || 'Business Owner'}</span>
               </div>
             </div>
 

@@ -110,6 +110,7 @@ export interface CloudTenant {
   registration_ip?: string;
   registration_device?: string;
   verification_status?: string;
+  registration_completed?: boolean;
 }
 
 export interface CloudBranch {

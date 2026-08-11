@@ -162,7 +162,58 @@ export const MANUAL_TOPICS: ManualTopic[] = [
     ]
   },
 
-  // 6. SUPER ADMIN MANUAL (Super Admin Only)
+  // 6. PHARMACY MODULE MANUAL
+  {
+    id: 'pharmacy_pos_fefo_dispensing',
+    title: 'Pharmacy POS FEFO Batch Selection & Prescriptions',
+    category: '💊 Pharmacy & Medical Operations',
+    requiredRole: 'CASHIER',
+    description: 'Processing OTC and prescription medicine sales with automated FEFO batch selection and drug warnings.',
+    steps: [
+      { stepNumber: 1, title: 'Scan or Select Medicine', description: 'Search medicine name, barcode, or generic formulation in Pharmacy POS.' },
+      { stepNumber: 2, title: 'Verify FEFO Batch', description: 'System automatically selects earliest expiring batch. Verify batch number.' },
+      { stepNumber: 3, title: 'Check Prescription Status', description: 'For prescription-required drugs, attach doctor prescription and patient profile.' },
+      { stepNumber: 4, title: 'Dispense & Issue Label', description: 'Complete sale and trigger automated dispensing receipt with dosage instructions.' }
+    ]
+  },
+  {
+    id: 'pharmacy_controlled_drugs_nhif',
+    title: 'Controlled Drug Register & NHIF Insurance Claims',
+    category: '💊 Pharmacy & Medical Operations',
+    requiredRole: 'MANAGER',
+    description: 'Registering controlled narcotics dispensing and filing NHIF/corporate insurance claim vouchers.',
+    steps: [
+      { stepNumber: 1, title: 'Log Controlled Medicine Entry', description: 'Record pharmacist approval, doctor license #, and patient ID in Controlled Register.' },
+      { stepNumber: 2, title: 'Submit Insurance Claim', description: 'Link prescription sale to Insurance Provider / NHIF code for reimbursement tracking.' }
+    ]
+  },
+
+  // 7. POULTRY & LIVESTOCK MANUAL
+  {
+    id: 'poultry_batch_fcr_tracking',
+    title: 'Poultry Flock Batch Lifecycle & FCR Calculation',
+    category: '🚜 Poultry & Livestock Operations',
+    requiredRole: 'MANAGER',
+    description: 'Receiving day-old chick batches, daily mortality logs, feed intake recording, and FCR ratio analysis.',
+    steps: [
+      { stepNumber: 1, title: 'Receive Flock Batch', description: 'Navigate to Poultry Flocks -> Receive New Batch. Enter chick count, breed, and supplier.' },
+      { stepNumber: 2, title: 'Log Daily Feed & Mortality', description: 'Enter daily mortality numbers and feed consumed (kg) to update live flock count.' },
+      { stepNumber: 3, title: 'Review FCR Efficiency', description: 'System automatically computes Feed Conversion Ratio (Total Feed / Total Weight Gain).' }
+    ]
+  },
+  {
+    id: 'dairy_egg_production_ledger',
+    title: 'Dairy Milking Sessions & Daily Egg Collections',
+    category: '🚜 Poultry & Livestock Operations',
+    requiredRole: 'CASHIER',
+    description: 'Recording morning/evening milk yield liters and daily egg tray grade collections.',
+    steps: [
+      { stepNumber: 1, title: 'Log Egg Collection', description: 'Open Production Ledger -> Egg Collection. Enter Grade A, Grade B, and damaged egg counts.' },
+      { stepNumber: 2, title: 'Record Milking Session', description: 'Enter liters yield per cow for morning or evening milking sessions.' }
+    ]
+  },
+
+  // 8. SUPER ADMIN MANUAL (Super Admin Only)
   {
     id: 'super_admin_cpanel_ops',
     title: 'Super Admin CPanel & Global Tenant Provisioning',

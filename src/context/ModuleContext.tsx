@@ -3,6 +3,24 @@ import { db } from '../db/dexie';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { supabase } from '../db/supabaseClient';
 
+/**
+ * Dev/testing superuser accounts that get access to ALL industry modules
+ * simultaneously, with persistent module+tab state across logout/login.
+ */
+const DEV_SUPERUSER_EMAILS = new Set(['yannick@kwakoko.co.tz']);
+
+/** Returns the currently logged-in user's email from session storage (no React dependency). */
+function getSessionEmail(): string | null {
+  try {
+    const raw = localStorage.getItem('dukapos_session');
+    if (!raw) return null;
+    const sess = JSON.parse(raw);
+    return sess?.user?.email || null;
+  } catch {
+    return null;
+  }
+}
+
 export type IndustryModule =
   | 'Retail'
   | 'Restaurant'
@@ -129,23 +147,27 @@ export const MODULE_MANIFESTS: Record<IndustryModule, ModuleManifest> = {
     description: 'Clock-in locations, GPS routes, payroll calculations, and leaves.'
   },
   Pharmacy: {
-    name: 'Pharmacy / Chemist',
+    name: 'Pharmacy / Chemist / Dispensary',
     icon: 'Pills',
     sidebar: [
-      'Dashboard',
-      'POS',
+      'Pharmacy Dashboard',
+      'Pharmacy POS',
       'Patients',
-      'Medicines',
-      { name: 'Inventory', subItems: ['Batch Management', 'Expiry Tracking', 'Stock Transfer', 'Low Stock'] },
-      { name: 'Receipts', subItems: ['Receipt History', 'Receipt Templates', 'Receipt Analytics', 'Receipt Verification', 'Receipt Archive'] },
+      { name: 'Medicines', subItems: ['Medicines Master', 'Medicine Categories', 'Price Lists', 'Barcode & Labels'] },
+      { name: 'Batch & Expiry', subItems: ['Batch Management', 'Expiry Tracking', 'Near Expiry', 'Batch Recalls', 'Expired Disposal'] },
       'Prescriptions',
+      'Doctors',
+      'Drug Safety',
+      { name: 'Pharmacy Inventory', subItems: ['Stock Overview', 'Stock Transfer', 'Stock Count', 'Dead Stock', 'Auto-Reorder'] },
+      { name: 'Receipts', subItems: ['Receipt History', 'Receipt Templates', 'Receipt Analytics', 'Receipt Verification', 'Receipt Archive'] },
       { name: 'Purchasing', subItems: ['Suppliers', 'Purchase Orders', 'Goods Received', 'Supplier Ledgers', 'Warehouses'] },
-      'Insurance',
-      'Reports',
+      { name: 'Insurance & NHIF', subItems: ['Insurance Providers', 'Claims Management', 'NHIF Claims', 'Corporate Accounts', 'Claim Reports'] },
+      'Controlled Drugs',
+      { name: 'Pharmacy Reports', subItems: ['Sales Report', 'Prescription Report', 'Expiry Report', 'Batch History', 'Insurance Claims Report', 'Controlled Drugs Report', 'Supplier Performance', 'Patient History Report'] },
       'Settings'
     ],
-    widgets: ['SalesToday', 'PrescriptionsPending', 'ExpiryAlerts', 'LowStock'],
-    description: 'Prescription verifications, batch expiries, and patient logs.'
+    widgets: ['SalesToday', 'PrescriptionsPending', 'ExpiryAlerts', 'LowStock', 'NHIFClaims', 'OTCSales'],
+    description: 'Full-stack pharmacy management: prescriptions, batch/expiry FEFO, patient CRM, drug safety engine, NHIF/insurance billing, and controlled drug register.'
   },
   Hardware: {
     name: 'Hardware & Building Materials',
@@ -546,23 +568,22 @@ export const MODULE_MANIFESTS: Record<IndustryModule, ModuleManifest> = {
     name: 'Poultry & Livestock Management',
     icon: 'Egg',
     sidebar: [
-      'Dashboard',
-      { name: 'Animals', subItems: ['Animal Register', 'Animal Groups', 'Breeds', 'Animal Profiles', 'Birth Records', 'Weight Tracking', 'Health History', 'Mortality Records'] },
-      { name: 'Poultry Management', subItems: ['Flock Management', 'Batch Tracking', 'Egg Production', 'Hatchery Management', 'Brooding Records', 'Feed Consumption', 'Production Reports'] },
-      { name: 'Livestock Operations', subItems: ['Cattle', 'Goats', 'Sheep', 'Pigs', 'Rabbits', 'Other Animals'] },
-      { name: 'Health & Veterinary', subItems: ['Vaccination Schedule', 'Disease Tracking', 'Treatment Records', 'Veterinary Visits', 'Medicine Inventory'] },
-      { name: 'Feed Management', subItems: ['Feed Inventory', 'Feed Formulation', 'Feed Usage', 'Feed Suppliers', 'Feed Cost Analysis'] },
-      { name: 'Inventory', subItems: ['Products', 'Categories', 'Stock Adjustment', 'Stock Transfer', 'Low Stock Alerts'] },
-      { name: 'Purchasing', subItems: ['Suppliers', 'Purchase Orders', 'Goods Received', 'Supplier Payments'] },
-      { name: 'Sales', subItems: ['Animal Sales', 'Egg Sales', 'Milk Sales', 'Meat Sales', 'Customer Orders', 'Invoices'] },
-      { name: 'Farm Management', subItems: ['Farm Locations', 'Pens & Houses', 'Production Areas', 'Farm Activities', 'Farm Calendar'] },
-      { name: 'Workers', subItems: ['Farm Employees', 'Attendance', 'Tasks', 'Payroll'] },
-      { name: 'Expenses', subItems: ['Feed Expenses', 'Medicine Expenses', 'Labor Costs', 'Operational Costs'] },
-      { name: 'Reports', subItems: ['Animal Growth Report', 'Feed Cost Report', 'Production Report', 'Mortality Report', 'Profit & Loss', 'Farm Performance'] },
-      { name: 'Settings', subItems: ['Farm Profile', 'Units', 'Custom Fields', 'Permissions'] }
+      'Poultry Dashboard',
+      'Farm Management',
+      { name: 'Poultry Flocks', subItems: ['Batch Management', 'Flock Timeline', 'Mortality & Culling', 'FCR Analytics'] },
+      { name: 'Livestock Registry', subItems: ['Animal Register', 'Tagging & QR', 'Genealogy Tree', 'Weight ADG Curves'] },
+      { name: 'Feed & Water', subItems: ['Feed Inventory', 'Recipe Formulation', 'Water Meter Logs', 'Feed Cost Analysis'] },
+      { name: 'Health & Veterinary', subItems: ['Vaccination Schedule', 'Disease Diagnosis', 'Vet Portal', 'Quarantine Records'] },
+      { name: 'Breeding & Hatchery', subItems: ['Mating & AI', 'Pregnancy Check', 'Incubator Settings', 'Hatch Cycles'] },
+      { name: 'Production Ledger', subItems: ['Daily Egg Collection', 'Milk Sessions', 'Weight Gain Logs', 'Production Trends'] },
+      'Farm Tasks',
+      { name: 'Sales & Checkout', subItems: ['Livestock POS', 'Live Animal Sales', 'Egg & Milk Invoices', 'Fertilizer Sales'] },
+      { name: 'Purchasing', subItems: ['Feed Suppliers', 'Purchase Orders', 'Goods Received', 'Supplier Ledgers'] },
+      { name: 'Reports', subItems: ['Production Report', 'Mortality Report', 'FCR Efficiency', 'Cost per Unit', 'Farm Profit & Loss'] },
+      'Poultry Settings'
     ],
-    widgets: ['TotalAnimals', 'ActiveFlocks', 'EggProduction', 'FeedConsumption', 'MortalityRate', 'VaccinationDue', 'LowFeedStock', 'MonthlySales', 'FarmProfit'],
-    description: 'Flock management, egg production, veterinary logs, and feed formulation.'
+    widgets: ['TotalAnimals', 'ActiveFlocks', 'EggProduction', 'MilkYield', 'FeedConsumption', 'MortalityRate', 'VaccinationDue', 'LowFeedStock', 'FarmProfit'],
+    description: 'Complete commercial livestock & poultry suite: flock lifecycle, FCR feed formulation, hatchery incubators, dairy milking sessions, vet lab reports, and POS integration.'
   },
 
   Bar: {
@@ -662,6 +683,8 @@ interface ModuleContextType {
   isModuleEnabled: (moduleKey: string) => boolean;
   isMobileSidebarOpen: boolean;
   setIsMobileSidebarOpen: (open: boolean) => void;
+  /** True when the logged-in user is a dev superuser with access to all modules. */
+  isDevSuperuser: boolean;
 }
 
 const defaultModuleContext: ModuleContextType = {
@@ -675,7 +698,8 @@ const defaultModuleContext: ModuleContextType = {
   enabledModules: Object.keys(MODULE_MANIFESTS) as IndustryModule[],
   isModuleEnabled: () => true,
   isMobileSidebarOpen: false,
-  setIsMobileSidebarOpen: () => {}
+  setIsMobileSidebarOpen: () => {},
+  isDevSuperuser: false
 };
 
 const ModuleContext = createContext<ModuleContextType>(defaultModuleContext);
@@ -836,11 +860,18 @@ export const ModuleProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   };
 
+  // Dev superuser gets every module; everyone else gets their enabled subset.
+  // Must be declared BEFORE isModuleEnabled which references it.
+  const isDevSuperuser = DEV_SUPERUSER_EMAILS.has(getSessionEmail() || '');
+
   const isModuleEnabled = (moduleKey: string) => {
+    if (isDevSuperuser) return true; // dev superuser always has all modules
     return moduleStates[moduleKey]?.enabled ?? true;
   };
 
-  const enabledModules = (Object.keys(MODULE_MANIFESTS) as IndustryModule[]).filter(key => isModuleEnabled(key));
+  const enabledModules = isDevSuperuser
+    ? (Object.keys(MODULE_MANIFESTS) as IndustryModule[])
+    : (Object.keys(MODULE_MANIFESTS) as IndustryModule[]).filter(key => isModuleEnabled(key));
 
   const rawManifest = MODULE_MANIFESTS[activeModule] || MODULE_MANIFESTS['Retail'];
   const manifest: ModuleManifest = {
@@ -884,7 +915,8 @@ export const ModuleProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       enabledModules,
       isModuleEnabled,
       isMobileSidebarOpen,
-      setIsMobileSidebarOpen
+      setIsMobileSidebarOpen,
+      isDevSuperuser
     }}>
       {children}
     </ModuleContext.Provider>
