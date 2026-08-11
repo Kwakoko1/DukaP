@@ -81,7 +81,7 @@ export class TenantStoreCleanupService {
     // 1. Sync backend PostgreSQL purge
     await this.syncBackendPurge(tenantId, 'sales');
 
-    // 2. Atomic IndexedDB bulk deletion
+    // 2. Atomic IndexedDB bulk deletion with full cascade
     await db.transaction(
       'rw',
       [
@@ -91,9 +91,14 @@ export class TenantStoreCleanupService {
         db.receiptPrintLogs,
         db.receiptShareLogs,
         db.receiptAuditLogs,
+        db.receiptQrCodes,
+        db.receiptSignatures,
+        db.receiptNumberSequences,
         db.heldCarts,
         db.posShifts,
         db.tabs,
+        db.syncQueue,
+        db.syncOutbox,
       ],
       async () => {
         await db.orders.where('tenant_id').equals(tenantId).delete();
@@ -102,17 +107,43 @@ export class TenantStoreCleanupService {
         await db.receiptPrintLogs.where('tenant_id').equals(tenantId).delete();
         await db.receiptShareLogs.where('tenant_id').equals(tenantId).delete();
         await db.receiptAuditLogs.where('tenant_id').equals(tenantId).delete();
+        await db.receiptQrCodes.where('tenant_id').equals(tenantId).delete();
+        await db.receiptSignatures.where('tenant_id').equals(tenantId).delete();
+        await db.receiptNumberSequences.where('tenant_id').equals(tenantId).delete();
         await db.heldCarts.where('tenant_id').equals(tenantId).delete();
         await db.posShifts.where('tenant_id').equals(tenantId).delete();
         await db.tabs.where('tenant_id').equals(tenantId).delete();
+
+        // Sanitize pending syncQueue items for sales/receipts
+        await db.syncQueue
+          .where('tenant_id').equals(tenantId)
+          .filter(item => ['orders', 'receipts', 'receiptItems', 'sales'].includes(item.entity || item.entityName || ''))
+          .delete();
+
+        // Sanitize pending syncOutbox events for sales/receipts
+        await db.syncOutbox
+          .where('tenant_id').equals(tenantId)
+          .filter(item => ['orders', 'receipts', 'sales', 'POS_SALE'].includes(item.entity || item.action || ''))
+          .delete();
       }
     );
 
-    // 3. Dispatch live UI refresh event
+    // 3. Reset local tombstone registry
+    try {
+      localStorage.removeItem('dukapos_deleted_receipt_numbers');
+    } catch (_) {}
+
+    // 4. Dispatch cross-tab sync and live UI refresh events
+    try {
+      const { broadcastMutation } = await import('./crossTabSyncService');
+      broadcastMutation('receipts', 'DELETE', { scope: 'sales', tenantId });
+      broadcastMutation('orders', 'DELETE', { scope: 'sales', tenantId });
+    } catch (_) {}
+
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('DUKAPOS_DATA_PURGED', { detail: { scope: 'sales', tenantId } }));
     }
-    console.info('[TenantCleanup] Sales histories and receipts cleared.');
+    console.info('[TenantCleanup] Sales histories, receipts, and associated queue logs cleared.');
   }
 
   /**

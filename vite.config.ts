@@ -378,6 +378,18 @@ export default defineConfig({
                   } else if (scope === 'sales') {
                     if (db.orders) db.orders = db.orders.filter((o: any) => (o.tenant_id || o.tenantId) !== targetTenant);
                     if (db.receipts) db.receipts = db.receipts.filter((r: any) => (r.tenant_id || r.tenantId) !== targetTenant);
+                    if (db.receiptItems) db.receiptItems = db.receiptItems.filter((ri: any) => (ri.tenant_id || ri.tenantId) !== targetTenant);
+                    if (db.receiptPrintLogs) db.receiptPrintLogs = db.receiptPrintLogs.filter((r: any) => (r.tenant_id || r.tenantId) !== targetTenant);
+                    if (db.receiptShareLogs) db.receiptShareLogs = db.receiptShareLogs.filter((r: any) => (r.tenant_id || r.tenantId) !== targetTenant);
+                    if (db.receiptAuditLogs) db.receiptAuditLogs = db.receiptAuditLogs.filter((r: any) => (r.tenant_id || r.tenantId) !== targetTenant);
+                    if (db.receiptQrCodes) db.receiptQrCodes = db.receiptQrCodes.filter((r: any) => (r.tenant_id || r.tenantId) !== targetTenant);
+                    if (db.receiptSignatures) db.receiptSignatures = db.receiptSignatures.filter((r: any) => (r.tenant_id || r.tenantId) !== targetTenant);
+                    if (db.receiptNumberSequences) db.receiptNumberSequences = db.receiptNumberSequences.filter((r: any) => (r.tenant_id || r.tenantId) !== targetTenant);
+                    if (db.heldCarts) db.heldCarts = db.heldCarts.filter((h: any) => (h.tenant_id || h.tenantId) !== targetTenant);
+                    if (db.posShifts) db.posShifts = db.posShifts.filter((s: any) => (s.tenant_id || s.tenantId) !== targetTenant);
+                    if (db.tabs) db.tabs = db.tabs.filter((t: any) => (t.tenant_id || t.tenantId) !== targetTenant);
+                    if (db.cashMovements) db.cashMovements = db.cashMovements.filter((m: any) => (m.tenant_id || m.tenantId) !== targetTenant);
+                    if (db.cashShifts) db.cashShifts = db.cashShifts.filter((s: any) => (s.tenant_id || s.tenantId) !== targetTenant);
                   } else if (scope === 'contacts') {
                     if (db.customers) db.customers = db.customers.filter((c: any) => (c.tenant_id || c.tenantId) !== targetTenant);
                     if (db.suppliers) db.suppliers = db.suppliers.filter((s: any) => (s.tenant_id || s.tenantId) !== targetTenant);

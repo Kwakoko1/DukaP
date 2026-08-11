@@ -31,6 +31,7 @@ const AIInsightsView = lazy(() => import('./components/Views/AIInsightsView').th
 const CashDrawer = lazy(() => import('./components/Views/CashDrawer/CashDrawer').then(m => ({ default: m.CashDrawer })));
 const Receipts = lazy(() => import('./components/Views/Receipts').then(m => ({ default: m.Receipts })));
 const TrashCan = lazy(() => import('./components/Views/TrashCan').then(m => ({ default: m.TrashCan })));
+const LawFirmModule = lazy(() => import('./components/Views/LawFirm').then(m => ({ default: m.LawFirmModule })));
 import { useSubscription } from './hooks/useSubscription';
 import { Search, Lock } from 'lucide-react';
 import { Dialog, Badge } from './components/UI/custom-ui';
@@ -597,6 +598,21 @@ const DukaPosAppContent: React.FC = () => {
       case 'Compliance Documents':
       case 'File Manager':
         return <TechnicalCompany />;
+      // Law Firm / Legal Practice module routes
+      case 'Law Firm':
+      case 'Legal Practice':
+      case 'Legal Dashboard':
+      case 'Cases':
+      case 'Legal Cases':
+      case 'Matters':
+      case 'Court Calendar':
+      case 'Legal Documents':
+      case 'Legal Tasks':
+      case 'Billing & Retainers':
+      case 'Retainers':
+      case 'Legal Reports':
+      case 'Legal Settings':
+        return <LawFirmModule />;
       // Dedicated AI Insights Engine Hub routes
       case 'AI Insights':
       case 'AI Insights Engine':

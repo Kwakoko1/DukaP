@@ -188,23 +188,21 @@ export const MODULE_MANIFESTS: Record<IndustryModule, ModuleManifest> = {
     description: 'Project sheets, machinery utilization logs, and site materials.'
   },
   Law: {
-    name: 'Law Firm Module',
-    icon: 'Gavel',
+    name: 'Law Firm / Legal Practice',
+    icon: 'Scale',
     sidebar: [
-      'Dashboard',
+      'Legal Dashboard',
       'Clients',
       'Cases',
-      'Case Documents',
       'Court Calendar',
-      'Billing',
-      'Invoices',
-      'Expenses',
-      'Lawyers',
-      'Reports',
-      'Settings'
+      'Legal Documents',
+      'Legal Tasks',
+      'Billing & Retainers',
+      'Legal Reports',
+      'Legal Settings'
     ],
-    widgets: ['ActiveLitigations', 'RetainersFees', 'CourtHearingsToday', 'BillableHours'],
-    description: 'Case documents storage, client billings, and court calendars.'
+    widgets: ['ActiveCases', 'NewClients', 'UpcomingHearings', 'OverdueDeadlines', 'PendingTasks', 'OutstandingLegalFees', 'RetainerBalances', 'RecentCaseActivity'],
+    description: 'Multi-tenant legal practice management platform for law firms, advocates, legal consultants, and lawyers.'
   },
   RealEstate: {
     name: 'Real Estate / Property Management',

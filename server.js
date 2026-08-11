@@ -1314,8 +1314,21 @@ const server = http.createServer(async (req, res) => {
           await sql`DELETE FROM product_variants WHERE tenant_id = ${targetTenant}`;
           await sql`DELETE FROM products WHERE tenant_id = ${targetTenant}`;
         } else if (scope === 'sales') {
-          await sql`DELETE FROM order_items WHERE order_id IN (SELECT id FROM orders WHERE tenant_id = ${targetTenant})`;
-          await sql`DELETE FROM orders WHERE tenant_id = ${targetTenant}`;
+          await sql`DELETE FROM receipt_items WHERE tenant_id = ${targetTenant}`.catch(() => {});
+          await sql`DELETE FROM receipt_print_logs WHERE tenant_id = ${targetTenant}`.catch(() => {});
+          await sql`DELETE FROM receipt_share_logs WHERE tenant_id = ${targetTenant}`.catch(() => {});
+          await sql`DELETE FROM receipt_audit_logs WHERE tenant_id = ${targetTenant}`.catch(() => {});
+          await sql`DELETE FROM receipt_qr_codes WHERE tenant_id = ${targetTenant}`.catch(() => {});
+          await sql`DELETE FROM receipt_signatures WHERE tenant_id = ${targetTenant}`.catch(() => {});
+          await sql`DELETE FROM receipt_number_sequences WHERE tenant_id = ${targetTenant}`.catch(() => {});
+          await sql`DELETE FROM receipts WHERE tenant_id = ${targetTenant}`.catch(() => {});
+          await sql`DELETE FROM held_carts WHERE tenant_id = ${targetTenant}`.catch(() => {});
+          await sql`DELETE FROM pos_shifts WHERE tenant_id = ${targetTenant}`.catch(() => {});
+          await sql`DELETE FROM tabs WHERE tenant_id = ${targetTenant}`.catch(() => {});
+          await sql`DELETE FROM cash_movements WHERE tenant_id = ${targetTenant}`.catch(() => {});
+          await sql`DELETE FROM cash_shifts WHERE tenant_id = ${targetTenant}`.catch(() => {});
+          await sql`DELETE FROM order_items WHERE order_id IN (SELECT id FROM orders WHERE tenant_id = ${targetTenant})`.catch(() => {});
+          await sql`DELETE FROM orders WHERE tenant_id = ${targetTenant}`.catch(() => {});
         } else if (scope === 'contacts') {
           await sql`DELETE FROM customers WHERE tenant_id = ${targetTenant}`;
         }

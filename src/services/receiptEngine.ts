@@ -1114,7 +1114,7 @@ export function registerDeletedReceiptNumber(num: string) {
   } catch (e) {}
 }
 
-export async function purgeOrderAndReceipt(target: { receipt_number?: string; id?: string; transaction_id?: string; total?: number }): Promise<void> {
+export async function purgeOrderAndReceipt(target: { receipt_number?: string; id?: string; transaction_id?: string; total?: number; tenant_id?: string }): Promise<void> {
   const deletedSet = getDeletedReceiptNumbers();
   if (target.receipt_number) registerDeletedReceiptNumber(target.receipt_number);
   if (target.id) registerDeletedReceiptNumber(target.id);
@@ -1127,37 +1127,101 @@ export async function purgeOrderAndReceipt(target: { receipt_number?: string; id
     broadcastMutation('orders', 'DELETE', { id: target.id, transaction_id: target.transaction_id });
   } catch (e) {}
 
-  // 1. Delete matching receipts
-  const receipts = await db.receipts.toArray();
-  for (const r of receipts) {
-    if (
-      (target.id && r.id === target.id) ||
-      (target.receipt_number && r.receipt_number === target.receipt_number) ||
-      (target.transaction_id && r.transaction_id === target.transaction_id) ||
-      (target.total && r.total === target.total)
-    ) {
-      registerDeletedReceiptNumber(r.id);
-      registerDeletedReceiptNumber(r.receipt_number);
-      if (r.transaction_id) registerDeletedReceiptNumber(r.transaction_id);
-      await db.receipts.delete(r.id);
-      await db.receiptItems.where('receipt_id').equals(r.id).delete();
-    }
+  // Gather matching receipts using indexed lookups
+  const targetReceiptIds = new Set<string>();
+  const targetReceiptNumbers = new Set<string>();
+  const targetTransactionIds = new Set<string>();
+
+  if (target.id) targetReceiptIds.add(target.id);
+  if (target.receipt_number) targetReceiptNumbers.add(target.receipt_number);
+  if (target.transaction_id) targetTransactionIds.add(target.transaction_id);
+
+  // Perform indexed queries to find matching receipt records
+  const matchedReceipts: Receipt[] = [];
+  if (target.id) {
+    const r = await db.receipts.get(target.id);
+    if (r) matchedReceipts.push(r);
+  }
+  if (target.receipt_number) {
+    const byNum = await db.receipts.where('receipt_number').equals(target.receipt_number).toArray();
+    matchedReceipts.push(...byNum);
+  }
+  if (target.transaction_id) {
+    const byTx = await db.receipts.where('transaction_id').equals(target.transaction_id).toArray();
+    matchedReceipts.push(...byTx);
+  }
+  if (target.total !== undefined && matchedReceipts.length === 0 && target.tenant_id) {
+    const byTenant = await db.receipts.where('tenant_id').equals(target.tenant_id).toArray();
+    const byTotal = byTenant.filter(r => r.total === target.total);
+    matchedReceipts.push(...byTotal);
   }
 
-  // 2. Delete matching orders
-  const orders = await db.orders.toArray();
-  for (const o of orders) {
-    if (
-      (target.id && o.id === target.id) ||
-      (target.transaction_id && o.id === target.transaction_id) ||
-      (target.receipt_number && (o as any).receipt_number === target.receipt_number) ||
-      (target.total && o.total === target.total) ||
-      deletedSet.has(o.id)
-    ) {
-      registerDeletedReceiptNumber(o.id);
-      await db.orders.delete(o.id);
-    }
+  for (const r of matchedReceipts) {
+    if (r.id) targetReceiptIds.add(r.id);
+    if (r.receipt_number) targetReceiptNumbers.add(r.receipt_number);
+    if (r.transaction_id) targetTransactionIds.add(r.transaction_id);
+    registerDeletedReceiptNumber(r.id);
+    registerDeletedReceiptNumber(r.receipt_number);
+    if (r.transaction_id) registerDeletedReceiptNumber(r.transaction_id);
   }
+
+  // Atomic IndexedDB multi-table transactional delete
+  await db.transaction(
+    'rw',
+    [
+      db.receipts,
+      db.receiptItems,
+      db.receiptPrintLogs,
+      db.receiptShareLogs,
+      db.receiptAuditLogs,
+      db.receiptQrCodes,
+      db.receiptSignatures,
+      db.orders,
+      db.syncQueue,
+      db.syncOutbox,
+    ],
+    async () => {
+      // 1. Delete receipts and cascaded sub-records
+      for (const rId of targetReceiptIds) {
+        await db.receipts.delete(rId);
+        await db.receiptItems.where('receipt_id').equals(rId).delete();
+        await db.receiptPrintLogs.where('receipt_id').equals(rId).delete();
+        await db.receiptShareLogs.where('receipt_id').equals(rId).delete();
+        await db.receiptAuditLogs.where('receipt_id').equals(rId).delete();
+        await db.receiptQrCodes.where('receipt_id').equals(rId).delete();
+        await db.receiptSignatures.where('receipt_id').equals(rId).delete();
+      }
+
+      // 2. Delete matching orders
+      const orderIdsToDelete = new Set<string>([...targetReceiptIds, ...targetTransactionIds]);
+      if (target.id) orderIdsToDelete.add(target.id);
+
+      for (const oId of orderIdsToDelete) {
+        await db.orders.delete(oId);
+        registerDeletedReceiptNumber(oId);
+      }
+
+      if (target.total !== undefined && target.tenant_id) {
+        const tenantOrders = await db.orders.where('tenant_id').equals(target.tenant_id).toArray();
+        for (const o of tenantOrders) {
+          if (o.total === target.total || deletedSet.has(o.id)) {
+            registerDeletedReceiptNumber(o.id);
+            await db.orders.delete(o.id);
+          }
+        }
+      }
+
+      // 3. Delete matching syncQueue & syncOutbox items to prevent cloud sync resurrection
+      const allIds = new Set<string>([...targetReceiptIds, ...targetTransactionIds, ...targetReceiptNumbers]);
+      await db.syncQueue
+        .filter(item => allIds.has(item.entity_id || '') || allIds.has((item.payload as any)?.id || '') || allIds.has((item.payload as any)?.receipt_number || ''))
+        .delete();
+
+      await db.syncOutbox
+        .filter(item => allIds.has(item.idempotency_key || '') || allIds.has((item.payload as any)?.id || ''))
+        .delete();
+    }
+  );
 }
 
 // ─── Auto-Healing: Ensure every completed order has a matching receipt ─────────

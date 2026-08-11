@@ -1949,6 +1949,17 @@ class DukaPosDatabase extends Dexie {
   // Fast Sync Watermark & Metadata Store (v34)
   syncMetadata!: Table<{ key: string; value: any; updatedAt: number }>;
 
+  // ── Law Firm / Legal Practice Module Tables (v35) ───────────────────────────
+  legalClients!: Table<LegalClient>;
+  legalCases!: Table<LegalCase>;
+  legalConflictChecks!: Table<LegalConflictCheck>;
+  legalHearings!: Table<LegalHearing>;
+  legalTasks!: Table<LegalTask>;
+  legalDocuments!: Table<LegalDocument>;
+  legalTimeEntries!: Table<LegalTimeEntry>;
+  legalRetainers!: Table<LegalRetainer>;
+  legalTimeline!: Table<LegalTimelineEntry>;
+
   constructor() {
     super('DukaPosDatabase');
 
@@ -2670,6 +2681,19 @@ class DukaPosDatabase extends Dexie {
     // Version 34: Fast Bootstrap & Monotonic Watermark Metadata Store
     this.version(34).stores({
       syncMetadata: 'key'
+    });
+
+    // Version 35: Law Firm / Legal Services Module Schema
+    this.version(35).stores({
+      legalClients: 'id, tenant_id, branch_id, type, name, company_name, phone, status, created_at',
+      legalCases: 'id, tenant_id, branch_id, case_number, title, client_id, status, priority, created_at',
+      legalConflictChecks: 'id, tenant_id, case_title, party_searched, match_found, timestamp',
+      legalHearings: 'id, tenant_id, case_id, event_type, date_time, status, created_at',
+      legalTasks: 'id, tenant_id, case_id, assigned_user_id, status, due_date, created_at',
+      legalDocuments: 'id, tenant_id, case_id, category, version, uploaded_by, created_at',
+      legalTimeEntries: 'id, tenant_id, case_id, lawyer_id, date, is_billed, created_at',
+      legalRetainers: 'id, tenant_id, client_id, case_id, status, updated_at',
+      legalTimeline: 'id, tenant_id, case_id, timestamp'
     });
 
     const tablesWithOrigin = [
@@ -3741,21 +3765,61 @@ export async function purgeAllProducts(tenantId?: string): Promise<void> {
  */
 export async function purgeAllSales(tenantId?: string): Promise<void> {
   console.info('[DeveloperPurge] Beginning purgeAllSales for tenantId:', tenantId);
+  const tables = [
+    db.orders,
+    db.receipts,
+    db.receiptItems,
+    db.receiptPrintLogs,
+    db.receiptShareLogs,
+    db.receiptAuditLogs,
+    db.receiptQrCodes,
+    db.receiptSignatures,
+    db.receiptNumberSequences,
+    db.heldCarts,
+    db.posShifts,
+    db.tabs,
+  ];
   const dbAny = db as any;
-  const tables = [db.orders];
   if (dbAny.cashMovements) tables.push(dbAny.cashMovements);
   if (dbAny.cashShifts) tables.push(dbAny.cashShifts);
 
   return db.transaction('rw', tables, async () => {
     if (tenantId) {
       await db.orders.where('tenant_id').equals(tenantId).delete();
+      await db.receipts.where('tenant_id').equals(tenantId).delete();
+      await db.receiptItems.where('tenant_id').equals(tenantId).delete();
+      await db.receiptPrintLogs.where('tenant_id').equals(tenantId).delete();
+      await db.receiptShareLogs.where('tenant_id').equals(tenantId).delete();
+      await db.receiptAuditLogs.where('tenant_id').equals(tenantId).delete();
+      await db.receiptQrCodes.where('tenant_id').equals(tenantId).delete();
+      await db.receiptSignatures.where('tenant_id').equals(tenantId).delete();
+      await db.receiptNumberSequences.where('tenant_id').equals(tenantId).delete();
+      await db.heldCarts.where('tenant_id').equals(tenantId).delete();
+      await db.posShifts.where('tenant_id').equals(tenantId).delete();
+      await db.tabs.where('tenant_id').equals(tenantId).delete();
       if (dbAny.cashMovements) await dbAny.cashMovements.where('tenant_id').equals(tenantId).delete();
       if (dbAny.cashShifts) await dbAny.cashShifts.where('tenant_id').equals(tenantId).delete();
     } else {
       await db.orders.clear();
+      await db.receipts.clear();
+      await db.receiptItems.clear();
+      await db.receiptPrintLogs.clear();
+      await db.receiptShareLogs.clear();
+      await db.receiptAuditLogs.clear();
+      await db.receiptQrCodes.clear();
+      await db.receiptSignatures.clear();
+      await db.receiptNumberSequences.clear();
+      await db.heldCarts.clear();
+      await db.posShifts.clear();
+      await db.tabs.clear();
       if (dbAny.cashMovements) await dbAny.cashMovements.clear();
       if (dbAny.cashShifts) await dbAny.cashShifts.clear();
     }
+
+    try {
+      localStorage.removeItem('dukapos_deleted_receipt_numbers');
+    } catch (_) {}
+
     console.info('[DeveloperPurge] purgeAllSales completed successfully.');
   });
 }
@@ -3796,4 +3860,143 @@ export async function safeGet<T>(table: Table<T, any>, key: any): Promise<T | un
     console.warn(`[Dexie safeGet] Caught invalid key lookup on table ${table?.name || 'unknown'}:`, key);
     return undefined;
   }
+}
+
+// ── Law Firm / Legal Services Module Interfaces ──────────────────────────────
+export interface LegalClient {
+  id: string;
+  tenant_id: string;
+  branch_id?: string;
+  type: 'INDIVIDUAL' | 'CORPORATE';
+  name: string;
+  company_name?: string;
+  reg_number?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  tax_id?: string;
+  status: 'Active' | 'Inactive' | 'Deleted';
+  is_deleted?: boolean;
+  notes?: string;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface LegalCase {
+  id: string;
+  tenant_id: string;
+  branch_id?: string;
+  case_number: string;
+  title: string;
+  description?: string;
+  client_id: string;
+  client_name?: string;
+  opposing_party?: string;
+  court_name?: string;
+  judge_name?: string;
+  filing_number?: string;
+  responsible_lawyer_id?: string;
+  responsible_lawyer_name?: string;
+  assigned_lawyer_ids?: string[];
+  status: 'INTAKE' | 'CONFLICT_CHECK' | 'OPEN' | 'IN_PROGRESS' | 'ON_HOLD' | 'SETTLED' | 'WON' | 'LOST' | 'CLOSED' | 'ARCHIVED';
+  priority: 'Low' | 'Medium' | 'High' | 'Urgent';
+  confidentiality_level?: 'Standard' | 'Confidential' | 'Highly Confidential';
+  is_deleted?: boolean;
+  notes?: string;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface LegalConflictCheck {
+  id: string;
+  tenant_id: string;
+  case_title: string;
+  party_searched: string;
+  match_found: boolean;
+  match_type?: string;
+  related_case_id?: string;
+  acknowledged_by?: string;
+  acknowledgment_notes?: string;
+  timestamp: number;
+}
+
+export interface LegalHearing {
+  id: string;
+  tenant_id: string;
+  case_id: string;
+  case_number?: string;
+  event_type: 'HEARING' | 'MENTION' | 'FILING_DEADLINE' | 'MEDIATION' | 'CONFERENCE' | 'OTHER';
+  title: string;
+  date_time: string;
+  location?: string;
+  judge_name?: string;
+  notes?: string;
+  status: 'Scheduled' | 'Completed' | 'Postponed' | 'Cancelled';
+  created_at: number;
+}
+
+export interface LegalTask {
+  id: string;
+  tenant_id: string;
+  case_id: string;
+  title: string;
+  description?: string;
+  assigned_user_id?: string;
+  assigned_user_name?: string;
+  due_date: string;
+  status: 'TODO' | 'IN_PROGRESS' | 'COMPLETED' | 'OVERDUE' | 'CANCELLED';
+  priority: 'Low' | 'Medium' | 'High';
+  created_at: number;
+}
+
+export interface LegalDocument {
+  id: string;
+  tenant_id: string;
+  case_id: string;
+  title: string;
+  category: 'Pleadings' | 'Contracts' | 'Affidavits' | 'Court Filings' | 'Evidence' | 'Correspondence' | 'Invoices' | 'Other';
+  file_path?: string;
+  file_size?: number;
+  mime_type?: string;
+  version: number;
+  uploaded_by: string;
+  confidentiality: 'Internal' | 'Client Visible' | 'Confidential';
+  created_at: number;
+}
+
+export interface LegalTimeEntry {
+  id: string;
+  tenant_id: string;
+  case_id: string;
+  lawyer_id: string;
+  lawyer_name?: string;
+  date: string;
+  duration_minutes: number;
+  hourly_rate: number;
+  billable_amount: number;
+  is_billed: boolean;
+  description: string;
+  created_at: number;
+}
+
+export interface LegalRetainer {
+  id: string;
+  tenant_id: string;
+  client_id: string;
+  case_id?: string;
+  total_deposited: number;
+  current_balance: number;
+  minimum_threshold: number;
+  status: 'Active' | 'Low Balance' | 'Depleted';
+  updated_at: number;
+}
+
+export interface LegalTimelineEntry {
+  id: string;
+  tenant_id: string;
+  case_id: string;
+  actor_name: string;
+  event_type: string;
+  description: string;
+  timestamp: number;
 }
