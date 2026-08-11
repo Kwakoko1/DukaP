@@ -13,7 +13,7 @@ import {
   ProductService, cleanDuplicateVariants, getVariantAttrSig,
   createCategory, updateCategory, deleteCategory,
   createBrand, updateBrand, deleteBrand,
-  seedIndustryCategoryPresets, mergeDuplicateCategories, mergeDuplicateBrands, reassignCategoryProducts
+  seedIndustryCategoryPresets, mergeDuplicateCategories, mergeDuplicateBrands
 } from '../../services/productService';
 import { Html5Qrcode } from 'html5-qrcode';
 import {
@@ -377,50 +377,48 @@ export const Inventory: React.FC = () => {
 
   const handleDeleteCategory = async (name: string) => {
     const prods = await db.products.where('tenant_id').equals(currentTenant.id).toArray();
-    const categoryProds = prods.filter(p => p.category === name);
+    const categoryProds = prods.filter(p => p.category === name || p.category?.toLowerCase() === name.toLowerCase());
 
+    let targetCat = 'General';
     if (categoryProds.length > 0) {
-      const otherCats = allCategories.map(c => c.name).filter(cName => cName !== name);
-      const targetCat = prompt(
-        `⚠️ Category "${name}" has ${categoryProds.length} assigned product(s).\n\nTo re-assign these products and delete "${name}", type the target category name below:\nAvailable Categories: ${otherCats.join(', ') || 'General'}`
-      );
-      if (!targetCat || !targetCat.trim()) return;
-      const reassigned = await reassignCategoryProducts(currentTenant.id, name, targetCat.trim());
-      alert(`✅ Re-assigned ${reassigned} product(s) to "${targetCat.trim()}" and deleted category "${name}".`);
-      return;
+      const otherCats = allCategories.map(c => c.name).filter(cName => cName.toLowerCase() !== name.toLowerCase());
+      const promptText = `⚠️ Category "${name}" has ${categoryProds.length} assigned product(s).\n\nSpecify the target category to reassign products to (or press OK to reassign to "General"):\n\nAvailable: ${otherCats.join(', ') || 'General'}`;
+      const inputVal = prompt(promptText, 'General');
+      if (inputVal === null) return;
+      targetCat = inputVal.trim() || 'General';
+    } else {
+      if (!confirm(`Are you sure you want to delete category "${name}"?`)) return;
     }
 
-    if (!confirm(`Are you sure you want to delete the empty category "${name}"?`)) return;
-    
     try {
-      const catRec = await db.categories.where('tenant_id').equals(currentTenant.id).filter(c => c.name === name).first();
-      if (catRec) {
-        await deleteCategory(catRec.id);
-      }
-    } catch {}
-    alert(`✅ Category "${name}" successfully deleted.`);
+      await deleteCategory(name, currentTenant.id, targetCat);
+      alert(`✅ Category "${name}" successfully deleted.${categoryProds.length > 0 ? ` ${categoryProds.length} product(s) reassigned to "${targetCat}".` : ''}`);
+    } catch (err: any) {
+      alert(`❌ Failed to delete category: ${err?.message || err}`);
+    }
   };
-
-
 
   const handleDeleteBrand = async (name: string) => {
     const prods = await db.products.where('tenant_id').equals(currentTenant.id).toArray();
-    const brandProds = prods.filter(p => p.brand === name);
+    const brandProds = prods.filter(p => p.brand === name || p.brand?.toLowerCase() === name.toLowerCase());
 
+    let targetBrand = '';
     if (brandProds.length > 0) {
-      alert(`⚠️ Cannot delete brand "${name}"!\n\nThere are ${brandProds.length} product(s) currently assigned to this brand. Please reassign or delete those products first before deleting this brand.`);
-      return;
+      const otherBrands = allBrands.map(b => b.name).filter(bName => bName.toLowerCase() !== name.toLowerCase());
+      const promptText = `⚠️ Brand "${name}" has ${brandProds.length} assigned product(s).\n\nSpecify the target brand to reassign products to (or leave blank to unassign):\n\nAvailable: ${otherBrands.join(', ') || 'Unbranded'}`;
+      const inputVal = prompt(promptText, '');
+      if (inputVal === null) return;
+      targetBrand = inputVal.trim();
+    } else {
+      if (!confirm(`Are you sure you want to delete brand "${name}"?`)) return;
     }
 
-    if (!confirm(`Are you sure you want to delete the empty brand "${name}"?`)) return;
-    
     try {
-      const brandRec = await db.brands.where('tenant_id').equals(currentTenant.id).filter(b => b.name === name).first();
-      if (brandRec) {
-        await deleteBrand(brandRec.id);
-      }
-    } catch {}
-    alert(`✅ Brand "${name}" successfully deleted.`);
+      await deleteBrand(name, currentTenant.id, targetBrand);
+      alert(`✅ Brand "${name}" successfully deleted.${brandProds.length > 0 ? ` ${brandProds.length} product(s) updated.` : ''}`);
+    } catch (err: any) {
+      alert(`❌ Failed to delete brand: ${err?.message || err}`);
+    }
   };
 
   // Recipe sub-tab states
@@ -2212,13 +2210,9 @@ export const Inventory: React.FC = () => {
                             <Edit size={14} />
                           </button>
                           <button
-                            title={c.count > 0 ? `Cannot delete: ${c.count} products assigned` : "Delete Category"}
+                            title={`Delete Category "${c.name}"${c.count > 0 ? ` (${c.count} assigned items will be reassigned)` : ''}`}
                             onClick={() => handleDeleteCategory(c.name)}
-                            className={`p-1.5 rounded-lg transition ${
-                              c.count > 0
-                                ? 'text-slate-300 dark:text-slate-700 cursor-not-allowed opacity-40'
-                                : 'text-slate-500 hover:text-red-600 hover:bg-slate-200 dark:hover:bg-slate-800 cursor-pointer'
-                            }`}
+                            className="p-1.5 text-slate-500 hover:text-red-600 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg transition cursor-pointer"
                           >
                             <Trash2 size={14} />
                           </button>
@@ -2454,13 +2448,9 @@ export const Inventory: React.FC = () => {
                             <Edit size={14} />
                           </button>
                           <button
-                            title={b.count > 0 ? `Cannot delete: ${b.count} products assigned` : "Delete Brand"}
+                            title={`Delete Brand "${b.name}"${b.count > 0 ? ` (${b.count} assigned items will be unassigned)` : ''}`}
                             onClick={() => handleDeleteBrand(b.name)}
-                            className={`p-1.5 rounded-lg transition ${
-                              b.count > 0
-                                ? 'text-slate-300 dark:text-slate-700 cursor-not-allowed opacity-40'
-                                : 'text-slate-500 hover:text-red-600 hover:bg-slate-200 dark:hover:bg-slate-800 cursor-pointer'
-                            }`}
+                            className="p-1.5 text-slate-500 hover:text-red-600 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg transition cursor-pointer"
                           >
                             <Trash2 size={14} />
                           </button>

@@ -234,7 +234,7 @@ export const Sidebar: React.FC<SidebarProps> = () => {
               'Trash Can & Recovery',
               'Subscriptions & Billing',
               'Developer Options',
-              'User Manual & Guide',
+              'Help & Manuals',
               'Change Log'
             ]
           };
@@ -302,11 +302,13 @@ export const Sidebar: React.FC<SidebarProps> = () => {
             subLower === 'terminals & sessions' ||
             subLower === 'subscriptions & billing' ||
             subLower === 'developer options' ||
-            subLower === 'user manual & guide' ||
-            subLower === 'user manual' ||
             subLower === 'change log'
           ) {
             return hasPermission('settings.manage') || ['Super Admin', 'Business Owner', 'Tenant Owner', 'Business Administrator'].includes(role);
+          }
+          // Help & Manuals: visible to ALL authenticated roles (content is role-filtered inside HelpManualConsole)
+          if (subLower === 'help & manuals' || subLower === 'user manual' || subLower === 'user manual & guide') {
+            return true;
           }
           return true;
         }) || [];
@@ -412,6 +414,7 @@ export const Sidebar: React.FC<SidebarProps> = () => {
     if (n === 'platform updates') return <TrendingUp className="h-4.5 w-4.5 shrink-0" />;
     if (n === 'integrations') return <Boxes className="h-4.5 w-4.5 shrink-0" />;
     if (n === 'system settings') return <Settings className="h-4.5 w-4.5 shrink-0" />;
+    if (n === 'help & manuals' || n === 'user manual' || n === 'help center' || n === 'documentation') return <BookOpen className="h-4.5 w-4.5 shrink-0 text-sky-500" />;
     
     // Business Consultant module matches
     if (n === 'engagements') return <ClipboardList className="h-4.5 w-4.5 shrink-0" />;

@@ -867,19 +867,101 @@ export async function updateCategory(id: string, updates: Partial<Category>): Pr
   }
 }
 
-export async function deleteCategory(id: string): Promise<void> {
-  const existing = await db.categories.get(id);
-  await db.categories.delete(id);
-  if (existing) {
-    await db.syncQueue.add({
-      actionType: 'DELETE',
-      entityName: 'categories',
-      tenant_id: existing.tenant_id,
-      payload: { id, tenant_id: existing.tenant_id },
-      timestamp: Date.now(),
-      status: 'Pending',
-    });
+export function getDeletedCategoryNames(): Set<string> {
+  try {
+    const raw = localStorage.getItem('dukapos_deleted_categories');
+    if (!raw) return new Set();
+    return new Set(JSON.parse(raw));
+  } catch {
+    return new Set();
   }
+}
+
+export function registerDeletedCategoryName(nameOrId: string): void {
+  if (!nameOrId || !nameOrId.trim()) return;
+  try {
+    const set = getDeletedCategoryNames();
+    set.add(nameOrId.trim());
+    set.add(nameOrId.trim().toLowerCase());
+    localStorage.setItem('dukapos_deleted_categories', JSON.stringify(Array.from(set)));
+  } catch {}
+}
+
+export function getDeletedBrandNames(): Set<string> {
+  try {
+    const raw = localStorage.getItem('dukapos_deleted_brands');
+    if (!raw) return new Set();
+    return new Set(JSON.parse(raw));
+  } catch {
+    return new Set();
+  }
+}
+
+export function registerDeletedBrandName(nameOrId: string): void {
+  if (!nameOrId || !nameOrId.trim()) return;
+  try {
+    const set = getDeletedBrandNames();
+    set.add(nameOrId.trim());
+    set.add(nameOrId.trim().toLowerCase());
+    localStorage.setItem('dukapos_deleted_brands', JSON.stringify(Array.from(set)));
+  } catch {}
+}
+
+export async function deleteCategory(idOrName: string, tenantId?: string, reassignToCategory: string = 'General'): Promise<void> {
+  let catRecord = await db.categories.get(idOrName);
+  if (!catRecord && tenantId) {
+    catRecord = await db.categories.where('tenant_id').equals(tenantId).filter(c => Boolean(c.name && (c.name === idOrName || c.name.toLowerCase() === idOrName.toLowerCase()))).first();
+  }
+  if (!catRecord) {
+    catRecord = await db.categories.filter(c => c.id === idOrName || (Boolean(c.name) && c.name.toLowerCase() === idOrName.toLowerCase())).first();
+  }
+
+  const catName = catRecord?.name || idOrName;
+  const catId = catRecord?.id || idOrName;
+  const tid = catRecord?.tenant_id || tenantId || '';
+
+  // Register tombstones
+  registerDeletedCategoryName(catId);
+  registerDeletedCategoryName(catName);
+
+  // 1. Delete category records matching ID or Name
+  if (catRecord) {
+    await db.categories.delete(catRecord.id);
+  }
+  const matchingCats = await db.categories.filter(c => c.id === catId || (Boolean(c.name) && c.name.toLowerCase() === catName.toLowerCase())).toArray();
+  for (const mc of matchingCats) {
+    await db.categories.delete(mc.id);
+  }
+
+  // 2. Reassign / clear category on all matching products
+  let prodQuery = db.products.toCollection();
+  if (tid) {
+    prodQuery = db.products.where('tenant_id').equals(tid);
+  }
+  const allProds = await prodQuery.toArray();
+  const lowerTargetName = catName.toLowerCase();
+
+  for (const p of allProds) {
+    const pCat = p.category ? p.category.trim() : '';
+    const pCatId = p.categoryId || (p as any).category_id;
+    if (pCatId === catId || pCat.toLowerCase() === lowerTargetName || pCat === catName) {
+      await db.products.update(p.id, {
+        category: reassignToCategory,
+        categoryId: reassignToCategory === 'General' ? '' : reassignToCategory,
+        updatedAt: Date.now(),
+      });
+    }
+  }
+
+  // 3. Queue sync deletion event
+  await db.syncQueue.add({
+    actionType: 'DELETE',
+    entityName: 'categories',
+    tenant_id: tid || 'tenant-101',
+    payload: { id: catId, name: catName, tenant_id: tid },
+    timestamp: Date.now(),
+    status: 'Pending',
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -954,19 +1036,60 @@ export async function updateBrand(id: string, updates: Partial<Brand>): Promise<
   }
 }
 
-export async function deleteBrand(id: string): Promise<void> {
-  const existing = await db.brands.get(id);
-  await db.brands.delete(id);
-  if (existing) {
-    await db.syncQueue.add({
-      actionType: 'DELETE',
-      entityName: 'brands',
-      tenant_id: existing.tenant_id,
-      payload: { id, tenant_id: existing.tenant_id },
-      timestamp: Date.now(),
-      status: 'Pending',
-    });
+export async function deleteBrand(idOrName: string, tenantId?: string, reassignToBrand: string = ''): Promise<void> {
+  let brandRecord = await db.brands.get(idOrName);
+  if (!brandRecord && tenantId) {
+    brandRecord = await db.brands.where('tenant_id').equals(tenantId).filter(b => Boolean(b.name && (b.name === idOrName || b.name.toLowerCase() === idOrName.toLowerCase()))).first();
   }
+  if (!brandRecord) {
+    brandRecord = await db.brands.filter(b => b.id === idOrName || (Boolean(b.name) && b.name.toLowerCase() === idOrName.toLowerCase())).first();
+  }
+
+  const brandName = brandRecord?.name || idOrName;
+  const brandId = brandRecord?.id || idOrName;
+  const tid = brandRecord?.tenant_id || tenantId || '';
+
+  // Register tombstones
+  registerDeletedBrandName(brandId);
+  registerDeletedBrandName(brandName);
+
+  // 1. Delete brand records matching ID or Name
+  if (brandRecord) {
+    await db.brands.delete(brandRecord.id);
+  }
+  const matchingBrands = await db.brands.filter(b => b.id === brandId || (Boolean(b.name) && b.name.toLowerCase() === brandName.toLowerCase())).toArray();
+  for (const mb of matchingBrands) {
+    await db.brands.delete(mb.id);
+  }
+
+  // 2. Reassign / clear brand on all matching products
+  let prodQuery = db.products.toCollection();
+  if (tid) {
+    prodQuery = db.products.where('tenant_id').equals(tid);
+  }
+  const allProds = await prodQuery.toArray();
+  const lowerTargetName = brandName.toLowerCase();
+
+  for (const p of allProds) {
+    const pBrand = p.brand ? p.brand.trim() : '';
+    const pBrandId = (p as any).brandId || (p as any).brand_id;
+    if (pBrandId === brandId || pBrand.toLowerCase() === lowerTargetName || pBrand === brandName) {
+      await db.products.update(p.id, {
+        brand: reassignToBrand,
+        updatedAt: Date.now(),
+      });
+    }
+  }
+
+  // 3. Queue sync deletion event
+  await db.syncQueue.add({
+    actionType: 'DELETE',
+    entityName: 'brands',
+    tenant_id: tid || 'tenant-101',
+    payload: { id: brandId, name: brandName, tenant_id: tid },
+    timestamp: Date.now(),
+    status: 'Pending',
+  });
 }
 // ═══════════════════════════════════════════════════════════════════════════
 // ENTERPRISE CATEGORY & BRAND HYGIENE & PRESETS SERVICE

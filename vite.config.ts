@@ -241,8 +241,8 @@ export default defineConfig({
               const tenant = (db.tenants || []).find((t: any) => t.id === tenantId) || { id: tenantId, name: 'Bravados', plan: 'Enterprise' }
               const user = (db.users || []).find((u: any) => u.tenant_id === tenantId || u.tenantId === tenantId) || null
               const branches = (db.branches || []).filter((b: any) => (b.tenant_id === tenantId || b.tenantId === tenantId) && !b.deletedAt)
-              const categories = (db.categories || []).filter((c: any) => (c.tenant_id === tenantId || c.tenantId === tenantId) && !c.deletedAt)
-              const brands = (db.brands || []).filter((b: any) => (b.tenant_id === tenantId || b.tenantId === tenantId) && !b.deletedAt)
+              const categories = (db.categories || []).filter((c: any) => (c.tenant_id === tenantId || c.tenantId === tenantId) && !c.deletedAt && !c.deleted_at && (c.status || 'Active') !== 'Inactive')
+              const brands = (db.brands || []).filter((b: any) => (b.tenant_id === tenantId || b.tenantId === tenantId) && !b.deletedAt && !b.deleted_at && (b.status || 'Active') !== 'Inactive')
               const products = (db.products || []).filter((p: any) => (p.tenant_id === tenantId || p.tenantId === tenantId) && !p.deletedAt)
               const variants = (db.variants || db.productVariants || []).filter((v: any) => (v.tenant_id === tenantId || v.tenantId === tenantId) && !v.deletedAt)
               const stockLedger = (db.stockLedger || []).filter((s: any) => s.tenant_id === tenantId || s.tenantId === tenantId).slice(0, 500)

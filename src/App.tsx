@@ -32,6 +32,7 @@ const CashDrawer = lazy(() => import('./components/Views/CashDrawer/CashDrawer')
 const Receipts = lazy(() => import('./components/Views/Receipts').then(m => ({ default: m.Receipts })));
 const TrashCan = lazy(() => import('./components/Views/TrashCan').then(m => ({ default: m.TrashCan })));
 const LawFirmModule = lazy(() => import('./components/Views/LawFirm').then(m => ({ default: m.LawFirmModule })));
+const HelpManualConsole = lazy(() => import('./components/Views/HelpManual/HelpManualConsole').then(m => ({ default: m.HelpManualConsole })));
 import { PWAUpdateBanner } from './components/PWA/PWAUpdateBanner';
 import { useSubscription } from './hooks/useSubscription';
 import { Search, Lock } from 'lucide-react';
@@ -614,6 +615,13 @@ const DukaPosAppContent: React.FC = () => {
       case 'Legal Reports':
       case 'Legal Settings':
         return <LawFirmModule />;
+      // Help & User Manual Console routes
+      case 'Help & Manuals':
+      case 'User Manual':
+      case 'Help':
+      case 'Help Center':
+      case 'Documentation':
+        return <HelpManualConsole />;
       // Dedicated AI Insights Engine Hub routes
       case 'AI Insights':
       case 'AI Insights Engine':

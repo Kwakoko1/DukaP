@@ -1074,7 +1074,7 @@ const server = http.createServer(async (req, res) => {
       if (pathname === '/api/sync/categories' && req.method === 'GET') {
         const sinceVersion = parseInt(fullUrl.searchParams.get('sinceVersion') || '0', 10);
         const targetTenant = tenantId || fullUrl.searchParams.get('tenantId') || 'tenant-101';
-        const serverCategories = await sql`SELECT * FROM categories WHERE tenant_id = ${targetTenant} AND (sync_version > ${sinceVersion} OR updated_at > ${sinceVersion} OR ${sinceVersion} = 0)`;
+        const serverCategories = await sql`SELECT * FROM categories WHERE tenant_id = ${targetTenant} AND (deleted_at IS NULL) AND (sync_version > ${sinceVersion} OR updated_at > ${sinceVersion} OR ${sinceVersion} = 0)`;
         res.writeHead(200);
         res.end(JSON.stringify({ success: true, serverCategories }));
         return;
@@ -1084,7 +1084,7 @@ const server = http.createServer(async (req, res) => {
       if (pathname === '/api/sync/brands' && req.method === 'GET') {
         const sinceVersion = parseInt(fullUrl.searchParams.get('sinceVersion') || '0', 10);
         const targetTenant = tenantId || fullUrl.searchParams.get('tenantId') || 'tenant-101';
-        const serverBrands = await sql`SELECT * FROM brands WHERE tenant_id = ${targetTenant} AND (sync_version > ${sinceVersion} OR updated_at > ${sinceVersion} OR ${sinceVersion} = 0)`;
+        const serverBrands = await sql`SELECT * FROM brands WHERE tenant_id = ${targetTenant} AND (deleted_at IS NULL) AND (sync_version > ${sinceVersion} OR updated_at > ${sinceVersion} OR ${sinceVersion} = 0)`;
         res.writeHead(200);
         res.end(JSON.stringify({ success: true, serverBrands }));
         return;
