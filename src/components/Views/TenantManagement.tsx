@@ -259,6 +259,7 @@ export const TenantManagement: React.FC = () => {
 
   const isTenantDeleted = (t: any): boolean => {
     if (!t) return true;
+    if (t.id === 'tenant-admin-system' || t.id === 'tenant-admin-master' || t.id === 'tenant-system-root') return true;
     if (t.deleted_at || t.deletedAt || t.status === 'Deleted' || t.status === 'Archived') return true;
     if (t.status === 'Draft' || t.status === 'DRAFT' || t.registration_completed === false) return true;
     if (deletedTenantIds.has(t.id)) return true;

@@ -57,12 +57,26 @@ function buildGrowthChart(tenants: any[], subscriptions: any[]) {
 export const SAOverview: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false);
 
-  const tenants      = useLiveQuery(() => cloudDb.cloud_tenants.filter((t: any) => !t.deleted_at).toArray()) || [];
-  const subscriptions = useLiveQuery(() => cloudDb.cloud_subscriptions.toArray()) || [];
-  const branches     = useLiveQuery(() => cloudDb.cloud_branches.count()) || 0;
-  const cloudUsers   = useLiveQuery(() => cloudDb.cloud_users.count()) || 0;
+  const isSystemTenantId = (id?: string) => !id || id === 'tenant-admin-system' || id === 'tenant-admin-master' || id === 'tenant-system-root' || id === 'tenant-admin-000' || id === 'tenant-master';
 
-  const loading = !tenants && !subscriptions;
+  const rawTenants     = useLiveQuery(() => cloudDb.cloud_tenants.filter((t: any) => !t.deleted_at).toArray()) || [];
+  const subscriptions  = useLiveQuery(() => cloudDb.cloud_subscriptions.toArray()) || [];
+  const rawBranches    = useLiveQuery(() => cloudDb.cloud_branches.filter((b: any) => !b.deleted_at).toArray()) || [];
+  const rawUsers       = useLiveQuery(() => cloudDb.cloud_users.toArray()) || [];
+
+  const tenants = useMemo(() => rawTenants.filter((t: any) => 
+    !isSystemTenantId(t.id) && 
+    t.status !== 'Deleted' && 
+    t.status !== 'Archived' && 
+    t.status !== 'Draft' && 
+    t.status !== 'DRAFT' && 
+    t.registration_completed !== false
+  ), [rawTenants]);
+
+  const branches = useMemo(() => rawBranches.filter((b: any) => !isSystemTenantId(b.tenant_id)).length, [rawBranches]);
+  const cloudUsers = useMemo(() => rawUsers.filter((u: any) => !u.is_super_admin && u.role !== 'Super Admin' && !isSystemTenantId(u.tenant_id)).length, [rawUsers]);
+
+  const loading = !rawTenants && !subscriptions;
 
   const activeSubs = useMemo(() => subscriptions.filter((s: any) => s.status === 'ACTIVE'), [subscriptions]);
   const mrr = useMemo(() => activeSubs.reduce((sum: number, s: any) => sum + getPlanRate(s.plan_id || ''), 0), [activeSubs]);

@@ -3272,10 +3272,11 @@ export async function initProductionDatabase() {
       const existingTenants = await db.tenants.toArray();
       for (const t of existingTenants) {
         if (
+          t.id === 'tenant-admin-system' ||
+          t.id === 'tenant-admin-master' ||
           t.status === 'Draft' || 
           t.status === 'DRAFT' || 
-          t.registration_completed === false || 
-          (!t.email && !(t as any).owner_email)
+          t.registration_completed === false
         ) {
           await db.tenants.delete(t.id).catch(() => {});
         }

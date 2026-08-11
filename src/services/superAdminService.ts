@@ -49,6 +49,8 @@ export class SuperAdminService {
       for (const lt of localTs) {
         if (
           lt.id && 
+          lt.id !== 'tenant-admin-system' &&
+          lt.id !== 'tenant-admin-master' &&
           !deletedSet.has(lt.id) && 
           lt.status !== 'Deleted' && 
           lt.status !== 'Archived' && 
@@ -78,6 +80,8 @@ export class SuperAdminService {
       for (const ct of cloudTs) {
         if (
           ct.id && 
+          ct.id !== 'tenant-admin-system' &&
+          ct.id !== 'tenant-admin-master' &&
           !deletedSet.has(ct.id) && 
           ct.status !== 'Deleted' && 
           ct.status !== 'Archived' && 
@@ -123,6 +127,8 @@ export class SuperAdminService {
   static async getAllTenants(): Promise<CloudTenant[]> {
     const { data } = await supabase.from('tenants').select();
     return (data || []).filter((t: any) => 
+      t.id !== 'tenant-admin-system' &&
+      t.id !== 'tenant-admin-master' &&
       !t.deleted_at && 
       t.status !== 'Deleted' && 
       t.status !== 'Archived' && 

@@ -72,9 +72,18 @@ export const SuperAdminCPanel: React.FC<SuperAdminCPanelProps> = ({ initialTab }
     );
   }, []);
 
-  // Live tenant count for sidebar badge
+  // Live tenant count for sidebar badge (merchant business tenants only)
   const tenantCount = useLiveQuery(
-    () => cloudDb.cloud_tenants.filter((t: any) => !t.deleted_at).count()
+    () => cloudDb.cloud_tenants.filter((t: any) => 
+      t.id !== 'tenant-admin-system' &&
+      t.id !== 'tenant-admin-master' &&
+      !t.deleted_at &&
+      t.status !== 'Deleted' &&
+      t.status !== 'Archived' &&
+      t.status !== 'Draft' &&
+      t.status !== 'DRAFT' &&
+      t.registration_completed !== false
+    ).count()
   );
 
   // Update internal tab when external initialTab prop changes
