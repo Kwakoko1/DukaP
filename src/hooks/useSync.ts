@@ -1,10 +1,11 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, type SyncOperation } from '../db/dexie';
 import { mapProductToLocal, recoverUnsyncedProducts } from '../services/productService';
 import { createSyncEvent } from '../services/syncEventGenerator';
 import { productionSyncEngine } from '../services/productionSyncEngine';
 import { stockLedgerSyncEngine } from '../services/stockLedgerSyncEngine';
+import { isLeaderTab } from '../services/tabLeaderElectionService';
 
 export interface SyncProgress {
   current: number;
@@ -34,9 +35,6 @@ export function useSync() {
   useEffect(() => { isSimulatedRef.current = isSimulated; }, [isSimulated]);
   useEffect(() => { isOnlineRef.current = isOnline; }, [isOnline]);
 
-  // Unique identifier for this tab session to handle multi-tab synchronization locks
-  const currentTabId = useMemo(() => Math.random().toString(36).substring(2, 9), []);
-
   // Live query to track pending sync count
   const pendingCount = useLiveQuery(async () => {
     return await db.syncQueue.where('status').equals('Pending').count();
@@ -64,30 +62,13 @@ export function useSync() {
     }
   };
 
-  // Manage lock acquisition to coordinate tabs
+  // Enterprise Web Locks Single-Leader Lock Check
   const acquireSyncLock = (): boolean => {
-    const now = Date.now();
-    const lockStr = localStorage.getItem('dukapos_sync_lock');
-    if (lockStr) {
-      try {
-        const lock = JSON.parse(lockStr);
-        if (now - lock.ts < 15000 && lock.tabId !== currentTabId) return false;
-      } catch {
-        localStorage.removeItem('dukapos_sync_lock');
-      }
-    }
-    localStorage.setItem('dukapos_sync_lock', JSON.stringify({ ts: now, tabId: currentTabId }));
-    return true;
+    return isLeaderTab();
   };
 
   const releaseSyncLock = () => {
-    const lockStr = localStorage.getItem('dukapos_sync_lock');
-    if (lockStr) {
-      try {
-        const lock = JSON.parse(lockStr);
-        if (lock.tabId === currentTabId) localStorage.removeItem('dukapos_sync_lock');
-      } catch {}
-    }
+    // Held automatically by the elected leader tab via navigator.locks
   };
 
   // ── STARTUP CHECKPOINT RECOVERY ──────────────────────────────────────────

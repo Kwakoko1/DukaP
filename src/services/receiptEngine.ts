@@ -1120,6 +1120,13 @@ export async function purgeOrderAndReceipt(target: { receipt_number?: string; id
   if (target.id) registerDeletedReceiptNumber(target.id);
   if (target.transaction_id) registerDeletedReceiptNumber(target.transaction_id);
 
+  // Broadcast deletion signal to all open browser tabs
+  try {
+    const { broadcastMutation } = await import('./crossTabSyncService');
+    broadcastMutation('receipts', 'DELETE', { id: target.id, receipt_number: target.receipt_number });
+    broadcastMutation('orders', 'DELETE', { id: target.id, transaction_id: target.transaction_id });
+  } catch (e) {}
+
   // 1. Delete matching receipts
   const receipts = await db.receipts.toArray();
   for (const r of receipts) {
