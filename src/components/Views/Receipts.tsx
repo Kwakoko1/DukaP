@@ -3,7 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import {
   Receipt as ReceiptIcon,
   Search, Printer, RefreshCw, Mail, X,
-  CheckCircle2, XCircle, RotateCcw, Archive, Eye,
+  CheckCircle2, XCircle, RotateCcw, Archive, Eye, Trash2,
   Download, BarChart3, Settings, Shield,
   AlertTriangle, TrendingUp, DollarSign,
   ChevronLeft, ChevronRight,
@@ -584,6 +584,47 @@ export const Receipts: React.FC<ReceiptsProps> = ({ initialTab = 'history' }) =>
     }
   }, [user, showToast]);
 
+  const handleDeleteReceipt = useCallback(async (receipt: Receipt) => {
+    if (!user) return;
+    const isOwnerOrManager = ['Super Admin', 'Business Owner', 'Tenant Owner', 'Branch Manager', 'Business Administrator'].includes(user?.role || '');
+    if (!isOwnerOrManager) {
+      alert('Only Business Owners and Managers can delete receipts.');
+      return;
+    }
+
+    if (window.confirm(`Are you sure you want to permanently delete receipt #${receipt.receipt_number}? This action cannot be undone.`)) {
+      try {
+        setIsBusy(true);
+        // 1. Delete receipt and items from Dexie DB
+        await db.receipts.delete(receipt.id);
+        await db.receiptItems.where('receipt_id').equals(receipt.id).delete();
+
+        // 2. Delete matching order
+        const orderId = receipt.transaction_id || receipt.id;
+        await db.orders.delete(orderId);
+
+        // 3. Queue DELETE event for cloud sync
+        await db.syncQueue.add({
+          tenant_id: receipt.tenant_id,
+          branch_id: receipt.branch_id,
+          entity: 'receipts',
+          entity_id: receipt.id,
+          operation: 'DELETE',
+          payload: { id: receipt.id, tenant_id: receipt.tenant_id },
+          status: 'Pending',
+          created_at: Date.now(),
+          priority: 1,
+        } as any);
+
+        showToast(`Receipt #${receipt.receipt_number} permanently deleted ✅`);
+      } catch (err: any) {
+        showToast(err?.message || 'Failed to delete receipt', 'error');
+      } finally {
+        setIsBusy(false);
+      }
+    }
+  }, [user, showToast]);
+
   const handleShare = useCallback((receipt: Receipt) => {
     shareViaWhatsApp(receipt);
     if (user && currentTenant && currentBranch) {
@@ -875,13 +916,21 @@ export const Receipts: React.FC<ReceiptsProps> = ({ initialTab = 'history' }) =>
                           {r.status === 'Completed' && (
                             <button
                               onClick={() => handleCancel(r)}
-                              title="Cancel"
+                              title="Void / Cancel Receipt"
                               disabled={isBusy}
-                              className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/30 text-red-500 transition-colors"
+                              className="p-1.5 rounded-lg hover:bg-amber-50 dark:hover:bg-amber-950/30 text-amber-500 transition-colors"
                             >
                               <XCircle size={13} />
                             </button>
                           )}
+                          <button
+                            onClick={() => handleDeleteReceipt(r)}
+                            title="Permanently Delete Receipt"
+                            disabled={isBusy}
+                            className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/30 text-red-500 transition-colors"
+                          >
+                            <Trash2 size={13} />
+                          </button>
                         </div>
                       </td>
                     </tr>
