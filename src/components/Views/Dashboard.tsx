@@ -132,6 +132,14 @@ export const Dashboard: React.FC = () => {
     if (!tenantId) return [];
     return db.orders.where('tenant_id').equals(tenantId)
       .and(o => {
+        if (
+          (o as any).is_deleted || 
+          (o as any).deletedAt || 
+          (o as any).deleted_at || 
+          ['Cancelled', 'Voided', 'Refunded', 'Deleted'].includes(o.status)
+        ) {
+          return false;
+        }
         const oMod = (o.module || 'Retail').toLowerCase();
         const aMod = (activeModule || 'Retail').toLowerCase();
         const matchMod = oMod === aMod || oMod === 'all' || !o.module;

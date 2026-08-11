@@ -1114,6 +1114,45 @@ export function registerDeletedReceiptNumber(num: string) {
   } catch (e) {}
 }
 
+export async function purgeOrderAndReceipt(target: { receipt_number?: string; id?: string; transaction_id?: string; total?: number }): Promise<void> {
+  const deletedSet = getDeletedReceiptNumbers();
+  if (target.receipt_number) registerDeletedReceiptNumber(target.receipt_number);
+  if (target.id) registerDeletedReceiptNumber(target.id);
+  if (target.transaction_id) registerDeletedReceiptNumber(target.transaction_id);
+
+  // 1. Delete matching receipts
+  const receipts = await db.receipts.toArray();
+  for (const r of receipts) {
+    if (
+      (target.id && r.id === target.id) ||
+      (target.receipt_number && r.receipt_number === target.receipt_number) ||
+      (target.transaction_id && r.transaction_id === target.transaction_id) ||
+      (target.total && r.total === target.total)
+    ) {
+      registerDeletedReceiptNumber(r.id);
+      registerDeletedReceiptNumber(r.receipt_number);
+      if (r.transaction_id) registerDeletedReceiptNumber(r.transaction_id);
+      await db.receipts.delete(r.id);
+      await db.receiptItems.where('receipt_id').equals(r.id).delete();
+    }
+  }
+
+  // 2. Delete matching orders
+  const orders = await db.orders.toArray();
+  for (const o of orders) {
+    if (
+      (target.id && o.id === target.id) ||
+      (target.transaction_id && o.id === target.transaction_id) ||
+      (target.receipt_number && (o as any).receipt_number === target.receipt_number) ||
+      (target.total && o.total === target.total) ||
+      deletedSet.has(o.id)
+    ) {
+      registerDeletedReceiptNumber(o.id);
+      await db.orders.delete(o.id);
+    }
+  }
+}
+
 // ─── Auto-Healing: Ensure every completed order has a matching receipt ─────────
 
 export async function ensureReceiptsForOrders(tenantId: string, branchId?: string): Promise<number> {
