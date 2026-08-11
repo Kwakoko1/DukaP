@@ -25,10 +25,19 @@ Whenever building, optimizing, debugging, or implementing ANY module, component,
 
 ---
 
+## 4. 🌐 The 5 Production-Grade Enterprise Data Sync Pillars
+- **Pillar 1 (Cross-Tab Reactivity)**: `BroadcastChannel('dukapos_tab_sync')` + Dexie `useLiveQuery` for < 5ms multi-tab state alignment.
+- **Pillar 2 (Single-Leader Locks)**: `navigator.locks` election so only 1 leader tab runs background sync workers.
+- **Pillar 3 (Persistent Tombstones & LWW)**: Persistent tombstone storage (`dukapos_deleted_receipt_numbers` + `is_deleted: true`) prevents auto-healing resurrections.
+- **Pillar 4 (Idempotency Keys)**: Deterministic UUID v4 `idempotency_key` on all transactions prevents duplicate order creation.
+- **Pillar 5 (SSE Delta Streams)**: Real-time sub-second cross-device delta streaming (`/api/sync/stream`) with multi-attribute order & receipt matching.
+
+---
+
 ## 🛡️ Execution Checklist for Every New Feature / Optimization
 Before declaring any task, feature, or optimization complete:
 1. [ ] Is the data strictly scoped by `tenant_id`?
 2. [ ] Is the data correctly scoped by `branch_id` (with HQ / All Branches option for owners)?
 3. [ ] Does the UI & logic dynamically adapt across all present & future industry modules?
-4. [ ] Are types strictly typed with zero demo fallback placeholders?
+4. [ ] Are persistent tombstones & idempotency keys respected to prevent resurrection / duplication?
 5. [ ] Does `npm run build` pass cleanly with exit code 0?
