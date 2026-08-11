@@ -12,19 +12,34 @@ const __dirname = path.dirname(__filename)
 const pkgPath = path.resolve(__dirname, 'package.json')
 const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'))
 
-// Compute enterprise build metadata at compile-time
+// Compute enterprise build metadata at compile-time with persistent auto-incrementing build counter
+const counterPath = path.resolve(__dirname, 'build-counter.json')
+let buildCount = 111
+try {
+  if (fs.existsSync(counterPath)) {
+    const data = JSON.parse(fs.readFileSync(counterPath, 'utf-8'))
+    buildCount = (Number(data.buildCount) || 111) + 1
+  } else {
+    buildCount = 112
+  }
+} catch (e) {
+  buildCount = 112
+}
+
+try {
+  fs.writeFileSync(counterPath, JSON.stringify({ buildCount, updatedAt: new Date().toISOString() }, null, 2), 'utf-8')
+} catch (e) {}
+
 let commitSha = 'b5373bd'
-let commitCount = '97'
 try {
   commitSha = execSync('git rev-parse --short HEAD', { encoding: 'utf8' }).trim()
-  commitCount = execSync('git rev-list --count HEAD', { encoding: 'utf8' }).trim()
 } catch (e) {
   // Fallback if git is uninstalled
 }
 
 const now = new Date()
 const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`
-const dynamicBuildNumber = `${dateStr}.${commitCount}`
+const dynamicBuildNumber = `${dateStr}.${buildCount}`
 const buildDateStr = now.toISOString().split('T')[0]
 
 const dbPath = path.resolve(__dirname, 'cloud_db.json')
