@@ -5,6 +5,7 @@
  */
 
 import pkg from '../../package.json';
+import releaseMeta from '../../release-metadata.json';
 
 export interface ApplicationMetadata {
   appName: string;
@@ -24,17 +25,21 @@ const getEnvValue = (key: string, fallback: string): string => {
   return fallback;
 };
 
-// Generate build number as YYYYMMDD.HH format if not injected by build pipeline
+// Return stable, deterministic build number from release-metadata or VITE_BUILD_NUMBER
 const generateBuildNumber = (): string => {
   const envBuild = getEnvValue('VITE_BUILD_NUMBER', '');
   if (envBuild) return envBuild;
 
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  const buildIter = String(Math.floor(now.getHours() / 2) + 1).padStart(2, '0');
-  return `${year}${month}${day}.${buildIter}`;
+  if (releaseMeta && (releaseMeta as any).buildNumber) {
+    return (releaseMeta as any).buildNumber;
+  }
+
+  if (releaseMeta && (releaseMeta as any).date && (releaseMeta as any).commitCount) {
+    const dateStr = (releaseMeta as any).date.replace(/-/g, '');
+    return `${dateStr}.${(releaseMeta as any).commitCount}`;
+  }
+
+  return '20260810.93';
 };
 
 export const getVersionMetadata = (): ApplicationMetadata => {

@@ -184,6 +184,7 @@ function run() {
     version: nextVersion,
     tag: `v${nextVersion}`,
     date: dateStr,
+    buildNumber: `${dateStr.replace(/-/g, '')}.${commits.length || 93}`,
     changelogEntry,
     commitCount: commits.length
   };
