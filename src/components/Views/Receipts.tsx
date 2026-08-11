@@ -463,7 +463,7 @@ export const Receipts: React.FC<ReceiptsProps> = ({ initialTab = 'history' }) =>
   ) || [];
 
   const filteredReceipts = React.useMemo(() => {
-    let r = allReceipts;
+    let r = allReceipts.filter(x => !(x as any).is_deleted && !(x as any).deletedAt && !(x as any).deleted_at);
     if (currentBranch?.id) {
       r = r.filter(x => 
         !x.branch_id || 

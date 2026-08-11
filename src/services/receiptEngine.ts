@@ -1103,6 +1103,7 @@ export async function ensureReceiptsForOrders(tenantId: string, branchId?: strin
   try {
     const orders = await db.orders.where('tenant_id').equals(tenantId).toArray();
     const existingReceipts = await db.receipts.where('tenant_id').equals(tenantId).toArray();
+
     const existingMap = new Set(
       existingReceipts.map(r => r.id)
         .concat(existingReceipts.map(r => r.transaction_id || ''))
@@ -1112,14 +1113,21 @@ export async function ensureReceiptsForOrders(tenantId: string, branchId?: strin
 
     let createdCount = 0;
     for (const order of orders) {
-      if (order.status === 'Cancelled' || order.status === 'Voided') continue;
+      if (
+        (order as any).is_deleted || 
+        (order as any).deletedAt || 
+        (order as any).deleted_at || 
+        ['Cancelled', 'Voided', 'Refunded', 'Deleted'].includes(order.status)
+      ) {
+        continue;
+      }
 
       // Check if a matching receipt exists that was cancelled or voided
       const matchingReceipt = existingReceipts.find(
         r => r.id === order.id || r.transaction_id === order.id || r.original_receipt_id === order.id
       );
-      if (matchingReceipt && (matchingReceipt.status === 'Cancelled' || matchingReceipt.status === 'Voided')) {
-        await db.orders.update(order.id, { status: 'Cancelled' });
+      if (matchingReceipt && (matchingReceipt.status === 'Cancelled' || matchingReceipt.status === 'Voided' || (matchingReceipt as any).is_deleted)) {
+        await db.orders.update(order.id, { status: 'Cancelled', is_deleted: true } as any);
         continue;
       }
 
