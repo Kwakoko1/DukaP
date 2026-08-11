@@ -503,8 +503,8 @@ export const Sidebar: React.FC<SidebarProps> = () => {
 
   const navContent = (
     <>
-      {/* Module Title info */}
-      <div className="flex items-center justify-between border-b border-slate-100 p-4 dark:border-darkbg-border/30 shrink-0">
+      {/* Module Title info — hidden on desktop to eliminate duplicate TopBar header */}
+      <div className="flex items-center justify-between border-b border-slate-100 p-4 dark:border-darkbg-border/30 shrink-0 lg:hidden">
         <div className="flex items-center space-x-2.5 min-w-0">
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white p-0.5 shadow-sm border border-slate-200/70 dark:border-darkbg-border overflow-hidden shrink-0">
             <img src="/dukapos-logo.png" alt="DukaPos Logo" className="h-full w-full object-contain" />
