@@ -695,7 +695,7 @@ const DukaPosAppContent: React.FC = () => {
       <div className="flex flex-1 overflow-hidden">
         <Sidebar />
 
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 pb-24 md:pb-6 scrollbar-thin">
+        <main className="flex-1 overflow-y-auto p-4 sm:p-6 pb-20 md:pb-6 scrollbar-thin">
           <Suspense fallback={
             <div className="flex flex-col items-center justify-center min-h-[50vh] text-slate-400 dark:text-slate-500 font-sans">
               <div className="h-7 w-7 animate-spin rounded-full border-[3px] border-primary border-t-transparent mb-3"></div>
@@ -706,11 +706,13 @@ const DukaPosAppContent: React.FC = () => {
               {renderActiveView()}
             </div>
           </Suspense>
-
-          {/* Global App Version Footer — visible at the bottom of all views */}
-          <AppVersionFooter className="mt-8 pt-6 border-t border-slate-200/60 dark:border-darkbg-border/60" />
         </main>
       </div>
+
+      {/* Unified Full-Bleed End-to-End App Version Footer Strip */}
+      <footer className="w-full shrink-0 border-t border-slate-200/80 dark:border-darkbg-border/80 bg-white/95 dark:bg-darkbg-card/95 backdrop-blur-md py-1 px-4 z-30 transition-colors hidden md:block">
+        <AppVersionFooter />
+      </footer>
 
       {/* Mobile Bottom Navigation (screens < 768px) */}
       <BottomNav />

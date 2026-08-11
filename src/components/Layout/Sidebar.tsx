@@ -15,7 +15,6 @@ import {
   GlassWater, UserCheck, Wallet, X, LogOut, Sun, Moon, MapPin
 } from 'lucide-react';
 import { getShortModuleName, getShortBranchName } from '../../utils/mobileFormatters';
-import { AppVersionFooter } from './AppVersionFooter';
 
 interface SidebarProps {}
 
@@ -574,9 +573,6 @@ export const Sidebar: React.FC<SidebarProps> = () => {
       <nav className="flex-1 space-y-1.5 px-3 py-3 overflow-y-auto scrollbar-thin">
         {sidebarItems.map((item) => renderSidebarItem(item))}
       </nav>
-
-      {/* App Version Footer pinned to bottom of sidebar */}
-      <AppVersionFooter className="py-2 border-t border-slate-200/50 dark:border-darkbg-border/40 text-[10px]" />
     </>
   );
 
