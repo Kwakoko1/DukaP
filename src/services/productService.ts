@@ -2,6 +2,7 @@ import { db, type Product, type ProductVariant, type Category, type Brand, saveP
 import { cloudDb } from '../db/supabaseMock';
 import { supabase } from '../db/supabaseClient';
 import { handleDeleteEntity } from './crossTabSyncService';
+import { getActiveSessionRaw } from '../utils/sessionStorage';
 
 export interface UserContext {
   id: string;
@@ -846,7 +847,7 @@ export async function createCategory(
   let tid = typeof input === 'string' ? (tenantId || '') : (input.tenant_id || tenantId || '');
   if (!tid) {
     try {
-      const sessStr = localStorage.getItem('dukapos_session');
+      const sessStr = getActiveSessionRaw();
       if (sessStr) {
         const sess = JSON.parse(sessStr);
         tid = sess?.tenant?.id || sess?.user?.tenant_id || 'tenant-101';
@@ -1015,7 +1016,7 @@ export async function createBrand(
   let tid = typeof input === 'string' ? (tenantId || '') : (input.tenant_id || tenantId || '');
   if (!tid) {
     try {
-      const sessStr = localStorage.getItem('dukapos_session');
+      const sessStr = getActiveSessionRaw();
       if (sessStr) {
         const sess = JSON.parse(sessStr);
         tid = sess?.tenant?.id || sess?.user?.tenant_id || 'tenant-101';

@@ -5,6 +5,7 @@
  */
 
 import { db, type SyncItem, type SyncOperation, type SyncStatus } from '../db/dexie';
+import { getActiveSessionRaw } from '../utils/sessionStorage';
 
 export interface CreateSyncEventParams {
   tenant_id: string;
@@ -97,7 +98,7 @@ export async function createSyncEvent(params: CreateSyncEventParams): Promise<Sy
   // Resolve user_id from session if not explicitly passed
   let userId = params.user_id || 'usr-system';
   if (!params.user_id && typeof window !== 'undefined') {
-    const sessionStr = localStorage.getItem('dukapos_session');
+    const sessionStr = getActiveSessionRaw();
     if (sessionStr) {
       try {
         const parsed = JSON.parse(sessionStr);

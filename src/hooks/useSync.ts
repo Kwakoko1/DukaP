@@ -6,6 +6,7 @@ import { createSyncEvent } from '../services/syncEventGenerator';
 import { productionSyncEngine } from '../services/productionSyncEngine';
 import { stockLedgerSyncEngine } from '../services/stockLedgerSyncEngine';
 import { isLeaderTab } from '../services/tabLeaderElectionService';
+import { getActiveSessionRaw } from '../utils/sessionStorage';
 
 export interface SyncProgress {
   current: number;
@@ -94,7 +95,7 @@ export function useSync() {
   // Without this, Device B starts with an empty DB and sees no products.
   const syncFromServer = async (tenantId?: string): Promise<number> => {
     try {
-      const session = localStorage.getItem('dukapos_session');
+      const session = getActiveSessionRaw();
       let currentTenantId = tenantId;
       let currentUserId = 'usr-sync-engine';
       if (session) {
@@ -324,7 +325,7 @@ export function useSync() {
 
       if (reallyConnected && !isSyncingRef.current) {
         // Pull latest from server (catches changes made on other devices)
-        const session = localStorage.getItem('dukapos_session');
+        const session = getActiveSessionRaw();
         if (session) {
           try {
             const parsed = JSON.parse(session);
@@ -403,7 +404,7 @@ export function useSync() {
     addLog(`↑ Production Sync Engine processing ${totalCount} operation(s)...`);
 
     let currentTenantId: string | undefined;
-    const session = localStorage.getItem('dukapos_session');
+    const session = getActiveSessionRaw();
     if (session) {
       try {
         const parsed = JSON.parse(session);

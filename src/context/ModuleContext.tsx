@@ -3,6 +3,8 @@ import { db } from '../db/dexie';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { supabase } from '../db/supabaseClient';
 
+import { getActiveSessionRaw } from '../utils/sessionStorage';
+
 /**
  * Dev/testing superuser accounts that get access to ALL industry modules
  * simultaneously, with persistent module+tab state across logout/login.
@@ -12,7 +14,7 @@ const DEV_SUPERUSER_EMAILS = new Set(['yannick@kwakoko.co.tz']);
 /** Returns the currently logged-in user's email from session storage (no React dependency). */
 function getSessionEmail(): string | null {
   try {
-    const raw = localStorage.getItem('dukapos_session');
+    const raw = getActiveSessionRaw();
     if (!raw) return null;
     const sess = JSON.parse(raw);
     return sess?.user?.email || null;
@@ -751,7 +753,7 @@ export const ModuleProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   // Live query for persistent tenant modules from IndexedDB
   const liveTenantModules = useLiveQuery(async () => {
     try {
-      const sessionStr = localStorage.getItem('dukapos_session');
+      const sessionStr = getActiveSessionRaw();
       let tenantId: string | null = null;
       if (sessionStr) {
         const sess = JSON.parse(sessionStr);
@@ -814,7 +816,7 @@ export const ModuleProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     // Persist changes to IndexedDB and Cloud database (Supabase)
     try {
-      const sessionStr = localStorage.getItem('dukapos_session');
+      const sessionStr = getActiveSessionRaw();
       let activeTenantId: string | null = null;
       if (sessionStr) {
         try {

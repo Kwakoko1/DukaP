@@ -5,6 +5,7 @@ import {
   verifyRowLevelSecurity
 } from './supabaseMock';
 import { getSyncRealClientIp } from '../services/clientIpService';
+import { getActiveSessionRaw } from '../utils/sessionStorage';
 
 let mockAuthOverride: { tenant_id: string; user_id: string; user_name: string } | null = null;
 
@@ -16,7 +17,7 @@ function getAuthContext() {
   if (mockAuthOverride) {
     return mockAuthOverride;
   }
-  const sessionStr = localStorage.getItem('dukapos_session');
+  const sessionStr = getActiveSessionRaw();
   if (sessionStr) {
     try {
       const session = JSON.parse(sessionStr);

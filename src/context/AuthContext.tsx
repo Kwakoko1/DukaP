@@ -9,6 +9,7 @@ import { tenantHealthMonitor } from '../services/tenantHealthMonitor';
 import { stockLedgerSyncEngine } from '../services/stockLedgerSyncEngine';
 import { bootstrapEngine } from '../services/bootstrapEngine';
 import { tenantSecurityBroadcast } from '../utils/tenantSecurityBroadcast';
+import { getActiveSessionRaw, setActiveSession, clearActiveSession } from '../utils/sessionStorage';
 
 export type UserRole = 'Super Admin' | 'Business Owner' | 'Tenant Owner' | 'Business Administrator' | 'Branch Manager' | 'Cashier' | 'Inventory Officer' | 'Accountant' | (string & {});
 
@@ -342,19 +343,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const myTenantId = currentTenant?.id || user?.tenant_id;
         if (myTenantId && myTenantId === evt.tenantId && user?.role !== 'Super Admin') {
           console.warn(`[AuthContext] Tenant ${evt.tenantId} purged by another browser session. Revoking session.`);
-          localStorage.removeItem('dukapos_session');
+          clearActiveSession();
           localStorage.removeItem('activeTenant');
           localStorage.removeItem('user');
           setUserState(null);
           setTenantState(defaultTenant);
           alert('⚠️ Workspace Revoked: Your organization workspace was deleted by an administrator. Session terminated.');
           window.location.href = '/';
-        }
-      } else if (evt.type === 'SESSION_SWITCHED' && user) {
-        if (evt.userId && evt.userId !== user.id) {
-          console.warn(`[AuthContext] Cross-tab identity switch detected! Active session changed to user ${evt.userId} in another tab.`);
-          alert(`⚠️ Session Notice: You logged in as a different user in another tab. Reloading session to match your active account...`);
-          window.location.reload();
         }
       }
     });
@@ -364,8 +359,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Load session and restore user state on initialization
   useEffect(() => {
-    // Restore session from localStorage
-    const sessionStr = localStorage.getItem('dukapos_session');
+    // Restore tab-isolated session from sessionStorage
+    const sessionStr = getActiveSessionRaw();
     let initFinalized = false;
 
     const finalizeInit = () => {
@@ -414,7 +409,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
               if (deletedList.includes(sess.tenant.id) || (sess.user?.email && deletedEmails.includes(sess.user.email.toLowerCase()))) {
                 console.warn('[AuthContext] Restored session belongs to deleted workspace. Revoking.');
-                localStorage.removeItem('dukapos_session');
+                clearActiveSession();
                 setUserState(null);
                 setTenantState(defaultTenant);
                 finalizeInit();
@@ -463,7 +458,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const deletedSet = new Set(JSON.parse(rawDeleted));
           if (deletedSet.has(tenantId)) {
             console.warn(`[Auth Startup] Tenant ${tenantId} has been deleted. Clearing active session.`);
-            localStorage.removeItem('dukapos_session');
+            clearActiveSession();
             setUserState(null);
             cleanup();
             finalizeInit();
@@ -478,17 +473,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   restoreSessionData({ ...session, tenant: validTenant });
                 } else {
                   console.warn(`[Auth Startup] Tenant ${tenantId} missing or deleted. Clearing session.`);
-                  localStorage.removeItem('dukapos_session');
+                  clearActiveSession();
                   setUserState(null);
                 }
               } else {
                 console.warn(`[Auth Startup] Tenant verification failed: ${integrity.message}. Clearing invalid session cache.`);
-                localStorage.removeItem('dukapos_session');
+                clearActiveSession();
                 setUserState(null);
               }
             } catch (innerErr) {
               console.error('[Auth Startup] Inner restore error:', innerErr);
-              localStorage.removeItem('dukapos_session');
+              clearActiveSession();
               setUserState(null);
             } finally {
               cleanup();
@@ -496,7 +491,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
           }).catch(err => {
             console.error('[Auth Startup] Error verifying tenant integrity:', err);
-            localStorage.removeItem('dukapos_session');
+            clearActiveSession();
             setUserState(null);
             cleanup();
             finalizeInit();
@@ -574,7 +569,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const industryId = currentUser.industry_id || 'ind-retail';
     const activeInd = { id: industryId, name: indNames[industryId] || 'Retail' };
 
-    localStorage.setItem('dukapos_session', JSON.stringify({
+    setActiveSession({
       user: currentUser,
       role: currentRole,
       tenant: tenantForSession,
@@ -582,7 +577,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       industry: activeInd,
       jwtToken: token,
       jwtClaims: claims
-    }));
+    });
 
     tenantSecurityBroadcast.broadcastSessionSwitched(currentUser.id, tenantForSession.id);
   };
@@ -732,7 +727,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setCurrentBranchState(defaultBranch);
       setJwtToken(null);
       setJwtClaims(null);
-      localStorage.removeItem('dukapos_session');
+      clearActiveSession();
       setIsInitializing(false);
     }
   };
@@ -849,7 +844,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setJwtClaims(null);
     setIsOfflineLocked(false);
     setIsInitializing(false);
-    localStorage.removeItem('dukapos_session');
+    clearActiveSession();
     // Dev superuser: preserve module+tab state across logout so last active context
     // is automatically restored on next login (never falls back to Retail).
     const isDevSuperuser = user?.email === 'yannick@kwakoko.co.tz';

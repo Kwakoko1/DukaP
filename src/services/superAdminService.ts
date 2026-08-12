@@ -11,6 +11,7 @@ import { supabase } from '../db/supabaseClient';
 import { db } from '../db/dexie';
 import { getSyncRealClientIp } from './clientIpService';
 import { tenantSecurityBroadcast, isTenantDeleted } from '../utils/tenantSecurityBroadcast';
+import { getActiveSessionRaw, clearActiveSession } from '../utils/sessionStorage';
 import { SuperAdminAuthEngine } from './productionAuthService';
 
 export interface SuperAdminUserContext {
@@ -323,11 +324,11 @@ export class SuperAdminService {
           localStorage.setItem('DUKAPOS_DELETED_USER_EMAILS', JSON.stringify(emailList));
 
           // Purge session if active user belongs to deleted tenant
-          const rawSess = localStorage.getItem('dukapos_session');
+          const rawSess = getActiveSessionRaw();
           if (rawSess) {
             const sess = JSON.parse(rawSess);
             if (sess?.user?.tenant_id && tenantAliases.has(sess.user.tenant_id)) {
-              localStorage.removeItem('dukapos_session');
+              clearActiveSession();
               localStorage.removeItem('dukapos_tenant');
             }
           }

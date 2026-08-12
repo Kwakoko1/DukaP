@@ -1,6 +1,8 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { AlertTriangle, RefreshCw, LogOut } from 'lucide-react';
 
+import { clearActiveSession } from '../../utils/sessionStorage';
+
 interface Props {
   children: ReactNode;
 }
@@ -32,7 +34,7 @@ export class ErrorBoundary extends Component<Props, State> {
   };
 
   private handleResetSession = () => {
-    localStorage.removeItem('dukapos_session');
+    clearActiveSession();
     window.location.href = '/';
   };
 
