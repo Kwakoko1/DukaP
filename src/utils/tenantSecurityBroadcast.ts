@@ -4,8 +4,9 @@
  */
 
 export interface TenantSecurityEvent {
-  type: 'TENANT_PURGED' | 'SESSION_REVOKED';
+  type: 'TENANT_PURGED' | 'SESSION_REVOKED' | 'SESSION_SWITCHED';
   tenantId: string;
+  userId?: string;
   userEmails?: string[];
   timestamp: number;
 }
@@ -66,6 +67,24 @@ class TenantSecurityBroadcast {
         localStorage.setItem('DUKAPOS_DELETED_USER_EMAILS', JSON.stringify(emailList));
       }
     } catch (_) {}
+  }
+
+  /**
+   * Broadcast session switched event to all open browser windows/tabs
+   */
+  broadcastSessionSwitched(userId: string, tenantId: string): void {
+    const evt: TenantSecurityEvent = {
+      type: 'SESSION_SWITCHED',
+      userId,
+      tenantId,
+      timestamp: Date.now(),
+    };
+
+    if (this.channel) {
+      try {
+        this.channel.postMessage(evt);
+      } catch (_) {}
+    }
   }
 
   /**

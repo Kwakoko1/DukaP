@@ -350,11 +350,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           alert('⚠️ Workspace Revoked: Your organization workspace was deleted by an administrator. Session terminated.');
           window.location.href = '/';
         }
+      } else if (evt.type === 'SESSION_SWITCHED' && user) {
+        if (evt.userId && evt.userId !== user.id) {
+          console.warn(`[AuthContext] Cross-tab identity switch detected! Active session changed to user ${evt.userId} in another tab.`);
+          alert(`⚠️ Session Notice: You logged in as a different user in another tab. Reloading session to match your active account...`);
+          window.location.reload();
+        }
       }
     });
 
     return () => unsubscribe();
-  }, [currentTenant?.id, user?.tenant_id, user?.role]);
+  }, [currentTenant?.id, user?.tenant_id, user?.role, user?.id]);
 
   // Load session and restore user state on initialization
   useEffect(() => {
@@ -577,6 +583,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       jwtToken: token,
       jwtClaims: claims
     }));
+
+    tenantSecurityBroadcast.broadcastSessionSwitched(currentUser.id, tenantForSession.id);
   };
 
   const setUser = (newUser: User | null) => {
