@@ -372,7 +372,7 @@ export const supabase: SupabaseClient = {
               }
 
               // 2. Mirror to browser local cloudDb cache
-              await table.put(newItem).catch((err) => {
+              await table.put(newItem).catch((err: any) => {
                 console.warn(`[Supabase Client] Failed to put into cloudDb table ${displayTableName}:`, err);
               });
 

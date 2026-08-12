@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { db, safeGet, recalculateProductStock } from '../db/dexie';
 import { supabase, setMockAuthOverride } from '../db/supabaseClient';
+import { cloudDb } from '../db/supabaseMock';
 import { ProductService } from '../services/productService';
 import { sessionService } from '../services/sessionService';
 import { SettingsResolver, DEFAULT_SECURITY_CONFIG, type SecurityConfig } from '../services/settingsService';
