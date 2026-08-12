@@ -151,7 +151,19 @@ export async function pollServerVersion(): Promise<void> {
     if (!res.ok) return;
 
     const data: AppVersionInfo = await res.json();
-    if (data && data.buildNumber && data.buildNumber !== currentVersionInfo.buildNumber) {
+    const appliedBuild = typeof localStorage !== 'undefined' ? localStorage.getItem('dukapos_applied_build_number') : null;
+
+    const normServer = String(data?.buildNumber || '').replace(/[^0-9.]/g, '');
+    const normClient = String(currentVersionInfo.buildNumber || '').replace(/[^0-9.]/g, '');
+    const normApplied = String(appliedBuild || '').replace(/[^0-9.]/g, '');
+
+    if (
+      data &&
+      data.buildNumber &&
+      normServer &&
+      normServer !== normClient &&
+      normServer !== normApplied
+    ) {
       handleNewVersionDetected(data);
     }
   } catch (e) {
@@ -198,8 +210,9 @@ async function handleNewVersionDetected(latestInfo?: AppVersionInfo) {
 /**
  * Execute Safe Guarded PWA Update:
  * 1. Flush pending sync outbox to server if online
- * 2. Send SKIP_WAITING to Service Worker
- * 3. Reload application cleanly
+ * 2. Persist applied build number to localStorage
+ * 3. Clear Service Worker Cache storage & send SKIP_WAITING
+ * 4. Perform clean page reload
  */
 export async function executeSafePWAUpdate(): Promise<void> {
   // Check if active cart warning needed
@@ -224,17 +237,34 @@ export async function executeSafePWAUpdate(): Promise<void> {
     console.warn('[PWAUpdate] Pre-update sync flush warning:', e);
   }
 
+  const targetBuild = currentState.latestVersionInfo?.buildNumber || currentVersionInfo.buildNumber;
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem('dukapos_applied_build_number', targetBuild);
+  }
+
+  // Clear stale Service Worker caches
+  if (typeof window !== 'undefined' && 'caches' in window) {
+    try {
+      const cacheKeys = await caches.keys();
+      await Promise.all(cacheKeys.map(k => caches.delete(k)));
+    } catch (_) {}
+  }
+
   // Trigger SW skipWaiting
   if (swRegistration && swRegistration.waiting) {
     swRegistration.waiting.postMessage({ type: 'SKIP_WAITING' });
   } else if ('serviceWorker' in navigator) {
     const reg = await navigator.serviceWorker.getRegistration();
-    if (reg && reg.waiting) {
-      reg.waiting.postMessage({ type: 'SKIP_WAITING' });
-    } else {
-      window.location.reload();
+    if (reg) {
+      if (reg.waiting) {
+        reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+      }
+      try {
+        await reg.update();
+      } catch (_) {}
     }
-  } else {
-    window.location.reload();
   }
+
+  // Clean application reload
+  window.location.reload();
 }

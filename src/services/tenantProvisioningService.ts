@@ -1,4 +1,5 @@
 import { db } from '../db/dexie';
+import { cloudDb } from '../db/supabaseMock';
 import { getSyncRealClientIp } from './clientIpService';
 import { supabase, setMockAuthOverride } from '../db/supabaseClient';
 import { tenantIdentifierService } from './tenantIdentifierService';
@@ -35,14 +36,20 @@ export const tenantProvisioningService = {
       subscribedModules?: string[];
     } = {}
   ): Promise<void> {
-    // Clear owner email tombstone upon tenant re-registration
-    if (typeof window !== 'undefined' && superAdminUser?.email) {
+    // Clear owner email and tenant tombstones upon tenant re-registration
+    if (typeof window !== 'undefined') {
       try {
-        const cleanEmail = superAdminUser.email.trim().toLowerCase();
-        const rawEmails = localStorage.getItem('DUKAPOS_DELETED_USER_EMAILS') || '[]';
-        const emailList: string[] = JSON.parse(rawEmails);
-        const updated = emailList.filter(e => e !== cleanEmail);
-        localStorage.setItem('DUKAPOS_DELETED_USER_EMAILS', JSON.stringify(updated));
+        if (superAdminUser?.email) {
+          const cleanEmail = superAdminUser.email.trim().toLowerCase();
+          const rawEmails = localStorage.getItem('DUKAPOS_DELETED_USER_EMAILS') || '[]';
+          const emailList: string[] = JSON.parse(rawEmails);
+          const updated = emailList.filter(e => e !== cleanEmail);
+          localStorage.setItem('DUKAPOS_DELETED_USER_EMAILS', JSON.stringify(updated));
+        }
+        const rawTenants = localStorage.getItem('DUKAPOS_DELETED_TENANTS') || '[]';
+        const tenantList: string[] = JSON.parse(rawTenants);
+        const updatedTenants = tenantList.filter(t => t !== tenantId);
+        localStorage.setItem('DUKAPOS_DELETED_TENANTS', JSON.stringify(updatedTenants));
       } catch (_) {}
     }
 
@@ -525,6 +532,24 @@ export const tenantProvisioningService = {
         user_id: 'system-provisioner',
         user_name: 'SaaS System Provisioner'
       });
+
+      // Always persist to local cloudDb cache first to guarantee zero data loss
+      try {
+        if (tenantRecord) await cloudDb.cloud_tenants.put(tenantRecord as any);
+        if (branchRecord) await cloudDb.cloud_branches.put(branchRecord as any);
+        if (userRecord) await cloudDb.cloud_users.put(userRecord as any);
+        if (ubrRecord) await cloudDb.cloud_user_branch_roles.put(ubrRecord as any);
+        if (tenantUserRecord) await cloudDb.cloud_tenant_users.put(tenantUserRecord as any);
+        if (tubRecord) await cloudDb.cloud_tenant_user_branches.put(tubRecord as any);
+        if (securityRecord) await cloudDb.cloud_user_security.put(securityRecord as any);
+        const subRecord = await db.tenantSubscriptions.get(`sub-${tenantId}`);
+        if (subRecord) await cloudDb.cloud_subscriptions.put(subRecord as any);
+        if (moduleRecords.length) await cloudDb.cloud_tenant_modules.bulkPut(moduleRecords as any);
+        if (settingsRecords.length) await cloudDb.cloud_tenant_settings.bulkPut(settingsRecords as any);
+        if (flagRecords.length) await cloudDb.cloud_feature_flags.bulkPut(flagRecords as any);
+      } catch (cDbErr) {
+        console.warn('[Provisioning] Direct cloudDb mirror warning:', cDbErr);
+      }
 
       const { error: tErr } = await supabase.from('tenants').insert(tenantRecord);
       if (tErr) throw new Error(`Cloud tenant sync failed: ${tErr.message}`);

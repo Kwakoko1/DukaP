@@ -909,21 +909,51 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const { data: cloudVariants, error: varError } = await supabase.from('product_variants').select('*').eq('tenant_id', tenantId);
       if (varError) throw new Error(varError.message);
 
-      // Reconcile tenant metadata: tenants (and purge local tombstones)
+      // Reconcile tenant metadata: tenants (safe non-destructive reconciliation)
       const { data: cloudTenants, error: tError } = await supabase.from('tenants').select('*');
       if (!tError && cloudTenants) {
-        const activeCloudTenantIds = new Set(cloudTenants.filter((t: any) => !t.deleted_at && t.status !== 'Deleted' && t.status !== 'Archived').map((t: any) => t.id));
+        const rawDeleted = typeof window !== 'undefined' ? localStorage.getItem('DUKAPOS_DELETED_TENANTS') || '[]' : '[]';
+        const deletedSet = new Set<string>(JSON.parse(rawDeleted));
+
+        // 1. Only delete local tenants that are explicitly tombstoned or marked as deleted/archived on cloud
+        const cloudDeletedTenantIds = new Set(
+          cloudTenants
+            .filter((t: any) => t.deleted_at || t.status === 'Deleted' || t.status === 'Archived' || t.status === 'ARCHIVED')
+            .map((t: any) => t.id)
+        );
+
         const localTenants = await db.tenants.toArray();
         for (const lt of localTenants) {
-          if (!activeCloudTenantIds.has(lt.id) && lt.id !== 'tenant-admin-system') {
-            await db.tenants.delete(lt.id);
+          if ((deletedSet.has(lt.id) || cloudDeletedTenantIds.has(lt.id)) && lt.id !== 'tenant-admin-system') {
+            await db.tenants.delete(lt.id).catch(() => {});
             await db.users.where('tenant_id').equals(lt.id).delete().catch(() => {});
             await db.branches.where('tenant_id').equals(lt.id).delete().catch(() => {});
             await db.userBranchRoles.where('tenant_id').equals(lt.id).delete().catch(() => {});
+          } else if (lt.id && !deletedSet.has(lt.id) && lt.status !== 'Deleted' && lt.status !== 'ARCHIVED') {
+            // Mirror local active tenant into cloudDb cache so cloud queries recognize it
+            try {
+              const cloudExists = await cloudDb.cloud_tenants.get(lt.id);
+              if (!cloudExists) {
+                await cloudDb.cloud_tenants.put({
+                  id: lt.id,
+                  name: lt.name,
+                  slug: lt.slug || lt.name.toLowerCase().replace(/\s+/g, '-'),
+                  status: lt.status || 'Active',
+                  plan: lt.plan || 'Basic',
+                  business_type: lt.business_type || (lt as any).industry || 'Retail',
+                  email: lt.email || '',
+                  created_at: lt.created_at || Date.now(),
+                  updated_at: Date.now(),
+                  registration_completed: true
+                } as any).catch(() => {});
+              }
+            } catch (_) {}
           }
         }
-        if (cloudTenants.length > 0) {
-          await db.tenants.bulkPut(cloudTenants.filter((t: any) => !t.deleted_at && t.status !== 'Deleted'));
+
+        const validCloudTenants = cloudTenants.filter((t: any) => !t.deleted_at && t.status !== 'Deleted' && t.status !== 'Archived' && t.status !== 'ARCHIVED');
+        if (validCloudTenants.length > 0) {
+          await db.tenants.bulkPut(validCloudTenants).catch(() => {});
         }
       }
 

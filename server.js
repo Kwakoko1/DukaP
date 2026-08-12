@@ -638,12 +638,26 @@ const server = http.createServer(async (req, res) => {
 
       // 0.1 GET /api/version — Platform & Cloud Run Revision Metadata Probe
       if (pathname === '/api/version' && req.method === 'GET') {
-        res.writeHead(200);
+        let buildNum = process.env.BUILD_NUMBER || '';
+        if (!buildNum) {
+          try {
+            const counterPath = path.join(__dirname, 'build-counter.json');
+            if (fs.existsSync(counterPath)) {
+              const counterData = JSON.parse(fs.readFileSync(counterPath, 'utf-8'));
+              const now = new Date();
+              const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+              buildNum = `${dateStr}.${counterData.buildCount || 173}`;
+            }
+          } catch (_) {}
+        }
+        if (!buildNum) buildNum = '20260812.173';
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
           service: 'dukapos-backend',
-          version: '1.1.0',
-          buildNumber: process.env.BUILD_NUMBER || '2026-08-12-001',
-          revision: process.env.K_REVISION || 'dukapos-build-2026-08-12-001',
+          version: '1.2.0',
+          buildNumber: buildNum,
+          revision: process.env.K_REVISION || `dukapos-build-${buildNum}`,
           environment: process.env.NODE_ENV || 'production',
           timestamp: Date.now(),
           database: 'Neon PostgreSQL',

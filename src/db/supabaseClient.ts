@@ -357,18 +357,24 @@ export const supabase: SupabaseClient = {
 
               processedData.push(newItem);
 
-              // 1. Post to shared Vite API server
-              const postRes = await fetch(apiPath, {
-                method: 'POST',
-                headers,
-                body: JSON.stringify(newItem)
-              });
-              if (!postRes.ok) {
-                throw new Error(`DevServer POST error ${postRes.status}`);
+              // 1. Post to shared Vite API server (if available)
+              try {
+                const postRes = await fetch(apiPath, {
+                  method: 'POST',
+                  headers,
+                  body: JSON.stringify(newItem)
+                });
+                if (!postRes.ok) {
+                  console.warn(`[Supabase Client] DevServer POST ${apiPath} returned status ${postRes.status}. Continuing with client-side cloud database.`);
+                }
+              } catch (e) {
+                console.warn(`[Supabase Client] DevServer POST ${apiPath} unavailable. Mirroring to client cloud database.`);
               }
 
               // 2. Mirror to browser local cloudDb cache
-              await table.put(newItem);
+              await table.put(newItem).catch((err) => {
+                console.warn(`[Supabase Client] Failed to put into cloudDb table ${displayTableName}:`, err);
+              });
 
               await logCloudTransaction({
                 operation: 'INSERT',
