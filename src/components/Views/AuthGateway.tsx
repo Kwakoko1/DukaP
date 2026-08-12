@@ -817,12 +817,12 @@ export const AuthGateway: React.FC = () => {
 
       dbUser.tenant_id = dbUser.tenant_id || dbUser.tenantId;
 
-      // ── Persistent Tombstone Deletion Guard ──
+      // ── Persistent Tombstone Deletion Guard & Active Workspace Resolution ──
       const rawDeletedTenants = typeof window !== 'undefined' ? localStorage.getItem('DUKAPOS_DELETED_TENANTS') || '[]' : '[]';
-      const deletedTenantSet = new Set<string>(JSON.parse(rawDeletedTenants));
+      let deletedTenantSet = new Set<string>(JSON.parse(rawDeletedTenants));
 
       const rawDeletedEmails = typeof window !== 'undefined' ? localStorage.getItem('DUKAPOS_DELETED_USER_EMAILS') || '[]' : '[]';
-      const deletedEmailSet = new Set<string>(JSON.parse(rawDeletedEmails));
+      let deletedEmailSet = new Set<string>(JSON.parse(rawDeletedEmails));
 
       const userTenantId = dbUser.tenant_id;
       const userEmail = (dbUser.email || '').trim().toLowerCase();
@@ -839,36 +839,75 @@ export const AuthGateway: React.FC = () => {
         return;
       }
 
+      // Resolve Tenant with Fallback Recovery Pipeline
+      let existingTenant: any = userTenantId ? (await safeGet(db.tenants, userTenantId) || (await cloudDb.cloud_tenants.get(userTenantId))) : null;
+
+      if (!existingTenant && userTenantId && !deletedTenantSet.has(userTenantId)) {
+        console.log(`[Auth Login] Local tenant record missing for ${userTenantId}. Running context recovery...`);
+        existingTenant = await tenantRecoveryService.validateAndRestoreTenantContext(userTenantId);
+      }
+
+      if (!existingTenant && userTenantId && !deletedTenantSet.has(userTenantId)) {
+        try {
+          const { data: cloudT } = await supabase.from('tenants').select('*').eq('id', userTenantId);
+          if (cloudT && cloudT.length > 0) {
+            const ct = cloudT[0];
+            if (!ct.deleted_at && ct.status !== 'Deleted' && ct.status !== 'Archived' && ct.status !== 'ARCHIVED') {
+              existingTenant = {
+                id: ct.id,
+                name: ct.name,
+                slug: ct.slug,
+                status: ct.status,
+                plan: ct.plan,
+                business_type: ct.business_type || 'Retail',
+                email: ct.email || dbUser.email,
+                created_at: ct.created_at
+              };
+              await db.tenants.put(existingTenant as any);
+              await cloudDb.cloud_tenants.put(ct as any).catch(() => {});
+            }
+          }
+        } catch (_) {}
+      }
+
+      // Auto-heal accidental tombstones if the workspace is verified active!
+      if (existingTenant && existingTenant.status !== 'Deleted' && existingTenant.status !== 'Archived' && existingTenant.status !== 'ARCHIVED' && !existingTenant.deleted_at && !existingTenant.deletedAt) {
+        if (userEmail && deletedEmailSet.has(userEmail)) {
+          deletedEmailSet.delete(userEmail);
+          try {
+            const rawE = localStorage.getItem('DUKAPOS_DELETED_USER_EMAILS') || '[]';
+            const listE: string[] = JSON.parse(rawE).filter((e: string) => e !== userEmail);
+            localStorage.setItem('DUKAPOS_DELETED_USER_EMAILS', JSON.stringify(listE));
+          } catch (_) {}
+        }
+        if (userTenantId && deletedTenantSet.has(userTenantId)) {
+          deletedTenantSet.delete(userTenantId);
+          try {
+            const rawT = localStorage.getItem('DUKAPOS_DELETED_TENANTS') || '[]';
+            const listT: string[] = JSON.parse(rawT).filter((t: string) => t !== userTenantId);
+            localStorage.setItem('DUKAPOS_DELETED_TENANTS', JSON.stringify(listT));
+          } catch (_) {}
+        }
+      }
+
+      // Enforcement checks AFTER recovery & auto-healing
       if (userEmail && deletedEmailSet.has(userEmail)) {
         setErrorMsg('Access Denied: Your account was revoked when your organization workspace was deleted. Please re-register a new workspace to regain access.');
         return;
       }
 
       if (userTenantId && deletedTenantSet.has(userTenantId)) {
-        setErrorMsg('Access Denied: This organization workspace has been permanently deleted and all associated employee accounts revoked. Please re-register a new workspace to regain access.');
+        setErrorMsg('Access Denied: This organization workspace has been permanently deleted.');
         return;
       }
 
-      // Verify tenant exists in local DB or cloud DB
-      const existingTenant = userTenantId ? (await safeGet(db.tenants, userTenantId) || (await cloudDb.cloud_tenants.get(userTenantId))) : null;
-      if (userTenantId && (!existingTenant || existingTenant.status === 'Deleted' || existingTenant.status === 'Archived' || (existingTenant as any).deleted_at)) {
-        try {
-          const rawT = localStorage.getItem('DUKAPOS_DELETED_TENANTS') || '[]';
-          const listT: string[] = JSON.parse(rawT);
-          if (userTenantId && !listT.includes(userTenantId)) {
-            listT.push(userTenantId);
-            localStorage.setItem('DUKAPOS_DELETED_TENANTS', JSON.stringify(listT));
-          }
-          const rawE = localStorage.getItem('DUKAPOS_DELETED_USER_EMAILS') || '[]';
-          const listE: string[] = JSON.parse(rawE);
-          if (userEmail && !listE.includes(userEmail)) {
-            listE.push(userEmail);
-            localStorage.setItem('DUKAPOS_DELETED_USER_EMAILS', JSON.stringify(listE));
-          }
-          await db.users.delete(dbUser.id).catch(() => {});
-        } catch (_) {}
+      if (userTenantId && (!existingTenant || existingTenant.status === 'Deleted' || existingTenant.status === 'Archived' || existingTenant.status === 'ARCHIVED' || (existingTenant as any).deleted_at)) {
+        setErrorMsg('Access Denied: Associated business workspace was not found or has been deactivated/deleted.');
+        return;
+      }
 
-        setErrorMsg('Access Denied: Your account was revoked when your organization workspace was deleted. Please re-register a new workspace to regain access.');
+      if (existingTenant && existingTenant.status === 'Suspended') {
+        setErrorMsg('Workspace Suspended. This business account is suspended due to billing.');
         return;
       }
 
@@ -924,18 +963,7 @@ export const AuthGateway: React.FC = () => {
         return;
       }
 
-      // Retrieve default/active tenant — check local DB then recover from server/cloudDb
-      const defaultTenantId = loginTenantId.trim() || dbUser.tenant_id || (roles[0] && roles[0].tenant_id);
-      if (deletedTenantSet.has(defaultTenantId)) {
-        setErrorMsg('Access Denied: This organization workspace has been permanently deleted.');
-        return;
-      }
-
-      let tenant: any = defaultTenantId ? await safeGet(db.tenants, defaultTenantId) : null;
-      if (!tenant && defaultTenantId) {
-        console.log(`[Auth Login] Local tenant record missing for ${defaultTenantId}. Triggering server recovery...`);
-        tenant = await tenantRecoveryService.validateAndRestoreTenantContext(defaultTenantId);
-      }
+      let tenant: any = existingTenant;
       if (!tenant && defaultTenantId) {
         // Direct query to central production database cloudDb.cloud_tenants
         const cloudT = await safeGet(cloudDb.cloud_tenants, defaultTenantId);
@@ -1078,7 +1106,7 @@ export const AuthGateway: React.FC = () => {
       const { data: cloudTenant } = await supabase.from('tenants').select('*').eq('id', ctx.tenant_id);
       const ct = cloudTenant && cloudTenant.length > 0 ? cloudTenant[0] : null;
 
-      if (!ct || ct.deleted_at || ct.status === 'Deleted' || ct.status === 'Archived') {
+      if (ct && (ct.deleted_at || ct.status === 'Deleted' || ct.status === 'Archived' || ct.status === 'ARCHIVED')) {
         // Purge deleted tenant from local DB immediately
         await db.transaction('rw', [db.tenants, db.branches, db.userBranchRoles], async () => {
           await db.tenants.delete(ctx.tenant_id);
