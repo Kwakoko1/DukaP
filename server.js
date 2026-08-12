@@ -230,6 +230,40 @@ async function initDatabaseSchema() {
     await sql`ALTER TABLE stock_ledger ADD COLUMN IF NOT EXISTS user_id TEXT;`;
     await sql`ALTER TABLE stock_ledger ADD COLUMN IF NOT EXISTS device_id TEXT;`;
     await sql`ALTER TABLE stock_ledger ADD COLUMN IF NOT EXISTS idempotency_key TEXT;`;
+
+    // ─── CRITICAL SCHEMA RECONCILIATION FOR NEON POSTGRESQL ────────────────────
+    // 1. Guarantee deleted_at column presence across all core tables
+    await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS deleted_at BIGINT;`.catch(() => {});
+    await sql`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS deleted_at BIGINT;`.catch(() => {});
+    await sql`ALTER TABLE branches ADD COLUMN IF NOT EXISTS deleted_at BIGINT;`.catch(() => {});
+    await sql`ALTER TABLE products ADD COLUMN IF NOT EXISTS deleted_at BIGINT;`.catch(() => {});
+    await sql`ALTER TABLE product_variants ADD COLUMN IF NOT EXISTS deleted_at BIGINT;`.catch(() => {});
+    await sql`ALTER TABLE categories ADD COLUMN IF NOT EXISTS deleted_at BIGINT;`.catch(() => {});
+    await sql`ALTER TABLE brands ADD COLUMN IF NOT EXISTS deleted_at BIGINT;`.catch(() => {});
+    await sql`ALTER TABLE stock_ledger ADD COLUMN IF NOT EXISTS deleted_at BIGINT;`.catch(() => {});
+
+    // 2. Guarantee BIGINT timestamp types to prevent INTEGER overflow (13-digit Unix millis)
+    await sql`ALTER TABLE users ALTER COLUMN created_at TYPE BIGINT USING created_at::BIGINT;`.catch(() => {});
+    await sql`ALTER TABLE users ALTER COLUMN deleted_at TYPE BIGINT USING deleted_at::BIGINT;`.catch(() => {});
+    await sql`ALTER TABLE tenants ALTER COLUMN created_at TYPE BIGINT USING created_at::BIGINT;`.catch(() => {});
+    await sql`ALTER TABLE tenants ALTER COLUMN deleted_at TYPE BIGINT USING deleted_at::BIGINT;`.catch(() => {});
+    await sql`ALTER TABLE branches ALTER COLUMN created_at TYPE BIGINT USING created_at::BIGINT;`.catch(() => {});
+    await sql`ALTER TABLE branches ALTER COLUMN deleted_at TYPE BIGINT USING deleted_at::BIGINT;`.catch(() => {});
+    await sql`ALTER TABLE products ALTER COLUMN created_at TYPE BIGINT USING created_at::BIGINT;`.catch(() => {});
+    await sql`ALTER TABLE products ALTER COLUMN updated_at TYPE BIGINT USING updated_at::BIGINT;`.catch(() => {});
+    await sql`ALTER TABLE products ALTER COLUMN deleted_at TYPE BIGINT USING deleted_at::BIGINT;`.catch(() => {});
+    await sql`ALTER TABLE product_variants ALTER COLUMN created_at TYPE BIGINT USING created_at::BIGINT;`.catch(() => {});
+    await sql`ALTER TABLE product_variants ALTER COLUMN updated_at TYPE BIGINT USING updated_at::BIGINT;`.catch(() => {});
+    await sql`ALTER TABLE product_variants ALTER COLUMN deleted_at TYPE BIGINT USING deleted_at::BIGINT;`.catch(() => {});
+    await sql`ALTER TABLE categories ALTER COLUMN created_at TYPE BIGINT USING created_at::BIGINT;`.catch(() => {});
+    await sql`ALTER TABLE categories ALTER COLUMN updated_at TYPE BIGINT USING updated_at::BIGINT;`.catch(() => {});
+    await sql`ALTER TABLE categories ALTER COLUMN deleted_at TYPE BIGINT USING deleted_at::BIGINT;`.catch(() => {});
+    await sql`ALTER TABLE categories ALTER COLUMN last_synced_at TYPE BIGINT USING last_synced_at::BIGINT;`.catch(() => {});
+    await sql`ALTER TABLE brands ALTER COLUMN created_at TYPE BIGINT USING created_at::BIGINT;`.catch(() => {});
+    await sql`ALTER TABLE brands ALTER COLUMN updated_at TYPE BIGINT USING updated_at::BIGINT;`.catch(() => {});
+    await sql`ALTER TABLE brands ALTER COLUMN deleted_at TYPE BIGINT USING deleted_at::BIGINT;`.catch(() => {});
+    await sql`ALTER TABLE brands ALTER COLUMN last_synced_at TYPE BIGINT USING last_synced_at::BIGINT;`.catch(() => {});
+    await sql`ALTER TABLE stock_ledger ALTER COLUMN created_at TYPE BIGINT USING created_at::BIGINT;`.catch(() => {});
     await sql`
       CREATE TABLE IF NOT EXISTS user_branch_roles (
         id TEXT PRIMARY KEY,
@@ -489,6 +523,8 @@ async function parseRequestBody(req) {
       }
     });
   });
+}
+
 // ─── ZERO-TRUST SECURITY ENGINE & REAL-TIME SSE BROADCAST ────────────────────
 
 const JWT_SECRET = process.env.VITE_JWT_SECRET || 'dukapos_saas_prod_jwt_super_secret_key_2026_x89f';
@@ -597,6 +633,22 @@ const server = http.createServer(async (req, res) => {
       if (pathname === '/api/ping') {
         res.writeHead(200);
         res.end(JSON.stringify({ status: 'ok', timestamp: Date.now(), database: 'Neon PostgreSQL' }));
+        return;
+      }
+
+      // 0.1 GET /api/version — Platform & Cloud Run Revision Metadata Probe
+      if (pathname === '/api/version' && req.method === 'GET') {
+        res.writeHead(200);
+        res.end(JSON.stringify({
+          service: 'dukapos-backend',
+          version: '1.1.0',
+          buildNumber: process.env.BUILD_NUMBER || '2026-08-12-001',
+          revision: process.env.K_REVISION || 'dukapos-build-2026-08-12-001',
+          environment: process.env.NODE_ENV || 'production',
+          timestamp: Date.now(),
+          database: 'Neon PostgreSQL',
+          status: 'ok'
+        }));
         return;
       }
 
@@ -1460,11 +1512,11 @@ const server = http.createServer(async (req, res) => {
           const payload = op.payload || {};
           const recordId = payload.id || op.entity_id;
           const action = op.operation || op.actionType || 'UPDATE';
-
           const opTenant = payload.tenant_id || payload.tenantId || op.tenant_id || body.tenantId || tenantId || 'tenant-101';
 
           if (!recordId) continue;
 
+          if (entity === 'products' || entity === 'product') {
             if (action === 'DELETE' || payload.deleted) {
               await sql`UPDATE products SET deleted = true, deleted_at = ${now}, updated_at = ${now}, version = COALESCE(version, 1) + 1 WHERE id = ${recordId}`;
             } else {
