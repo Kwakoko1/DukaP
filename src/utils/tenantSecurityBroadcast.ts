@@ -80,3 +80,55 @@ class TenantSecurityBroadcast {
 }
 
 export const tenantSecurityBroadcast = new TenantSecurityBroadcast();
+
+/**
+ * System-wide Authoritative Check: Determines if a tenant record is deleted or a system tenant.
+ * Protects against orphaned records, stale caches, and split-brain sync bugs across all CPanel views.
+ */
+export function isTenantDeleted(t: any): boolean {
+  if (!t) return true;
+  const tid = typeof t === 'string' ? t : (t.id || t.tenant_id || t.tenantId);
+  if (!tid) return true;
+
+  // 1. Reserved System & Master Admin Tenants (never counted as active merchant business tenants)
+  if (
+    tid === 'tenant-admin-system' ||
+    tid === 'tenant-admin-master' ||
+    tid === 'tenant-system-root' ||
+    tid === 'tenant-admin-000' ||
+    tid === 'tenant-master'
+  ) {
+    return true;
+  }
+
+  // 2. Soft Deletes / Inactive Status Flags
+  if (typeof t === 'object') {
+    if (t.deleted_at || t.deletedAt || (t as any).deleted) return true;
+    const status = String(t.status || '').toUpperCase();
+    if (status === 'DELETED' || status === 'ARCHIVED' || status === 'DRAFT') return true;
+    if (t.registration_completed === false) return true;
+  }
+
+  // 3. Persistent LocalStorage Tombstone Verification
+  if (typeof window !== 'undefined') {
+    try {
+      const raw = localStorage.getItem('DUKAPOS_DELETED_TENANTS') || '[]';
+      const deletedList: string[] = JSON.parse(raw);
+      if (deletedList.includes(tid)) return true;
+
+      if (typeof t === 'object') {
+        if (t.tenant_code && deletedList.includes(t.tenant_code)) return true;
+        if (t.business_code && deletedList.includes(t.business_code)) return true;
+        if (t.tenant_uuid && deletedList.includes(t.tenant_uuid)) return true;
+        if (t.slug && deletedList.includes(t.slug)) return true;
+      }
+
+      const rawEmails = localStorage.getItem('DUKAPOS_DELETED_USER_EMAILS') || '[]';
+      const emailList: string[] = JSON.parse(rawEmails);
+      if (typeof t === 'object' && t.email && emailList.includes(t.email.trim().toLowerCase())) return true;
+    } catch (_) {}
+  }
+
+  return false;
+}
+

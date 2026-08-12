@@ -8,6 +8,8 @@ import {
   ResponsiveContainer, PieChart, Pie, Cell, Legend
 } from 'recharts';
 
+import { isTenantDeleted } from '../../../utils/tenantSecurityBroadcast';
+
 const PLAN_RATES: Record<string, number> = {
   basic: 25000, starter: 25000,
   growth: 55000, professional: 55000,
@@ -23,7 +25,8 @@ const PIE_COLORS = ['#3B82F6', '#10B981', '#8B5CF6', '#F59E0B'];
 
 export const SABillingFinance: React.FC = () => {
   const subscriptions = useLiveQuery(() => cloudDb.cloud_subscriptions.toArray()) || [];
-  const tenants = useLiveQuery(() => cloudDb.cloud_tenants.filter((t: any) => !t.deleted_at).toArray()) || [];
+  const rawTenants = useLiveQuery(() => cloudDb.cloud_tenants.toArray()) || [];
+  const tenants = useMemo(() => rawTenants.filter((t: any) => !isTenantDeleted(t)), [rawTenants]);
 
   const activeSubs = useMemo(() => subscriptions.filter((s: any) => s.status === 'ACTIVE'), [subscriptions]);
   const trialSubs  = useMemo(() => subscriptions.filter((s: any) => s.status === 'TRIAL'), [subscriptions]);

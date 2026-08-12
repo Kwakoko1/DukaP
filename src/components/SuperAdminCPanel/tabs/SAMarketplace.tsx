@@ -4,11 +4,14 @@ import { cloudDb } from '../../../db/supabaseMock';
 import { useModule, MODULE_MANIFESTS, type IndustryModule } from '../../../context/ModuleContext';
 import { Search, ToggleLeft, ToggleRight, Users, Boxes, ShoppingBag } from 'lucide-react';
 
+import { isTenantDeleted } from '../../../utils/tenantSecurityBroadcast';
+
 export const SAMarketplace: React.FC = () => {
   const { moduleStates, toggleModuleState } = useModule();
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState<'ALL' | 'ENABLED' | 'DISABLED'>('ALL');
-  const tenants = useLiveQuery(() => cloudDb.cloud_tenants.filter((t: any) => !t.deleted_at).toArray()) || [];
+  const rawTenants = useLiveQuery(() => cloudDb.cloud_tenants.toArray()) || [];
+  const tenants = useMemo(() => rawTenants.filter((t: any) => !isTenantDeleted(t)), [rawTenants]);
 
   const keys = useMemo(() => {
     return Object.keys(MODULE_MANIFESTS).filter(key => {

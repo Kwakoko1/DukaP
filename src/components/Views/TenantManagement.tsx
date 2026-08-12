@@ -770,7 +770,15 @@ export const TenantManagement: React.FC = () => {
         await SuperAdminService.softDeleteTenant(tenant.id, adminContext);
         toast.success('Workspace Archived', `"${tenant.name}" soft-deleted; login access revoked.`);
       } else {
-        setDeletedTenantIds(prev => new Set(prev).add(tenant.id));
+        setDeletedTenantIds(prev => {
+          const next = new Set(prev).add(tenant.id);
+          if (typeof window !== 'undefined') {
+            try {
+              localStorage.setItem('DUKAPOS_DELETED_TENANTS', JSON.stringify(Array.from(next)));
+            } catch (_) {}
+          }
+          return next;
+        });
         setPgTenants(prev => prev.filter(t => t.id !== tenant.id));
         await SuperAdminService.purgeTenantData(tenant.id);
         

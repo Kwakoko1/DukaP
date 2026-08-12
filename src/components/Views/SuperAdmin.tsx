@@ -21,6 +21,7 @@ import { AppVersionFooter } from '../Layout/AppVersionFooter';
 import { cloudDb } from '../../db/supabaseMock';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { SuperAdminService } from '../../services/superAdminService';
+import { isTenantDeleted } from '../../utils/tenantSecurityBroadcast';
 import { SuperAdminAuthEngine } from '../../services/productionAuthService';
 
 export const SuperAdmin: React.FC = () => {
@@ -80,9 +81,13 @@ export const SuperAdmin: React.FC = () => {
   };
 
   // Live real central production PostgreSQL queries (cloudDb fallback)
-  const tenants = useLiveQuery(() => cloudDb.cloud_tenants.filter((t: any) => !t.deleted_at).toArray()) || [];
+  const rawTenants = useLiveQuery(() => cloudDb.cloud_tenants.toArray()) || [];
+  const rawBranches = useLiveQuery(() => cloudDb.cloud_branches.toArray()) || [];
   const subscriptions = useLiveQuery(() => cloudDb.cloud_subscriptions.toArray()) || [];
-  const branchesCount = useLiveQuery(() => cloudDb.cloud_branches.count()) || 0;
+
+  const tenants = useMemo(() => rawTenants.filter((t: any) => !isTenantDeleted(t)), [rawTenants]);
+  const activeTenantIdSet = useMemo(() => new Set(tenants.map((t: any) => t.id)), [tenants]);
+  const branchesCount = useMemo(() => rawBranches.filter((b: any) => !b.deleted_at && b.tenant_id && activeTenantIdSet.has(b.tenant_id)).length, [rawBranches, activeTenantIdSet]);
 
   const realMRR = useMemo(() => {
     if (olapMetrics && olapMetrics.totalMRR !== undefined) return olapMetrics.totalMRR;

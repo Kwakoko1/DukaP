@@ -8,10 +8,13 @@ import {
   UserX, Globe, Fingerprint, Clock
 } from 'lucide-react';
 
+import { isTenantDeleted } from '../../../utils/tenantSecurityBroadcast';
+
 export const SASecurityCenter: React.FC = () => {
   const sessions = useLiveQuery(() => cloudDb.cloud_user_sessions.toArray()) || [];
   const security = useLiveQuery(() => cloudDb.cloud_user_security.toArray()) || [];
-  const tenants  = useLiveQuery(() => cloudDb.cloud_tenants.filter((t: any) => !t.deleted_at).toArray()) || [];
+  const rawTenants = useLiveQuery(() => cloudDb.cloud_tenants.toArray()) || [];
+  const tenants = useMemo(() => rawTenants.filter((t: any) => !isTenantDeleted(t)), [rawTenants]);
 
   const activeSessions = useMemo(() => sessions.filter((s: any) => !s.logged_out_at && !s.revoked_at), [sessions]);
   const mfaEnabled = useMemo(() => security.filter((u: any) => u.mfa_enabled).length, [security]);

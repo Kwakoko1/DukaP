@@ -13,6 +13,8 @@ import {
   Tooltip, ResponsiveContainer, Legend
 } from 'recharts';
 
+import { isTenantDeleted } from '../../../utils/tenantSecurityBroadcast';
+
 // ─── Static services list (latency can be wired to a health check endpoint) ───
 const PLATFORM_SERVICES: ServiceInfo[] = [
   { name: 'PostgreSQL Primary',   status: 'operational', latencyMs: 12,  uptime: '99.98%' },
@@ -57,24 +59,26 @@ function buildGrowthChart(tenants: any[], subscriptions: any[]) {
 export const SAOverview: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false);
 
-  const isSystemTenantId = (id?: string) => !id || id === 'tenant-admin-system' || id === 'tenant-admin-master' || id === 'tenant-system-root' || id === 'tenant-admin-000' || id === 'tenant-master';
-
-  const rawTenants     = useLiveQuery(() => cloudDb.cloud_tenants.filter((t: any) => !t.deleted_at).toArray()) || [];
+  const rawTenants     = useLiveQuery(() => cloudDb.cloud_tenants.toArray()) || [];
   const subscriptions  = useLiveQuery(() => cloudDb.cloud_subscriptions.toArray()) || [];
-  const rawBranches    = useLiveQuery(() => cloudDb.cloud_branches.filter((b: any) => !b.deleted_at).toArray()) || [];
+  const rawBranches    = useLiveQuery(() => cloudDb.cloud_branches.toArray()) || [];
   const rawUsers       = useLiveQuery(() => cloudDb.cloud_users.toArray()) || [];
 
-  const tenants = useMemo(() => rawTenants.filter((t: any) => 
-    !isSystemTenantId(t.id) && 
-    t.status !== 'Deleted' && 
-    t.status !== 'Archived' && 
-    t.status !== 'Draft' && 
-    t.status !== 'DRAFT' && 
-    t.registration_completed !== false
-  ), [rawTenants]);
+  const tenants = useMemo(() => rawTenants.filter((t: any) => !isTenantDeleted(t)), [rawTenants]);
+  const activeTenantIdSet = useMemo(() => new Set(tenants.map((t: any) => t.id)), [tenants]);
 
-  const branches = useMemo(() => rawBranches.filter((b: any) => !isSystemTenantId(b.tenant_id)).length, [rawBranches]);
-  const cloudUsers = useMemo(() => rawUsers.filter((u: any) => !u.is_super_admin && u.role !== 'Super Admin' && !isSystemTenantId(u.tenant_id)).length, [rawUsers]);
+  const branches = useMemo(() => rawBranches.filter((b: any) => 
+    !b.deleted_at && 
+    b.tenant_id && 
+    activeTenantIdSet.has(b.tenant_id)
+  ).length, [rawBranches, activeTenantIdSet]);
+
+  const cloudUsers = useMemo(() => rawUsers.filter((u: any) => 
+    !u.is_super_admin && 
+    u.role !== 'Super Admin' && 
+    u.tenant_id && 
+    activeTenantIdSet.has(u.tenant_id)
+  ).length, [rawUsers, activeTenantIdSet]);
 
   const loading = !rawTenants && !subscriptions;
 

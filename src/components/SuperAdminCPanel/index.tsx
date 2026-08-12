@@ -5,6 +5,8 @@ import { cloudDb } from '../../db/supabaseMock';
 import { SuperAdminService } from '../../services/superAdminService';
 import { useLiveQuery } from 'dexie-react-hooks';
 
+import { isTenantDeleted } from '../../utils/tenantSecurityBroadcast';
+
 // ── Tab components (eager load — they're already lazy-split at route level) ──
 import { SAOverview }            from './tabs/SAOverview';
 import { SAMarketplace }         from './tabs/SAMarketplace';
@@ -74,16 +76,11 @@ export const SuperAdminCPanel: React.FC<SuperAdminCPanelProps> = ({ initialTab }
 
   // Live tenant count for sidebar badge (merchant business tenants only)
   const tenantCount = useLiveQuery(
-    () => cloudDb.cloud_tenants.filter((t: any) => 
-      t.id !== 'tenant-admin-system' &&
-      t.id !== 'tenant-admin-master' &&
-      !t.deleted_at &&
-      t.status !== 'Deleted' &&
-      t.status !== 'Archived' &&
-      t.status !== 'Draft' &&
-      t.status !== 'DRAFT' &&
-      t.registration_completed !== false
-    ).count()
+    async () => {
+      const list = await cloudDb.cloud_tenants.toArray();
+      return list.filter((t: any) => !isTenantDeleted(t)).length;
+    },
+    []
   );
 
   // Update internal tab when external initialTab prop changes

@@ -10,7 +10,7 @@ import {
 import { supabase } from '../db/supabaseClient';
 import { db } from '../db/dexie';
 import { getSyncRealClientIp } from './clientIpService';
-import { tenantSecurityBroadcast } from '../utils/tenantSecurityBroadcast';
+import { tenantSecurityBroadcast, isTenantDeleted } from '../utils/tenantSecurityBroadcast';
 import { SuperAdminAuthEngine } from './productionAuthService';
 
 export interface SuperAdminUserContext {
@@ -38,8 +38,6 @@ export class SuperAdminService {
   static async syncPlatformRegistry(): Promise<void> {
     try {
       console.log('[SuperAdminService] Synchronizing central platform registry...');
-      const rawDeleted = typeof window !== 'undefined' ? localStorage.getItem('DUKAPOS_DELETED_TENANTS') || '[]' : '[]';
-      const deletedSet = new Set<string>(JSON.parse(rawDeleted));
 
       // Reconcile local Dexie tenants into cloudDb.cloud_tenants so Super Admin CPanel displays all registrations
       const [localTs, cloudTs] = await Promise.all([
@@ -48,18 +46,7 @@ export class SuperAdminService {
       ]);
 
       for (const lt of localTs) {
-        if (
-          lt.id && 
-          lt.id !== 'tenant-admin-system' &&
-          lt.id !== 'tenant-admin-master' &&
-          !deletedSet.has(lt.id) && 
-          lt.status !== 'Deleted' && 
-          lt.status !== 'Archived' && 
-          lt.status !== 'Draft' && 
-          lt.status !== 'DRAFT' && 
-          lt.registration_completed !== false && 
-          !(lt as any).deleted_at
-        ) {
+        if (!isTenantDeleted(lt)) {
           const exists = await cloudDb.cloud_tenants.get(lt.id);
           if (!exists) {
             await cloudDb.cloud_tenants.put({
@@ -75,22 +62,14 @@ export class SuperAdminService {
               registration_completed: true
             } as any).catch(() => {});
           }
+        } else {
+          // Guarantee deleted tenant is purged from cloudDb cache as well
+          await cloudDb.cloud_tenants.delete(lt.id).catch(() => {});
         }
       }
 
       for (const ct of cloudTs) {
-        if (
-          ct.id && 
-          ct.id !== 'tenant-admin-system' &&
-          ct.id !== 'tenant-admin-master' &&
-          !deletedSet.has(ct.id) && 
-          ct.status !== 'Deleted' && 
-          ct.status !== 'Archived' && 
-          ct.status !== 'Draft' && 
-          ct.status !== 'DRAFT' && 
-          ct.registration_completed !== false && 
-          !(ct as any).deleted_at
-        ) {
+        if (!isTenantDeleted(ct)) {
           const exists = await db.tenants.get(ct.id);
           if (!exists) {
             await db.tenants.put({
@@ -106,6 +85,9 @@ export class SuperAdminService {
               registration_completed: true
             } as any).catch(() => {});
           }
+        } else {
+          // Guarantee deleted tenant is purged from db.tenants as well
+          await db.tenants.delete(ct.id).catch(() => {});
         }
       }
 
@@ -127,16 +109,7 @@ export class SuperAdminService {
    */
   static async getAllTenants(): Promise<CloudTenant[]> {
     const { data } = await supabase.from('tenants').select();
-    return (data || []).filter((t: any) => 
-      t.id !== 'tenant-admin-system' &&
-      t.id !== 'tenant-admin-master' &&
-      !t.deleted_at && 
-      t.status !== 'Deleted' && 
-      t.status !== 'Archived' && 
-      t.status !== 'Draft' && 
-      t.status !== 'DRAFT' && 
-      t.registration_completed !== false
-    );
+    return (data || []).filter((t: any) => !isTenantDeleted(t));
   }
 
   /**
