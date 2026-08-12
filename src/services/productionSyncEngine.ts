@@ -7,6 +7,7 @@
 import { db, type SyncItem, type SyncStatus } from '../db/dexie';
 import { supabase } from '../db/supabaseClient';
 import { getOrCreateDeviceId } from './syncEventGenerator';
+import { resolveEntityConflict } from './SyncResolver';
 
 export interface SyncConflict {
   entityName: string;
@@ -248,7 +249,7 @@ class ProductionSyncEngine {
   }
 
   /**
-   * Conflict Resolution Engine (LWW / Vector Clock / Server Wins)
+   * Conflict Resolution Engine (LWW / Vector Clock / Tombstone Priority / Server Wins)
    */
   resolveConflict(
     entityName: string,
@@ -266,9 +267,9 @@ class ProductionSyncEngine {
     } else if (strategy === 'MERGE') {
       resolved = { ...serverRecord, ...clientRecord, updated_at: Date.now() };
     } else {
-      const clientTs = clientRecord?.updated_at || clientRecord?.updatedAt || 0;
-      const serverTs = serverRecord?.updated_at || serverRecord?.updatedAt || 0;
-      resolved = clientTs >= serverTs ? { ...clientRecord } : { ...serverRecord };
+      // Use Tombstone Priority Resolution Engine
+      const res = resolveEntityConflict(clientRecord, serverRecord);
+      resolved = res.record;
     }
 
     const conflict: SyncConflict = {

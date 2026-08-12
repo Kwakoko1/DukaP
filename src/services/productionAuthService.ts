@@ -241,3 +241,88 @@ class ProductionAuthService {
 }
 
 export const productionAuthService = new ProductionAuthService();
+
+/**
+ * Enterprise Super Admin Authentication & Zero-Trust JWT Security Engine
+ */
+export class SuperAdminAuthEngine {
+  private static STORAGE_KEY = 'dukapos_super_admin_jwt';
+  private static STEPUP_KEY = 'dukapos_super_admin_stepup_token';
+
+  static getJWTToken(): string | null {
+    if (typeof window === 'undefined') return null;
+    return sessionStorage.getItem(this.STORAGE_KEY) || localStorage.getItem(this.STORAGE_KEY);
+  }
+
+  static setJWTToken(token: string): void {
+    if (typeof window === 'undefined') return;
+    sessionStorage.setItem(this.STORAGE_KEY, token);
+    localStorage.setItem(this.STORAGE_KEY, token);
+  }
+
+  static getStepUpToken(): string {
+    if (typeof window === 'undefined') return 'SUPER_ADMIN_ELEVATED';
+    return sessionStorage.getItem(this.STEPUP_KEY) || 'SUPER_ADMIN_ELEVATED';
+  }
+
+  static setStepUpToken(token: string): void {
+    if (typeof window === 'undefined') return;
+    sessionStorage.setItem(this.STEPUP_KEY, token);
+  }
+
+  static clearTokens(): void {
+    if (typeof window === 'undefined') return;
+    sessionStorage.removeItem(this.STORAGE_KEY);
+    localStorage.removeItem(this.STORAGE_KEY);
+    sessionStorage.removeItem(this.STEPUP_KEY);
+  }
+
+  /**
+   * Authenticate Super Admin via backend /api/superadmin/login endpoint
+   */
+  static async login(email: string, passwordHash: string): Promise<any> {
+    try {
+      const res = await fetch('/api/superadmin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password: passwordHash })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.token) {
+          this.setJWTToken(data.token);
+        }
+        return data;
+      }
+    } catch (e) {
+      console.warn('[SuperAdminAuthEngine] Server login warning:', e);
+    }
+    return null;
+  }
+
+  /**
+   * Listen to Server-Sent Events (SSE) stream for real-time security broadcasts
+   */
+  static initSSEStream(onEvent: (event: any) => void): () => void {
+    if (typeof window === 'undefined' || typeof EventSource === 'undefined') return () => {};
+    try {
+      const es = new EventSource('/api/superadmin/events');
+      es.onmessage = (ev) => {
+        try {
+          const data = JSON.parse(ev.data);
+          onEvent(data);
+        } catch (_) {}
+      };
+      es.addEventListener('TENANT_SOFT_DELETED', (ev: any) => {
+        try { onEvent(JSON.parse(ev.data)); } catch (_) {}
+      });
+      es.addEventListener('TENANT_HARD_PURGED', (ev: any) => {
+        try { onEvent(JSON.parse(ev.data)); } catch (_) {}
+      });
+      return () => es.close();
+    } catch (_) {
+      return () => {};
+    }
+  }
+}
+

@@ -899,7 +899,7 @@ export const Subscriptions: React.FC = () => {
                   placeholder="Enter coupon code (e.g. DUKAPOS20)"
                   value={couponCode}
                   onChange={e => setCouponCode(e.target.value.toUpperCase())}
-                  className="flex-1 h-9 rounded-lg border border-slate-200 dark:border-darkbg-border px-3 text-xs bg-transparent focus:outline-none focus:ring-2 focus:ring-primary uppercase tracking-wider font-mono"
+                  className="flex-1 h-9 rounded-lg border border-slate-200 dark:border-darkbg-border px-3 text-xs text-slate-900 dark:text-slate-100 bg-white dark:bg-darkbg-card focus:outline-none focus:ring-2 focus:ring-primary uppercase tracking-wider font-mono"
                 />
                 <Button type="submit" variant="primary" className="h-9 text-xs shrink-0">
                   Apply
@@ -1054,7 +1054,7 @@ export const Subscriptions: React.FC = () => {
                 { label: 'IndexedDB Version', value: <span className="font-mono text-slate-400">v7</span> },
                 { label: 'Offline Mode', value: <Badge variant={navigator.onLine ? 'success' : 'warning'}>{navigator.onLine ? 'ONLINE' : 'OFFLINE'}</Badge> },
               ].map(row => (
-                <div key={row.label} className="flex justify-between items-center p-2.5 rounded-lg border text-xs">
+                <div key={row.label} className="flex justify-between items-center p-2.5 rounded-lg border border-slate-200 dark:border-darkbg-border/50 text-xs">
                   <span className="font-bold text-slate-700 dark:text-slate-200">{row.label}</span>
                   {row.value}
                 </div>
@@ -1201,7 +1201,7 @@ export const Subscriptions: React.FC = () => {
                 {/* Mobile Money */}
                 <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider mt-2 mb-1">📱 Mobile Money</p>
                 <div className="grid grid-cols-2 gap-2">
-                  {([['M-PESA', '📱 M-Pesa', 'bg-green-50 border-green-400 text-green-700'], ['AIRTEL', '🔴 Airtel Money', 'bg-red-50 border-red-400 text-red-700']] as const).map(([prov, label, active]) => (
+                  {([['M-PESA', '📱 M-Pesa', 'bg-green-50 dark:bg-green-900/30 border-green-400 text-green-700 dark:text-green-300'], ['AIRTEL', '🔴 Airtel Money', 'bg-red-50 dark:bg-red-900/30 border-red-400 text-red-700 dark:text-red-300']] as const).map(([prov, label, active]) => (
                     <button
                       key={prov}
                       type="button"
@@ -1220,7 +1220,7 @@ export const Subscriptions: React.FC = () => {
                 {/* Bank Transfer */}
                 <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider mt-3 mb-1">🏦 Bank Transfer</p>
                 <div className="grid grid-cols-2 gap-2">
-                  {([['CRDB', '🏦 CRDB Bank', 'bg-blue-50 border-blue-500 text-blue-700'], ['NBC', '🏛 NBC Bank', 'bg-sky-50 border-sky-500 text-sky-700']] as const).map(([prov, label, active]) => (
+                  {([['CRDB', '🏦 CRDB Bank', 'bg-blue-50 dark:bg-blue-900/30 border-blue-500 text-blue-700 dark:text-blue-300'], ['NBC', '🏛 NBC Bank', 'bg-sky-50 dark:bg-sky-900/30 border-sky-500 text-sky-700 dark:text-sky-300']] as const).map(([prov, label, active]) => (
                     <button
                       key={prov}
                       type="button"
@@ -1239,7 +1239,7 @@ export const Subscriptions: React.FC = () => {
                 {/* International */}
                 <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider mt-3 mb-1">🌍 International</p>
                 <div className="grid grid-cols-2 gap-2">
-                  {([['STRIPE', '💳 Stripe', 'bg-indigo-50 border-indigo-500 text-indigo-700'], ['PAYPAL', '🅿 PayPal', 'bg-yellow-50 border-yellow-500 text-yellow-700']] as const).map(([prov, label, active]) => (
+                  {([['STRIPE', '💳 Stripe', 'bg-indigo-50 dark:bg-indigo-900/30 border-indigo-500 text-indigo-700 dark:text-indigo-300'], ['PAYPAL', '🅿 PayPal', 'bg-yellow-50 dark:bg-yellow-900/30 border-yellow-500 text-yellow-700 dark:text-yellow-300']] as const).map(([prov, label, active]) => (
                     <button
                       key={prov}
                       type="button"
@@ -1264,7 +1264,7 @@ export const Subscriptions: React.FC = () => {
                     type="tel"
                     value={phoneNumber}
                     onChange={e => setPhoneNumber(e.target.value)}
-                    className="w-full h-9 rounded-lg border border-slate-200 dark:border-darkbg-border px-3 text-xs bg-transparent focus:outline-none focus:ring-2 focus:ring-primary"
+                    className="w-full h-9 rounded-lg border border-slate-200 dark:border-darkbg-border px-3 text-xs text-slate-900 dark:text-slate-100 bg-white dark:bg-darkbg-card focus:outline-none focus:ring-2 focus:ring-primary"
                   />
                   <p className="text-[10px] text-slate-400">A payment push prompt will be sent to this number.</p>
                 </div>
@@ -1277,7 +1277,7 @@ export const Subscriptions: React.FC = () => {
               )}
             </div>
 
-            <div className="p-5 border-t border-slate-100 dark:border-darkbg-border/30 bg-slate-50 dark:bg-darkbg/10 flex justify-end gap-2">
+            <div className="p-5 border-t border-slate-100 dark:border-darkbg-border/30 bg-slate-50 dark:bg-darkbg/40 flex justify-end gap-2">
               <Button variant="outline" size="sm" onClick={() => setPayingPlan(null)} disabled={isProcessingPayment}>Cancel</Button>
               <Button variant="primary" size="sm" onClick={handleProcessPayment} disabled={isProcessingPayment}>
                 {isProcessingPayment ? '⏳ Processing...' : `Pay Tsh. ${(payingPlan.price * (1 - (appliedCoupon?.discount_percent || 0) / 100) * 1.16).toLocaleString()}`}

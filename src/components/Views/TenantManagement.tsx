@@ -765,13 +765,11 @@ export const TenantManagement: React.FC = () => {
       ipAddress: getSyncRealClientIp()
     };
 
-    try {
+    const purgePromise = (async () => {
       if (deleteMode === 'SOFT_DELETE') {
-        // Soft Delete: Archive workspace & lock out login tokens
         await SuperAdminService.softDeleteTenant(tenant.id, adminContext);
         toast.success('Workspace Archived', `"${tenant.name}" soft-deleted; login access revoked.`);
       } else {
-        // Hard Purge: 360-degree multi-table cascading purge across IndexedDB, Cloud DB, and Supabase
         setDeletedTenantIds(prev => new Set(prev).add(tenant.id));
         setPgTenants(prev => prev.filter(t => t.id !== tenant.id));
         await SuperAdminService.purgeTenantData(tenant.id);
@@ -783,13 +781,20 @@ export const TenantManagement: React.FC = () => {
 
         toast.success('Tenant Purged', `"${tenant.name}" and all associated workspace data permanently destroyed.`);
       }
+    })();
 
-      setDeleteModalTenant(null);
-      fetchPgTenants();
+    // 3-second maximum timeout safeguard to guarantee modal never hangs indefinitely
+    const timeoutPromise = new Promise(resolve => setTimeout(resolve, 3000));
+
+    try {
+      await Promise.race([purgePromise, timeoutPromise]);
     } catch (err: any) {
       toast.error('Deletion Error', err.message || 'Failed to complete workspace deletion.');
     } finally {
       setIsDeleting(false);
+      setDeleteModalTenant(null);
+      setDeleteConfirmationText('');
+      fetchPgTenants();
     }
   };
 
@@ -2045,6 +2050,13 @@ function TenantDetailsView({ tenant, onBack, onImpersonate, onForceLogout }: {
   onForceLogout: (u: DbUser) => void;
 }) {
   const [activeTab, setActiveTab] = useState<'overview' | 'performance'>('overview');
+  const { theme } = useAuth();
+  const isDark = theme === 'dark';
+  const chartGridColor = isDark ? '#2a3042' : '#E2E8F0';
+  const chartAxisColor = isDark ? '#64748b' : '#94A3B8';
+  const chartTooltipStyle = isDark
+    ? { backgroundColor: '#1e2433', border: '1px solid #2a3042', borderRadius: '8px', color: '#e2e8f0' }
+    : { backgroundColor: '#ffffff', border: '1px solid #E2E8F0', borderRadius: '8px', color: '#1e293b' };
 
   const [tenantUsers, setTenantUsers] = useState<any[]>([]);
   const [tenantBranches, setTenantBranches] = useState<any[]>([]);
@@ -2310,10 +2322,10 @@ function TenantDetailsView({ tenant, onBack, onImpersonate, onForceLogout }: {
                     <stop offset="95%" stopColor="#10B981" stopOpacity={0}/>
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
-                <XAxis dataKey="name" stroke="#94A3B8" fontSize={10} />
-                <YAxis stroke="#94A3B8" fontSize={10} />
-                <Tooltip />
+                <CartesianGrid strokeDasharray="3 3" stroke={chartGridColor} />
+                <XAxis dataKey="name" stroke={chartAxisColor} fontSize={10} />
+                <YAxis stroke={chartAxisColor} fontSize={10} />
+                <Tooltip contentStyle={chartTooltipStyle} />
                 <Area type="monotone" dataKey="SalesVolume" stroke="#10B981" fill="url(#colorSales)" strokeWidth={2} />
               </AreaChart>
             </ResponsiveContainer>

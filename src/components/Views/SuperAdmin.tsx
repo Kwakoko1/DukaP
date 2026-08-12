@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useModule, MODULE_MANIFESTS, type IndustryModule } from '../../context/ModuleContext';
+import { useAuth } from '../../context/AuthContext';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, Button, Badge } from '../UI/custom-ui';
 import { 
   Users, DollarSign, ShieldAlert,
@@ -20,32 +21,75 @@ import { AppVersionFooter } from '../Layout/AppVersionFooter';
 import { cloudDb } from '../../db/supabaseMock';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { SuperAdminService } from '../../services/superAdminService';
+import { SuperAdminAuthEngine } from '../../services/productionAuthService';
 
 export const SuperAdmin: React.FC = () => {
+  const [olapMetrics, setOlapMetrics] = useState<{
+    totalMRR: number;
+    activeTenantsCount: number;
+    activeSubscriptionsCount: number;
+    growthData: any[];
+  } | null>(null);
+
   React.useEffect(() => {
     SuperAdminService.syncPlatformRegistry().catch(err => {
       console.warn('[SuperAdmin Console] Registry auto-sync warning:', err);
     });
+
+    // Fetch Pre-Aggregated PostgreSQL OLAP Financial Analytics
+    fetch('/api/superadmin/analytics/mrr')
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data && data.success) {
+          setOlapMetrics({
+            totalMRR: data.totalMRR,
+            activeTenantsCount: data.activeTenantsCount,
+            activeSubscriptionsCount: data.activeSubscriptionsCount,
+            growthData: data.growthData
+          });
+        }
+      })
+      .catch(err => console.warn('[SuperAdmin Console] OLAP analytics fetch warning:', err));
+
+    // Connect to Server-Sent Events (SSE) Real-Time Security Stream
+    const unsubscribeSSE = SuperAdminAuthEngine.initSSEStream((ev) => {
+      console.log('[SuperAdmin SSE Event Received]:', ev);
+      if (ev.type === 'TENANT_SOFT_DELETED' || ev.type === 'TENANT_HARD_PURGED') {
+        SuperAdminService.syncPlatformRegistry().catch(() => {});
+      }
+    });
+
+    return () => unsubscribeSSE();
   }, []);
 
+  const { theme } = useAuth();
+  const isDark = theme === 'dark';
   const { activeTab, moduleStates, toggleModuleState } = useModule();
   const [moduleSearchQuery, setModuleSearchQuery] = useState('');
   const [selectedModuleFilter, setSelectedModuleFilter] = useState<'ALL' | 'ENABLED' | 'DISABLED'>('ALL');
+
+  // Theme-aware chart colors (Recharts SVG props don't support Tailwind dark: classes)
+  const chartGridColor = isDark ? '#2a3042' : '#E2E8F0';
+  const chartAxisColor = isDark ? '#64748b' : '#94A3B8';
+  const chartTooltipStyle = isDark
+    ? { backgroundColor: '#1e2433', border: '1px solid #2a3042', borderRadius: '8px', color: '#e2e8f0' }
+    : { backgroundColor: '#ffffff', border: '1px solid #E2E8F0', borderRadius: '8px', color: '#1e293b' };
 
   const handleToggleModule = (moduleName: string) => {
     toggleModuleState(moduleName);
   };
 
-  // Live real central production PostgreSQL queries (cloudDb - Exclusively Centralized)
+  // Live real central production PostgreSQL queries (cloudDb fallback)
   const tenants = useLiveQuery(() => cloudDb.cloud_tenants.filter((t: any) => !t.deleted_at).toArray()) || [];
   const subscriptions = useLiveQuery(() => cloudDb.cloud_subscriptions.toArray()) || [];
   const branchesCount = useLiveQuery(() => cloudDb.cloud_branches.count()) || 0;
 
   const realMRR = useMemo(() => {
+    if (olapMetrics && olapMetrics.totalMRR !== undefined) return olapMetrics.totalMRR;
     let total = 0;
     const activeSubs = subscriptions.filter((s: any) => s.status === 'ACTIVE');
     for (const sub of activeSubs) {
-      const p = sub.plan_id.toLowerCase();
+      const p = (sub.plan_id || '').toLowerCase();
       let rate = 0;
       if (p.includes('basic')) rate = 25000;
       else if (p.includes('professional') || p.includes('growth')) rate = 55000;
@@ -53,7 +97,7 @@ export const SuperAdmin: React.FC = () => {
       total += rate;
     }
     return total;
-  }, [subscriptions]);
+  }, [subscriptions, olapMetrics]);
 
   const tenantsThisWeek = useMemo(() => {
     const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
@@ -61,6 +105,9 @@ export const SuperAdmin: React.FC = () => {
   }, [tenants]);
 
   const growthChartData = useMemo(() => {
+    if (olapMetrics && olapMetrics.growthData && olapMetrics.growthData.length > 0) {
+      return olapMetrics.growthData;
+    }
     const data = [];
     const now = new Date();
     for (let i = 5; i >= 0; i--) {
@@ -78,7 +125,7 @@ export const SuperAdmin: React.FC = () => {
       });
     }
     return data;
-  }, [tenants, subscriptions]);
+  }, [tenants, subscriptions, olapMetrics]);
 
   const sysLogs = useMemo(() => {
     const logs = [];
@@ -209,10 +256,10 @@ export const SuperAdmin: React.FC = () => {
                           <stop offset="95%" stopColor="#10B981" stopOpacity={0}/>
                         </linearGradient>
                       </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" className="dark:stroke-darkbg-border/30" />
-                      <XAxis dataKey="name" stroke="#94A3B8" fontSize={10} />
-                      <YAxis stroke="#94A3B8" fontSize={10} />
-                      <Tooltip />
+                      <CartesianGrid strokeDasharray="3 3" stroke={chartGridColor} />
+                      <XAxis dataKey="name" stroke={chartAxisColor} fontSize={10} />
+                      <YAxis stroke={chartAxisColor} fontSize={10} />
+                      <Tooltip contentStyle={chartTooltipStyle} />
                       <Area type="monotone" dataKey="Tenants" stroke="#0F62FE" fill="url(#colorTenants)" strokeWidth={2} />
                       <Area type="monotone" dataKey="Subscriptions" stroke="#10B981" fill="url(#colorSubscriptions)" strokeWidth={2} />
                     </AreaChart>

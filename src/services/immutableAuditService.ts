@@ -90,6 +90,22 @@ class ImmutableAuditService {
       });
     } catch (_) {}
 
+    // Dispatch to server immutable platform_audit_trail table
+    try {
+      fetch('/api/superadmin/audit-logs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          actorId: payload.userId,
+          actorName: payload.userName,
+          action: payload.action,
+          targetTenant: payload.tenantId,
+          beforeState: { entity: payload.entity, entityId: payload.entityId },
+          afterState: { hash: record.hash, prevHash: record.prev_hash }
+        })
+      }).catch(() => {});
+    } catch (_) {}
+
     return record;
   }
 

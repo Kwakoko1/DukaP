@@ -1,6 +1,7 @@
 import { db, type Product, type ProductVariant, type Category, type Brand, saveProductAndVariants, syncParentStock } from '../db/dexie';
 import { cloudDb } from '../db/supabaseMock';
 import { supabase } from '../db/supabaseClient';
+import { handleDeleteEntity } from './crossTabSyncService';
 
 export interface UserContext {
   id: string;
@@ -547,8 +548,8 @@ export class ProductService {
         }
       }
 
-      // d. Delete Parent Product Row
-      await db.products.delete(id);
+      // d. Write Tombstone Record into IndexedDB
+      await handleDeleteEntity(db, 'products', id, user.tenant_id, user.branch_id);
 
       // e. Immutable Security Audit Log
       await db.securityAuditLogs.put({
@@ -587,15 +588,15 @@ export class ProductService {
     const primaryBranchId = tenantBranches.length > 0 ? tenantBranches[0].id : 'branch-main';
 
     for (const cp of cloudProducts) {
-      if (cp.deletedAt || (cp as any).deleted_at || (cp as any).status === 'Inactive') {
-        // Cascade-delete variants before removing the product record
+      if (cp.deletedAt || (cp as any).deleted_at || (cp as any).deleted) {
+        // Cascade-delete variants and preserve tombstone for product
         const orphanVariants = await db.productVariants.where('productId').equals(cp.id).toArray();
         for (const v of orphanVariants) {
           await db.productVariants.delete(v.id);
           await db.stockBalance.where('variant_id').equals(v.id).delete();
         }
         await db.stockBalance.where('product_id').equals(cp.id).delete();
-        await db.products.delete(cp.id);
+        await handleDeleteEntity(db, 'products', cp.id, tenantId);
         continue;
       }
 
@@ -951,13 +952,13 @@ export async function deleteCategory(idOrName: string, tenantId?: string, reassi
   registerDeletedCategoryName(catId);
   registerDeletedCategoryName(catName);
 
-  // 1. Delete category records matching ID or Name
+  // 1. Write Tombstones for category records matching ID or Name
   if (catRecord) {
-    await db.categories.delete(catRecord.id);
+    await handleDeleteEntity(db, 'categories', catRecord.id, tid);
   }
   const matchingCats = await db.categories.filter(c => c.id === catId || (Boolean(c.name) && c.name.toLowerCase() === catName.toLowerCase())).toArray();
   for (const mc of matchingCats) {
-    await db.categories.delete(mc.id);
+    await handleDeleteEntity(db, 'categories', mc.id, tid);
   }
 
   // 2. Reassign / clear category on all matching products
@@ -1080,13 +1081,13 @@ export async function deleteBrand(idOrName: string, tenantId?: string, reassignT
   registerDeletedBrandName(brandId);
   registerDeletedBrandName(brandName);
 
-  // 1. Delete brand records matching ID or Name
+  // 1. Write Tombstones for brand records matching ID or Name
   if (brandRecord) {
-    await db.brands.delete(brandRecord.id);
+    await handleDeleteEntity(db, 'brands', brandRecord.id, tid);
   }
   const matchingBrands = await db.brands.filter(b => b.id === brandId || (Boolean(b.name) && b.name.toLowerCase() === brandName.toLowerCase())).toArray();
   for (const mb of matchingBrands) {
-    await db.brands.delete(mb.id);
+    await handleDeleteEntity(db, 'brands', mb.id, tid);
   }
 
   // 2. Reassign / clear brand on all matching products

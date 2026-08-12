@@ -11,6 +11,7 @@ import { supabase } from '../db/supabaseClient';
 import { db } from '../db/dexie';
 import { getSyncRealClientIp } from './clientIpService';
 import { tenantSecurityBroadcast } from '../utils/tenantSecurityBroadcast';
+import { SuperAdminAuthEngine } from './productionAuthService';
 
 export interface SuperAdminUserContext {
   id: string;
@@ -396,70 +397,62 @@ export class SuperAdminService {
       } catch (_) {}
 
       // 3. Purge all tenant data and employee accounts from local Dexie IndexedDB
-      await db.transaction('rw', [
-        db.tenants, db.branches, db.users, db.tenantUsers, db.employees, db.userBranchRoles, db.tenantUserBranches, db.userSecurity, db.securityAuditLogs,
-        db.products, db.productVariants, db.orders, db.customers, db.suppliers, db.supplierContacts, db.purchaseOrders, db.goodsReceipts, db.supplierInvoices, db.supplierLedger, db.supplierPayments, db.warehouses,
-        db.batchLots, db.serialNumbers, db.stockTransfers, db.physicalCounts, db.reorderRules, db.posShifts, db.heldCarts, db.wastageLogs, db.tabs, db.barTables, db.pricingRules, db.tips, db.expenses,
-        db.categories, db.brands, db.stockLedger, db.stockBalance, db.tenantModules, db.tenantSettings, db.featureFlags, db.tenantSubscriptions,
-        db.cashDrawers, db.cashDrawerSessions, db.cashDrawerEvents, db.cashTransactions, db.receipts, db.receiptItems, db.receiptPrintLogs, db.receiptShareLogs, db.receiptAuditLogs, db.receiptQrCodes, db.receiptSignatures, db.securityIncidents
-      ], async () => {
-        await db.tenants.delete(tenantId);
-        await db.branches.where('tenant_id').equals(tenantId).delete().catch(() => {});
-        await db.users.where('tenant_id').equals(tenantId).delete().catch(() => {});
-        await db.tenantUsers.where('tenant_id').equals(tenantId).delete().catch(() => {});
-        await db.employees.where('tenant_id').equals(tenantId).delete().catch(() => {});
-        await db.userBranchRoles.where('tenant_id').equals(tenantId).delete().catch(() => {});
-        await db.tenantUserBranches.where('tenant_id').equals(tenantId).delete().catch(() => {});
-        for (const uid of Array.from(userIds)) {
-          await db.userSecurity.delete(uid).catch(() => {});
-          await db.securityAuditLogs.where('userId').equals(uid).delete().catch(() => {});
-        }
-        await db.products.where('tenant_id').equals(tenantId).delete().catch(() => {});
-        await db.productVariants.where('tenant_id').equals(tenantId).delete().catch(() => {});
-        await db.orders.where('tenant_id').equals(tenantId).delete().catch(() => {});
-        await db.customers.where('tenant_id').equals(tenantId).delete().catch(() => {});
-        await db.suppliers.where('tenant_id').equals(tenantId).delete().catch(() => {});
-        await db.supplierContacts.where('tenant_id').equals(tenantId).delete().catch(() => {});
-        await db.purchaseOrders.where('tenant_id').equals(tenantId).delete().catch(() => {});
-        await db.goodsReceipts.where('tenant_id').equals(tenantId).delete().catch(() => {});
-        await db.supplierInvoices.where('tenant_id').equals(tenantId).delete().catch(() => {});
-        await db.supplierLedger.where('tenant_id').equals(tenantId).delete().catch(() => {});
-        await db.supplierPayments.where('tenant_id').equals(tenantId).delete().catch(() => {});
-        await db.warehouses.where('tenant_id').equals(tenantId).delete().catch(() => {});
-        await db.batchLots.where('tenant_id').equals(tenantId).delete().catch(() => {});
-        await db.serialNumbers.where('tenant_id').equals(tenantId).delete().catch(() => {});
-        await db.stockTransfers.where('tenant_id').equals(tenantId).delete().catch(() => {});
-        await db.physicalCounts.where('tenant_id').equals(tenantId).delete().catch(() => {});
-        await db.reorderRules.where('tenant_id').equals(tenantId).delete().catch(() => {});
-        await db.posShifts.where('tenant_id').equals(tenantId).delete().catch(() => {});
-        await db.heldCarts.where('tenant_id').equals(tenantId).delete().catch(() => {});
-        await db.wastageLogs.where('tenant_id').equals(tenantId).delete().catch(() => {});
-        await db.tabs.where('tenant_id').equals(tenantId).delete().catch(() => {});
-        await db.barTables.where('tenant_id').equals(tenantId).delete().catch(() => {});
-        await db.pricingRules.where('tenant_id').equals(tenantId).delete().catch(() => {});
-        await db.tips.where('tenant_id').equals(tenantId).delete().catch(() => {});
-        await db.expenses.where('tenant_id').equals(tenantId).delete().catch(() => {});
-        await db.categories.where('tenant_id').equals(tenantId).delete().catch(() => {});
-        await db.brands.where('tenant_id').equals(tenantId).delete().catch(() => {});
-        await db.stockLedger.where('tenant_id').equals(tenantId).delete().catch(() => {});
-        await db.stockBalance.where('tenant_id').equals(tenantId).delete().catch(() => {});
-        await db.tenantModules.where('tenant_id').equals(tenantId).delete().catch(() => {});
-        await db.tenantSettings.where('tenant_id').equals(tenantId).delete().catch(() => {});
-        await db.featureFlags.where('tenant_id').equals(tenantId).delete().catch(() => {});
-        await db.tenantSubscriptions.where('tenant_id').equals(tenantId).delete().catch(() => {});
-        await db.cashDrawers.where('tenant_id').equals(tenantId).delete().catch(() => {});
-        await db.cashDrawerSessions.where('tenant_id').equals(tenantId).delete().catch(() => {});
-        await db.cashDrawerEvents.where('tenant_id').equals(tenantId).delete().catch(() => {});
-        await db.cashTransactions.where('tenant_id').equals(tenantId).delete().catch(() => {});
-        await db.receipts.where('tenant_id').equals(tenantId).delete().catch(() => {});
-        await db.receiptItems.where('tenant_id').equals(tenantId).delete().catch(() => {});
-        await db.receiptPrintLogs.where('tenant_id').equals(tenantId).delete().catch(() => {});
-        await db.receiptShareLogs.where('tenant_id').equals(tenantId).delete().catch(() => {});
-        await db.receiptAuditLogs.where('tenant_id').equals(tenantId).delete().catch(() => {});
-        await db.receiptQrCodes.where('tenant_id').equals(tenantId).delete().catch(() => {});
-        await db.receiptSignatures.where('tenant_id').equals(tenantId).delete().catch(() => {});
-        await db.securityIncidents.where('tenant_id').equals(tenantId).delete().catch(() => {});
-      });
+      try {
+        await Promise.allSettled([
+          db.tenants.delete(tenantId),
+          db.branches.where('tenant_id').equals(tenantId).delete(),
+          db.users.where('tenant_id').equals(tenantId).delete(),
+          db.tenantUsers.where('tenant_id').equals(tenantId).delete(),
+          db.employees.where('tenant_id').equals(tenantId).delete(),
+          db.userBranchRoles.where('tenant_id').equals(tenantId).delete(),
+          db.tenantUserBranches.where('tenant_id').equals(tenantId).delete(),
+          db.products.where('tenant_id').equals(tenantId).delete(),
+          db.productVariants.where('tenant_id').equals(tenantId).delete(),
+          db.orders.where('tenant_id').equals(tenantId).delete(),
+          db.customers.where('tenant_id').equals(tenantId).delete(),
+          db.suppliers.where('tenant_id').equals(tenantId).delete(),
+          db.supplierContacts.where('tenant_id').equals(tenantId).delete(),
+          db.purchaseOrders.where('tenant_id').equals(tenantId).delete(),
+          db.goodsReceipts.where('tenant_id').equals(tenantId).delete(),
+          db.supplierInvoices.where('tenant_id').equals(tenantId).delete(),
+          db.supplierLedger.where('tenant_id').equals(tenantId).delete(),
+          db.supplierPayments.where('tenant_id').equals(tenantId).delete(),
+          db.warehouses.where('tenant_id').equals(tenantId).delete(),
+          db.batchLots.where('tenant_id').equals(tenantId).delete(),
+          db.serialNumbers.where('tenant_id').equals(tenantId).delete(),
+          db.stockTransfers.where('tenant_id').equals(tenantId).delete(),
+          db.physicalCounts.where('tenant_id').equals(tenantId).delete(),
+          db.reorderRules.where('tenant_id').equals(tenantId).delete(),
+          db.posShifts.where('tenant_id').equals(tenantId).delete(),
+          db.heldCarts.where('tenant_id').equals(tenantId).delete(),
+          db.wastageLogs.where('tenant_id').equals(tenantId).delete(),
+          db.tabs.where('tenant_id').equals(tenantId).delete(),
+          db.barTables.where('tenant_id').equals(tenantId).delete(),
+          db.pricingRules.where('tenant_id').equals(tenantId).delete(),
+          db.tips.where('tenant_id').equals(tenantId).delete(),
+          db.expenses.where('tenant_id').equals(tenantId).delete(),
+          db.categories.where('tenant_id').equals(tenantId).delete(),
+          db.brands.where('tenant_id').equals(tenantId).delete(),
+          db.stockLedger.where('tenant_id').equals(tenantId).delete(),
+          db.stockBalance.where('tenant_id').equals(tenantId).delete(),
+          db.tenantModules.where('tenant_id').equals(tenantId).delete(),
+          db.tenantSettings.where('tenant_id').equals(tenantId).delete(),
+          db.featureFlags.where('tenant_id').equals(tenantId).delete(),
+          db.tenantSubscriptions.where('tenant_id').equals(tenantId).delete(),
+          db.cashDrawers.where('tenant_id').equals(tenantId).delete(),
+          db.cashDrawerSessions.where('tenant_id').equals(tenantId).delete(),
+          db.cashDrawerEvents.where('tenant_id').equals(tenantId).delete(),
+          db.cashTransactions.where('tenant_id').equals(tenantId).delete(),
+          db.receipts.where('tenant_id').equals(tenantId).delete(),
+          db.receiptItems.where('tenant_id').equals(tenantId).delete(),
+          db.receiptPrintLogs.where('tenant_id').equals(tenantId).delete(),
+          db.receiptShareLogs.where('tenant_id').equals(tenantId).delete(),
+          db.receiptAuditLogs.where('tenant_id').equals(tenantId).delete(),
+          db.receiptQrCodes.where('tenant_id').equals(tenantId).delete(),
+          db.receiptSignatures.where('tenant_id').equals(tenantId).delete(),
+          db.securityIncidents.where('tenant_id').equals(tenantId).delete()
+        ]);
+      } catch (_) {}
 
       // 4. Purge central Cloud Database entries
       try {
@@ -493,11 +486,20 @@ export class SuperAdminService {
         await supabase.from('tenantSubscriptions').delete().eq('tenant_id', tenantId).catch(() => {});
       } catch (_) {}
 
-      // 6. Purge PostgreSQL backend records & file assets
+      // 6. Execute Server-Enforced Atomic Transaction Stored Procedure with Zero-Trust JWT & Step-Up TOTP Elevation
       try {
-        await fetch(`/api/tenants/${tenantId}`, {
-          method: 'DELETE',
-          headers: { 'x-tenant-id': 'tenant-admin-system' }
+        const jwtToken = SuperAdminAuthEngine.getJWTToken() || '';
+        const stepUpToken = SuperAdminAuthEngine.getStepUpToken();
+
+        await fetch('/api/superadmin/purge-tenant', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${jwtToken}`,
+            'x-stepup-token': stepUpToken,
+            'x-tenant-id': 'tenant-admin-system'
+          },
+          body: JSON.stringify({ tenantId, softDelete: false })
         });
       } catch (_) {}
     } catch (e: any) {

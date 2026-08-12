@@ -91,3 +91,65 @@ export function subscribeToCrossTabSync(callback: (event: MutationBroadcastEvent
 export function getCurrentTabId(): string {
   return CURRENT_TAB_ID;
 }
+
+/**
+ * Refactored Local Deletion Mutation Handler using Tombstone Pattern & Monotonic Clocks
+ */
+export async function handleDeleteEntity(
+  db: any,
+  entityName: string,
+  id: string,
+  tenantId?: string,
+  branchId?: string
+) {
+  try {
+    const table = db.table ? db.table(entityName) : db[entityName];
+    if (!table) return;
+
+    // 1. Fetch existing local record to get current version
+    const existing = await table.get(id);
+    const version = existing ? (Number(existing.version) || 0) + 1 : 1;
+    const now = Date.now();
+
+    // 2. Create Tombstone payload
+    const tombstone = {
+      ...(existing || { id }),
+      id,
+      tenant_id: tenantId || existing?.tenant_id || existing?.tenantId || '',
+      branch_id: branchId || existing?.branch_id || existing?.branchId || '',
+      deleted: true,
+      version,
+      updated_at: now,
+    };
+
+    // 3. Save tombstone locally to IndexedDB using .put()
+    await table.put(tombstone);
+
+    // 4. Immediately broadcast tombstone payload to other tabs/devices
+    broadcastMutation(entityName, 'DELETE', tombstone);
+
+    // 5. Queue for backend server sync
+    try {
+      if (db.syncQueue) {
+        await db.syncQueue.put({
+          id: `sync-tombstone-${id}-${now}`,
+          entity: entityName,
+          entity_id: id,
+          tenant_id: tombstone.tenant_id,
+          branch_id: tombstone.branch_id,
+          operation: 'DELETE',
+          payload: tombstone,
+          status: 'Pending',
+          priority: 2,
+          created_at: now,
+          version,
+        });
+      }
+    } catch (_) {}
+
+    return tombstone;
+  } catch (err) {
+    console.warn(`[handleDeleteEntity] Failed to apply tombstone for ${entityName}:${id}`, err);
+  }
+}
+

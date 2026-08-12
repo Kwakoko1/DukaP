@@ -1618,7 +1618,7 @@ export const UsersRoles: React.FC = () => {
                       onChange={e => setNewRoleName(e.target.value)}
                       placeholder="e.g. Floor Supervisor, Bar Tender, Storekeeper"
                       required
-                      className="w-full h-9 rounded-lg border border-slate-200 dark:border-darkbg-border px-3 text-xs bg-white dark:bg-darkbg-card focus:outline-none focus:ring-2 focus:ring-primary/30"
+                      className="w-full h-9 rounded-lg border border-slate-200 dark:border-darkbg-border px-3 text-xs text-slate-900 dark:text-slate-100 bg-white dark:bg-darkbg-card focus:outline-none focus:ring-2 focus:ring-primary/30"
                     />
                   </div>
                   <div className="flex-1 space-y-1.5">
@@ -1628,7 +1628,7 @@ export const UsersRoles: React.FC = () => {
                       value={newRoleDesc}
                       onChange={e => setNewRoleDesc(e.target.value)}
                       placeholder="Role responsibilities (optional)"
-                      className="w-full h-9 rounded-lg border border-slate-200 dark:border-darkbg-border px-3 text-xs bg-white dark:bg-darkbg-card focus:outline-none focus:ring-2 focus:ring-primary/30"
+                      className="w-full h-9 rounded-lg border border-slate-200 dark:border-darkbg-border px-3 text-xs text-slate-900 dark:text-slate-100 bg-white dark:bg-darkbg-card focus:outline-none focus:ring-2 focus:ring-primary/30"
                     />
                   </div>
                   <Button type="submit" variant="primary" className="text-xs h-9 whitespace-nowrap shrink-0">
