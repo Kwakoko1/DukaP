@@ -271,26 +271,78 @@ class ProductionSyncEngine {
       const changes = data.changes || {};
       let totalPulled = 0;
 
-      if (Array.isArray(changes.products) && changes.products.length > 0) {
-        await db.products.bulkPut(changes.products.map((p: any) => ({ ...p, syncStatus: 'synced' }))).catch(() => {});
-        totalPulled += changes.products.length;
-      }
-      if (Array.isArray(changes.productVariants) && changes.productVariants.length > 0) {
-        await db.productVariants.bulkPut(changes.productVariants.map((v: any) => ({ ...v, syncStatus: 'synced' }))).catch(() => {});
-        totalPulled += changes.productVariants.length;
-      }
-      if (Array.isArray(changes.customers) && changes.customers.length > 0) {
-        await db.customers.bulkPut(changes.customers.map((c: any) => ({ ...c, syncStatus: 'synced' }))).catch(() => {});
-        totalPulled += changes.customers.length;
-      }
-      if (Array.isArray(changes.orders) && changes.orders.length > 0) {
-        await db.orders.bulkPut(changes.orders.map((o: any) => ({ ...o, syncStatus: 'synced' }))).catch(() => {});
-        totalPulled += changes.orders.length;
-      }
-      if (Array.isArray(changes.branches) && changes.branches.length > 0) {
-        await db.branches.bulkPut(changes.branches.map((b: any) => ({ ...b, syncStatus: 'synced' }))).catch(() => {});
-        totalPulled += changes.branches.length;
-      }
+      await db.transaction('rw', [
+        db.products, db.productVariants, db.categories, db.brands,
+        db.customers, db.suppliers, db.orders, db.stockLedger, db.branches
+      ], async () => {
+        if (Array.isArray(changes.products) && changes.products.length > 0) {
+          for (const p of changes.products) {
+            if (p.deleted_at || p.deleted) {
+              await db.products.delete(p.id);
+            } else {
+              const existing = await db.products.get(p.id);
+              if (!existing || existing.syncStatus !== 'PENDING') {
+                await db.products.put({ ...p, syncStatus: 'SYNCED' });
+                totalPulled++;
+              }
+            }
+          }
+        }
+        if (Array.isArray(changes.productVariants) && changes.productVariants.length > 0) {
+          for (const v of changes.productVariants) {
+            if (v.deleted_at || v.deleted) {
+              await db.productVariants.delete(v.id);
+            } else {
+              const existing = await db.productVariants.get(v.id);
+              if (!existing || existing.syncStatus !== 'PENDING') {
+                await db.productVariants.put({ ...v, syncStatus: 'SYNCED', isSynced: 1 });
+                totalPulled++;
+              }
+            }
+          }
+        }
+        if (Array.isArray(changes.customers) && changes.customers.length > 0) {
+          for (const c of changes.customers) {
+            if (c.deleted_at || c.deleted) {
+              await db.customers.delete(c.id);
+            } else {
+              const existing = await db.customers.get(c.id) as any;
+              if (!existing || existing.syncStatus !== 'PENDING') {
+                await db.customers.put({ ...c, syncStatus: 'SYNCED' } as any);
+                totalPulled++;
+              }
+            }
+          }
+        }
+        if (Array.isArray(changes.orders) && changes.orders.length > 0) {
+          for (const o of changes.orders) {
+            if (o.deleted_at || o.deleted) {
+              await db.orders.delete(o.id);
+            } else {
+              const existing = await db.orders.get(o.id);
+              if (!existing || existing.syncStatus !== 'Pending') {
+                await db.orders.put({ ...o, syncStatus: 'Synced' });
+                totalPulled++;
+              }
+            }
+          }
+        }
+        if (Array.isArray(changes.branches) && changes.branches.length > 0) {
+          for (const b of changes.branches) {
+            if (b.deleted_at || b.deleted) {
+              await db.branches.delete(b.id);
+            } else {
+              await db.branches.put({ ...b, syncStatus: 'SYNCED' } as any);
+              totalPulled++;
+            }
+          }
+        }
+        if (Array.isArray(changes.stockLedger) && changes.stockLedger.length > 0) {
+          for (const s of changes.stockLedger) {
+            await db.stockLedger.put({ ...s, synced: true, sync_status: 'SYNCED' });
+          }
+        }
+      });
 
       localStorage.setItem(syncKey, String(data.serverTimestamp || Date.now()));
       return { pulledCount: totalPulled };
