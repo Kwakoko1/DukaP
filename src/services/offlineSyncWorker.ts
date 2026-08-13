@@ -7,6 +7,7 @@
  */
 
 import { stockLedgerSyncEngine } from './stockLedgerSyncEngine';
+import { isLeaderTab } from './tabLeaderElectionService';
 
 let syncTimerId: any = null;
 let isWorkerRunning = false;
@@ -20,17 +21,19 @@ export const offlineSyncWorker = {
     if (isWorkerRunning) return;
     isWorkerRunning = true;
 
-    // 1. Online reconnection trigger
+    // 1. Online reconnection trigger (only elected Web Locks Leader Tab flushes queue)
     if (typeof window !== 'undefined') {
       window.addEventListener('online', () => {
-        console.info('[OfflineSyncWorker] Network reconnected. Flushing all sync queues...');
+        if (!isLeaderTab()) return;
+        console.info('[OfflineSyncWorker] Network reconnected. Flushing sync queues from elected Leader Tab...');
         this.triggerSyncNow(tenantId, branchId).catch(() => {});
       });
     }
 
-    // 2. Periodic background interval
+    // 2. Periodic background interval (guaranteed single Leader execution)
     syncTimerId = setInterval(() => {
       if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+      if (!isLeaderTab()) return;
       this.triggerSyncNow(tenantId, branchId).catch(() => {});
     }, intervalMs);
 
