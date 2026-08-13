@@ -2787,6 +2787,14 @@ class DukaPosDatabase extends Dexie {
       livestockTasks: 'id, tenant_id, branch_id, farm_id, task_type, priority, status, due_date, assigned_to, created_at'
     });
 
+    // Version 38: Complete Enterprise Fleet & Vehicle Management Module Schema
+    this.version(38).stores({
+      vehicles: 'id, tenant_id, branch_id, name, type, vin, licensePlate, status, fuelType, odometer, ownerId, created_at, [tenant_id+status]',
+      fuelLogs: 'id, tenant_id, branch_id, vehicleId, date, odometer, gallonsOrLiters, costPerUnit, totalCost, isPartialFill, created_at',
+      expenseLogs: 'id, tenant_id, branch_id, vehicleId, category, amount, currency, date, description, referenceId, created_at, [vehicleId+date+category]',
+      maintenanceLogs: 'id, tenant_id, branch_id, vehicleId, title, cost, odometerAtService, serviceDate, status, created_at'
+    });
+
     const tablesWithOrigin = [
       'products', 'productVariants', 'customers', 'orders',
       'stockLedger', 'invoices', 'payments', 'suppliers',

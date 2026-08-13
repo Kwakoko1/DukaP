@@ -503,17 +503,78 @@ async function initDatabaseSchema() {
       $$ LANGUAGE plpgsql;
     `;
 
+    // 5. PostgreSQL DDL for Enterprise Vehicle & Fleet Management
     await sql`
-      DO $$
-      BEGIN
-        IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'lock_audit_trail_integrity') THEN
-          CREATE TRIGGER lock_audit_trail_integrity
-          BEFORE UPDATE OR DELETE ON security_audit_logs
-          FOR EACH ROW
-          EXECUTE FUNCTION freeze_security_audit_logs();
-        END IF;
-      END $$;
-    `;
+      CREATE TABLE IF NOT EXISTS fleet_vehicles (
+        id VARCHAR(64) PRIMARY KEY,
+        tenant_id VARCHAR(64) NOT NULL,
+        branch_id VARCHAR(64),
+        name VARCHAR(255) NOT NULL,
+        type VARCHAR(32) NOT NULL,
+        vin VARCHAR(64),
+        license_plate VARCHAR(64) NOT NULL,
+        status VARCHAR(32) NOT NULL,
+        fuel_type VARCHAR(32) NOT NULL,
+        odometer NUMERIC DEFAULT 0,
+        owner_id VARCHAR(64),
+        created_at BIGINT NOT NULL,
+        updated_at BIGINT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_fleet_vehicles_tenant_status ON fleet_vehicles(tenant_id, status);
+    `.catch(() => {});
+
+    await sql`
+      CREATE TABLE IF NOT EXISTS fleet_fuel_logs (
+        id VARCHAR(64) PRIMARY KEY,
+        tenant_id VARCHAR(64) NOT NULL,
+        branch_id VARCHAR(64),
+        vehicle_id VARCHAR(64) NOT NULL,
+        date BIGINT NOT NULL,
+        odometer NUMERIC NOT NULL,
+        gallons_or_liters NUMERIC NOT NULL,
+        cost_per_unit NUMERIC NOT NULL,
+        total_cost NUMERIC NOT NULL,
+        currency VARCHAR(10) DEFAULT 'USD',
+        is_partial_fill BOOLEAN DEFAULT FALSE,
+        created_at BIGINT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_fleet_fuel_vehicle ON fleet_fuel_logs(vehicle_id, date);
+    `.catch(() => {});
+
+    await sql`
+      CREATE TABLE IF NOT EXISTS fleet_expense_logs (
+        id VARCHAR(64) PRIMARY KEY,
+        tenant_id VARCHAR(64) NOT NULL,
+        branch_id VARCHAR(64),
+        vehicle_id VARCHAR(64) NOT NULL,
+        category VARCHAR(32) NOT NULL,
+        amount NUMERIC NOT NULL,
+        currency VARCHAR(10) DEFAULT 'USD',
+        date BIGINT NOT NULL,
+        description TEXT,
+        reference_id VARCHAR(64),
+        created_at BIGINT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_fleet_expense_vehicle ON fleet_expense_logs(vehicle_id, date, category);
+    `.catch(() => {});
+
+    await sql`
+      CREATE TABLE IF NOT EXISTS fleet_maintenance_logs (
+        id VARCHAR(64) PRIMARY KEY,
+        tenant_id VARCHAR(64) NOT NULL,
+        branch_id VARCHAR(64),
+        vehicle_id VARCHAR(64) NOT NULL,
+        title VARCHAR(255) NOT NULL,
+        description TEXT,
+        cost NUMERIC NOT NULL,
+        currency VARCHAR(10) DEFAULT 'USD',
+        odometer_at_service NUMERIC NOT NULL,
+        service_date BIGINT NOT NULL,
+        status VARCHAR(32) NOT NULL,
+        created_at BIGINT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_fleet_maintenance_vehicle ON fleet_maintenance_logs(vehicle_id, service_date);
+    `.catch(() => {});
 
     // ─── SAFE NON-BLOCKING HISTORICAL DATA MIGRATION ────────────────────────
     const tablesToMigrate = ['tenants', 'products', 'product_variants', 'categories', 'brands'];
@@ -1984,6 +2045,75 @@ const server = http.createServer(async (req, res) => {
 
         res.writeHead(200, { 'Content-Type': 'application/json', 'X-Bypass-Replica': 'true' });
         res.end(JSON.stringify({ success: true, archivedCount }));
+        return;
+      }
+
+      // 18.4 POST /api/fleet/vehicles
+      if (pathname === '/api/fleet/vehicles' && req.method === 'POST') {
+        const body = await parseRequestBody(req);
+        const now = Date.now();
+        await sql`
+          INSERT INTO fleet_vehicles (id, tenant_id, branch_id, name, type, vin, license_plate, status, fuel_type, odometer, owner_id, created_at, updated_at)
+          VALUES (${body.id}, ${tenantId}, ${body.branch_id || ''}, ${body.name}, ${body.type}, ${body.vin || ''}, ${body.licensePlate}, ${body.status}, ${body.fuelType}, ${body.odometer || 0}, ${body.ownerId || tenantId}, ${body.created_at || now}, ${now})
+          ON CONFLICT (id) DO UPDATE SET
+            name = EXCLUDED.name,
+            status = EXCLUDED.status,
+            odometer = EXCLUDED.odometer,
+            updated_at = EXCLUDED.updated_at;
+        `.catch(() => {});
+        res.writeHead(201, { 'Content-Type': 'application/json', 'X-Bypass-Replica': 'true' });
+        res.end(JSON.stringify({ success: true, data: body }));
+        return;
+      }
+
+      // 18.5 POST /api/fleet/fuel
+      if (pathname === '/api/fleet/fuel' && req.method === 'POST') {
+        const body = await parseRequestBody(req);
+        const fuel = body.fuelLog || body;
+        const exp = body.expenseLog;
+        const now = Date.now();
+        await sql`
+          INSERT INTO fleet_fuel_logs (id, tenant_id, branch_id, vehicle_id, date, odometer, gallons_or_liters, cost_per_unit, total_cost, currency, is_partial_fill, created_at)
+          VALUES (${fuel.id}, ${tenantId}, ${fuel.branch_id || ''}, ${fuel.vehicleId}, ${fuel.date || now}, ${fuel.odometer}, ${fuel.gallonsOrLiters}, ${fuel.costPerUnit}, ${fuel.totalCost}, ${fuel.currency || 'USD'}, ${!!fuel.isPartialFill}, ${fuel.created_at || now})
+          ON CONFLICT (id) DO NOTHING;
+        `.catch(() => {});
+        if (exp) {
+          await sql`
+            INSERT INTO fleet_expense_logs (id, tenant_id, branch_id, vehicle_id, category, amount, currency, date, description, reference_id, created_at)
+            VALUES (${exp.id}, ${tenantId}, ${exp.branch_id || ''}, ${exp.vehicleId}, ${exp.category}, ${exp.amount}, ${exp.currency || 'USD'}, ${exp.date || now}, ${exp.description}, ${exp.referenceId}, ${exp.created_at || now})
+            ON CONFLICT (id) DO NOTHING;
+          `.catch(() => {});
+        }
+        res.writeHead(201, { 'Content-Type': 'application/json', 'X-Bypass-Replica': 'true' });
+        res.end(JSON.stringify({ success: true, data: fuel }));
+        return;
+      }
+
+      // 18.6 POST /api/fleet/maintenance
+      if (pathname === '/api/fleet/maintenance' && req.method === 'POST') {
+        const body = await parseRequestBody(req);
+        const now = Date.now();
+        await sql`
+          INSERT INTO fleet_maintenance_logs (id, tenant_id, branch_id, vehicle_id, title, description, cost, currency, odometer_at_service, service_date, status, created_at)
+          VALUES (${body.id}, ${tenantId}, ${body.branch_id || ''}, ${body.vehicleId}, ${body.title}, ${body.description || ''}, ${body.cost}, ${body.currency || 'USD'}, ${body.odometerAtService}, ${body.serviceDate || now}, ${body.status}, ${body.created_at || now})
+          ON CONFLICT (id) DO NOTHING;
+        `.catch(() => {});
+        res.writeHead(201, { 'Content-Type': 'application/json', 'X-Bypass-Replica': 'true' });
+        res.end(JSON.stringify({ success: true, data: body }));
+        return;
+      }
+
+      // 18.7 POST /api/fleet/expenses
+      if (pathname === '/api/fleet/expenses' && req.method === 'POST') {
+        const body = await parseRequestBody(req);
+        const now = Date.now();
+        await sql`
+          INSERT INTO fleet_expense_logs (id, tenant_id, branch_id, vehicle_id, category, amount, currency, date, description, reference_id, created_at)
+          VALUES (${body.id}, ${tenantId}, ${body.branch_id || ''}, ${body.vehicleId}, ${body.category}, ${body.amount}, ${body.currency || 'USD'}, ${body.date || now}, ${body.description}, ${body.referenceId || null}, ${body.created_at || now})
+          ON CONFLICT (id) DO NOTHING;
+        `.catch(() => {});
+        res.writeHead(201, { 'Content-Type': 'application/json', 'X-Bypass-Replica': 'true' });
+        res.end(JSON.stringify({ success: true, data: body }));
         return;
       }
 

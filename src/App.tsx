@@ -34,6 +34,7 @@ const TrashCan = lazy(() => import('./components/Views/TrashCan').then(m => ({ d
 const LawFirmModule = lazy(() => import('./components/Views/LawFirm').then(m => ({ default: m.LawFirmModule })));
 const PharmacyModule = lazy(() => import('./components/Views/Pharmacy').then(m => ({ default: m.PharmacyModule })));
 const PoultryLivestockModule = lazy(() => import('./components/Views/PoultryLivestock').then(m => ({ default: m.PoultryLivestockModule })));
+const FleetManagement = lazy(() => import('./components/Views/FleetManagement').then(m => ({ default: m.FleetManagement })));
 const HelpManualConsole = lazy(() => import('./components/Views/HelpManual/HelpManualConsole').then(m => ({ default: m.HelpManualConsole })));
 import { PWAUpdateBanner } from './components/PWA/PWAUpdateBanner';
 import { useSubscription } from './hooks/useSubscription';
@@ -577,8 +578,6 @@ const DukaPosAppContent: React.FC = () => {
       case 'Daily Schedule':
       case 'Weekly Planner':
       case 'Technician Assignment':
-      case 'Route Planning':
-      case 'Job Queue':
       case 'Fleet Management':
       case 'Company Vehicles':
       case 'Driver Assignment':
@@ -586,6 +585,9 @@ const DukaPosAppContent: React.FC = () => {
       case 'Vehicle Maintenance':
       case 'GPS Tracking':
       case 'Travel Logs':
+        return <FleetManagement />;
+      case 'Route Planning':
+      case 'Job Queue':
       case 'Finance':
       case 'Income':
       case 'Project Costing':
