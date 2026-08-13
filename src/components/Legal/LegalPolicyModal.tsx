@@ -137,6 +137,13 @@ export const LegalPolicyModal: React.FC<LegalPolicyModalProps> = ({
                   Kwakoko complies with the Tanzania Personal Data Protection Act (PDPA) and international privacy frameworks (GDPR). Audit trails record all user mutations to support financial transparency and compliance audits.
                 </p>
               </div>
+
+              <div className="space-y-3 p-4 rounded-2xl bg-slate-100 dark:bg-darkbg border border-slate-200 dark:border-darkbg-border">
+                <h4 className="font-extrabold text-sm text-slate-900 dark:text-white">5. Technical Support & Compliance Contact</h4>
+                <p className="text-xs">
+                  For technical assistance, billing inquiries, or legal compliance support, contact our central team at <a href="mailto:info@kwakoko.co.tz" className="text-indigo-600 dark:text-indigo-400 font-bold hover:underline">info@kwakoko.co.tz</a> or access the <strong>Help & Manuals Console</strong> within the application.
+                </p>
+              </div>
             </div>
           )}
 

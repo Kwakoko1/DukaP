@@ -10,6 +10,7 @@ import releaseMeta from '../../release-metadata.json';
 export interface ApplicationMetadata {
   appName: string;
   copyrightHolder: string;
+  supportEmail: string;
   currentYear: number;
   version: string;
   buildNumber: string;
@@ -53,6 +54,7 @@ export const getVersionMetadata = (): ApplicationMetadata => {
   return {
     appName: 'Kwakoko',
     copyrightHolder: 'Kwakoko',
+    supportEmail: 'info@kwakoko.co.tz',
     currentYear,
     version,
     buildNumber,
