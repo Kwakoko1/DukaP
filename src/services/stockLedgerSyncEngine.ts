@@ -50,6 +50,43 @@ function generateUUID(prefix: string = 'evt'): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
 }
 
+/**
+ * Defensive Sanitization & Processing Layer for Stock Ledger Entries
+ * Prevents division by zero, variant_id key loss, and quantity sign ambiquity
+ */
+export function sanitizeAndProcessLedgerEntry(entry: any): StockLedgerEntry {
+  // A. variant_id Key Resolution Protection
+  // If coming from API as null/undefined, preserve Dexie compound index standard 'no-variant'
+  const sanitizedVariantId = (!entry.variant_id || entry.variant_id === 'null' || entry.variant_id === 'undefined') 
+    ? 'no-variant' 
+    : entry.variant_id;
+
+  // B. Weighted Average Cost (WAC) Protection
+  // Prevent division by zero and total cost dropouts by parsing numeric fields cleanly
+  const unitCost = Number(entry.unit_cost || entry.unitCost) >= 0 ? Number(entry.unit_cost || entry.unitCost) : 0;
+  const rawQtyChange = Number(entry.quantity_change || entry.quantityChange || entry.qty) || 0;
+  
+  // C. quantity_change Sign Ambiguity Resolution
+  // Strictly assign sign polarity based on the immutable transaction movement type
+  let structuredQuantity = Math.abs(rawQtyChange);
+  const outboundTypes = ['SALE', 'TRANSFER_OUT', 'DAMAGE', 'EXPIRY', 'SUPPLIER_RETURN', 'ADJUSTMENT_LOSS', 'PRODUCTION_USAGE', 'WASTAGE'];
+  const inboundTypes = ['PURCHASE_RECEIVE', 'CUSTOMER_RETURN', 'TRANSFER_IN', 'PRODUCTION_OUTPUT', 'OPENING_STOCK', 'ADJUSTMENT_GAIN'];
+
+  if (outboundTypes.includes(entry.movement_type)) {
+    structuredQuantity = -Math.abs(structuredQuantity); // Enforce negative integer
+  } else if (inboundTypes.includes(entry.movement_type)) {
+    structuredQuantity = Math.abs(structuredQuantity);  // Enforce positive integer
+  }
+
+  return {
+    ...entry,
+    variant_id: sanitizedVariantId,
+    unit_cost: unitCost,
+    quantity_change: structuredQuantity,
+    total_cost: Math.abs(structuredQuantity) * unitCost
+  };
+}
+
 export const stockLedgerSyncEngine = {
 
   /**
@@ -83,9 +120,9 @@ export const stockLedgerSyncEngine = {
     const lastVersion = lastEvent.length > 0 && lastEvent[0].event_version ? lastEvent[0].event_version : 0;
     const eventVersion = lastVersion + 1;
 
-    // 3. Create immutable ledger event
+    // 3. Create & sanitize immutable ledger event
     const eventId = generateUUID('sl');
-    const newEvent: StockLedgerEntry = {
+    const rawEvent: StockLedgerEntry = {
       ...entryInput,
       id: eventId,
       created_at: NOW,
@@ -96,6 +133,8 @@ export const stockLedgerSyncEngine = {
       sync_status: 'PENDING',
       retry_count: 0,
     };
+
+    const newEvent = sanitizeAndProcessLedgerEntry(rawEvent);
 
     // 4. Save to Dexie IndexedDB
     await db.stockLedger.put(newEvent);
@@ -143,15 +182,16 @@ export const stockLedgerSyncEngine = {
     productId: string,
     variantId?: string
   ): Promise<ProductBranchStock> {
-    const variantKey = variantId || 'no-variant';
+    const variantKey = (!variantId || variantId === 'null' || variantId === 'undefined') ? 'no-variant' : variantId;
 
     // Fetch all events for target product/variant in tenant & branch
-    const events = await db.stockLedger
+    const rawEvents = await db.stockLedger
       .where('tenant_id').equals(tenantId)
-      .and(e => e.branch_id === branchId && e.product_id === productId && (variantId ? e.variant_id === variantId : (!e.variant_id || e.variant_id === 'no-variant')))
+      .and(e => e.branch_id === branchId && e.product_id === productId && (variantKey !== 'no-variant' ? e.variant_id === variantKey : (!e.variant_id || e.variant_id === 'no-variant')))
       .toArray();
 
-    // Sort deterministically by event_version, created_at, idempotency_key
+    // Sanitize and sort deterministically by event_version, created_at, idempotency_key
+    const events = rawEvents.map(e => sanitizeAndProcessLedgerEntry(e));
     events.sort((a, b) => {
       if (a.event_version && b.event_version && a.event_version !== b.event_version) {
         return a.event_version - b.event_version;
@@ -166,19 +206,16 @@ export const stockLedgerSyncEngine = {
     let runningCost = 0;
 
     for (const evt of events) {
-      const isIncoming = INBOUND_MOVEMENT_TYPES.includes(evt.movement_type);
-      const qtyChange = Math.abs(evt.quantity_change);
-
-      if (isIncoming) {
-        const newTotalQty = runningQty + qtyChange;
-        if (newTotalQty > 0) {
-          runningCost = ((runningQty * runningCost) + (qtyChange * (evt.unit_cost || 0))) / newTotalQty;
-        } else {
-          runningCost = evt.unit_cost || 0;
-        }
-        runningQty = newTotalQty;
+      if (evt.quantity_change > 0) {
+        // Inbound stock affects WAC calculations
+        const currentTotalValue = runningQty * runningCost;
+        const inboundValue = evt.quantity_change * evt.unit_cost;
+        runningQty += evt.quantity_change;
+        
+        runningCost = runningQty > 0 ? (currentTotalValue + inboundValue) / runningQty : 0;
       } else {
-        runningQty = Math.max(0, runningQty - qtyChange);
+        // Outbound stock reduces balance, WAC remains unchanged
+        runningQty = Math.max(0, runningQty + evt.quantity_change); // evt.quantity_change is negative
       }
     }
 

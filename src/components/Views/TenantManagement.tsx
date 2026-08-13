@@ -163,7 +163,10 @@ export const TenantManagement: React.FC = () => {
     setIsFetchingPg(true);
     try {
       const res = await fetch('/api/tenants/all', {
-        headers: { 'x-tenant-id': 'tenant-admin-system' }
+        headers: { 
+          'x-tenant-id': 'tenant-admin-system',
+          'x-bypass-replica': 'true'
+        }
       });
       if (res.ok) {
         const data = await res.json();

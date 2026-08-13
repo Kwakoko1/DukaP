@@ -1120,8 +1120,8 @@ const server = http.createServer(async (req, res) => {
 
       // 2. GET /api/tenants/all — Super Admin privileged full tenant registry
       if (pathname === '/api/tenants/all' && req.method === 'GET') {
-        const allTenants = await sql`SELECT * FROM tenants WHERE (deleted_at IS NULL) ORDER BY created_at DESC`;
-        res.writeHead(200);
+        const allTenants = await sql`SELECT * FROM tenants WHERE (deleted_at IS NULL OR deleted_at = 0) ORDER BY created_at DESC`;
+        res.writeHead(200, { 'X-Bypass-Replica': 'true' });
         res.end(JSON.stringify(allTenants));
         return;
       }
@@ -1130,12 +1130,12 @@ const server = http.createServer(async (req, res) => {
       if (pathname === '/api/tenants' && req.method === 'GET') {
         let tenants = [];
         if (tenantId && tenantId !== 'tenant-admin-system') {
-          tenants = await sql`SELECT * FROM tenants WHERE id = ${tenantId} AND (deleted_at IS NULL)`;
+          tenants = await sql`SELECT * FROM tenants WHERE id = ${tenantId} AND (deleted_at IS NULL OR deleted_at = 0)`;
         } else {
           // Super admin or no scoping — return all
-          tenants = await sql`SELECT * FROM tenants WHERE (deleted_at IS NULL) ORDER BY created_at DESC`;
+          tenants = await sql`SELECT * FROM tenants WHERE (deleted_at IS NULL OR deleted_at = 0) ORDER BY created_at DESC`;
         }
-        res.writeHead(200);
+        res.writeHead(200, { 'X-Bypass-Replica': 'true' });
         res.end(JSON.stringify(tenants));
         return;
       }
