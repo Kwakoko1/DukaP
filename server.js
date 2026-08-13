@@ -492,19 +492,27 @@ async function initDatabaseSchema() {
       $$ LANGUAGE plpgsql;
     `;
 
-    // ─── IDEMPOTENT MIGRATION STEP: Legacy deleted_at normalization ─────────
-    await sql`UPDATE tenants SET deleted_at = 0 WHERE deleted_at IS NULL;`;
-    await sql`UPDATE products SET deleted_at = 0 WHERE deleted_at IS NULL;`;
-    await sql`UPDATE product_variants SET deleted_at = 0 WHERE deleted_at IS NULL;`;
+    // ─── SAFE NON-BLOCKING HISTORICAL DATA MIGRATION ────────────────────────
+    const tablesToMigrate = ['tenants', 'products', 'product_variants', 'categories', 'brands'];
+    for (const table of tablesToMigrate) {
+      try {
+        const rows = await sql(`UPDATE ${table} SET deleted_at = 0 WHERE deleted_at IS NULL`);
+        if (rows && rows.length > 0) {
+          console.info(`[CD Engine] Normalized ${rows.length} legacy rows in table: ${table}`);
+        }
+      } catch (tableErr) {
+        console.warn(`[CD Engine Warning] Table migration notice for ${table}:`, tableErr.message);
+      }
+    }
 
-    console.log(`[Neon Backend Engine] Schema initialization & enterprise extensions complete.`);
+    console.log(`[CD Engine] Idempotent DDL convergence & schema migration complete. Node ready.`);
   } catch (err) {
-    console.error(`[Neon Backend Engine] Error initializing schema:`, err);
+    console.error(`[CD Engine Fatal] Zero-downtime boot migration error:`, err);
   }
 }
 
 initDatabaseSchema().catch((err) => {
-  console.error('[Neon Backend Engine] Fatal error initializing schema:', err);
+  console.error('[CD Engine Fatal] Error during database initialization:', err);
 });
 
 const MIME_TYPES = {
