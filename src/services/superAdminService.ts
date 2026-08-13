@@ -130,14 +130,18 @@ export class SuperAdminService {
         }
       }
 
-      // 3. Auto-heal synthesized tenant records for any active subscriptions whose tenant is missing
+      // 3. Auto-heal synthesized tenant records for any active subscriptions whose tenant is missing & clean up orphaned subscriptions
       const allTenantsList = await cloudDb.cloud_tenants.toArray().catch(() => []);
       const tenantIdSet = new Set(allTenantsList.map(t => t.id));
       const allSubsList = await cloudDb.cloud_subscriptions.toArray().catch(() => []);
 
       for (const sub of allSubsList) {
-        const subTenantId = sub.tenant_id || (sub as any).tenantId || sub.id;
-        if (subTenantId && !tenantIdSet.has(subTenantId) && subTenantId !== 'tenant-admin-system' && subTenantId !== 'tenant-admin-master') {
+        const subTenantId = sub.tenant_id || (sub as any).tenantId;
+        if (subTenantId && isTenantDeleted(subTenantId)) {
+          // Clean up orphaned subscriptions for purged or system admin tenants
+          await cloudDb.cloud_subscriptions.delete(sub.id).catch(() => {});
+          await db.tenantSubscriptions.delete(sub.id).catch(() => {});
+        } else if (subTenantId && !tenantIdSet.has(subTenantId)) {
           const healedTenant = {
             id: subTenantId,
             name: (sub as any).tenant_name || `Merchant Business (${subTenantId.substring(0, 8)})`,

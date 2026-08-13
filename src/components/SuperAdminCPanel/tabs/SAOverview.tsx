@@ -125,34 +125,40 @@ export const SAOverview: React.FC = () => {
     return Array.from(map.values());
   }) || [];
 
-  const activeSubs = useMemo(() => subscriptions.filter((s: any) => {
-    const st = (s.status || '').toUpperCase();
-    return st === 'ACTIVE' || st === 'TRIAL' || !s.status;
-  }), [subscriptions]);
-
   const tenants = useMemo(() => {
     const filtered = rawTenants.filter((t: any) => !isTenantDeleted(t));
-    if (filtered.length > 0) return filtered;
+    const existingIds = new Set(filtered.map((t: any) => t.id));
 
-    // Fallback metric reconciliation: if rawTenants has 0 merchant tenants but active subscriptions exist,
-    // synthesize tenant objects for the metrics so dashboard cards never mismatch!
-    if (activeSubs.length > 0) {
-      const subTenants = activeSubs.map((s: any) => {
-        const subId = s.tenant_id || (s as any).tenantId || s.id;
-        return {
-          id: subId,
-          name: (s as any).tenant_name || `Merchant Business (${subId.substring(0, 8)})`,
-          status: (s.status || '').toUpperCase() === 'EXPIRED' ? 'Suspended' : 'Active',
+    // Metric reconciliation: if active subscriptions exist for merchant tenants not in rawTenants, synthesize tenant objects so metrics stay in sync
+    const missingSubTenants: any[] = [];
+    for (const s of subscriptions) {
+      const st = (s.status || '').toUpperCase();
+      if (st !== 'ACTIVE' && st !== 'TRIAL' && s.status) continue;
+      const tid = s.tenant_id || (s as any).tenantId;
+      if (tid && !existingIds.has(tid) && !isTenantDeleted(tid)) {
+        existingIds.add(tid);
+        missingSubTenants.push({
+          id: tid,
+          name: (s as any).tenant_name || `Merchant Business (${tid.substring(0, 8)})`,
+          status: st === 'EXPIRED' ? 'Suspended' : 'Active',
           plan: (s as any).plan_name || s.plan_id || 'Business',
           created_at: (s as any).created_at || Date.now()
-        };
-      }).filter((t: any) => t.id && !isTenantDeleted(t));
-      if (subTenants.length > 0) return subTenants;
+        });
+      }
     }
-    return filtered;
-  }, [rawTenants, activeSubs]);
+    return [...filtered, ...missingSubTenants];
+  }, [rawTenants, subscriptions]);
 
   const activeTenantIdSet = useMemo(() => new Set(tenants.map((t: any) => t.id)), [tenants]);
+
+  const activeSubs = useMemo(() => subscriptions.filter((s: any) => {
+    const st = (s.status || '').toUpperCase();
+    const isStatusActive = st === 'ACTIVE' || st === 'TRIAL' || !s.status;
+    if (!isStatusActive) return false;
+    const tid = s.tenant_id || (s as any).tenantId;
+    if (!tid) return tenants.length > 0;
+    return !isTenantDeleted(tid);
+  }), [subscriptions, tenants]);
 
   const branches = useMemo(() => {
     const validBranches = rawBranches.filter((b: any) => !b.deleted_at);

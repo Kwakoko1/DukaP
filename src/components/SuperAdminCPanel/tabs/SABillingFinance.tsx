@@ -28,9 +28,9 @@ export const SABillingFinance: React.FC = () => {
   const rawTenants = useLiveQuery(() => cloudDb.cloud_tenants.toArray()) || [];
   const tenants = useMemo(() => rawTenants.filter((t: any) => !isTenantDeleted(t)), [rawTenants]);
 
-  const activeSubs = useMemo(() => subscriptions.filter((s: any) => s.status === 'ACTIVE'), [subscriptions]);
-  const trialSubs  = useMemo(() => subscriptions.filter((s: any) => s.status === 'TRIAL'), [subscriptions]);
-  const expiredSubs = useMemo(() => subscriptions.filter((s: any) => s.status === 'EXPIRED' || s.status === 'CANCELLED'), [subscriptions]);
+  const activeSubs = useMemo(() => subscriptions.filter((s: any) => s.status === 'ACTIVE' && !isTenantDeleted(s.tenant_id || s.tenantId)), [subscriptions]);
+  const trialSubs  = useMemo(() => subscriptions.filter((s: any) => s.status === 'TRIAL' && !isTenantDeleted(s.tenant_id || s.tenantId)), [subscriptions]);
+  const expiredSubs = useMemo(() => subscriptions.filter((s: any) => (s.status === 'EXPIRED' || s.status === 'CANCELLED') && !isTenantDeleted(s.tenant_id || s.tenantId)), [subscriptions]);
 
   const mrr = useMemo(() => activeSubs.reduce((sum: number, s: any) => sum + getRate(s.plan_id || ''), 0), [activeSubs]);
   const arr = mrr * 12;

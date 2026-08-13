@@ -90,15 +90,24 @@ export const SuperAdminCPanel: React.FC<SuperAdminCPanelProps> = ({ initialTab }
         if (!map.has(t.id)) map.set(t.id, t);
       }
       const list = Array.from(map.values()).filter((t: any) => !isTenantDeleted(t));
-      if (list.length > 0) return list.length;
+      const existingIds = new Set(list.map((t: any) => t.id));
 
-      const activeSubs = [...cSubs, ...lSubs].filter((s: any) => {
+      const subMap = new Map<string, any>();
+      for (const s of cSubs) if (s.id || s.tenant_id) subMap.set(s.id || s.tenant_id, s);
+      for (const s of lSubs) if ((s.id || s.tenant_id) && !subMap.has(s.id || s.tenant_id)) subMap.set(s.id || s.tenant_id, s);
+
+      for (const s of Array.from(subMap.values())) {
         const st = (s.status || '').toUpperCase();
-        return st === 'ACTIVE' || st === 'TRIAL' || !s.status;
-      });
-      return activeSubs.length;
-    },
-    []
+        if (st !== 'ACTIVE' && st !== 'TRIAL' && s.status) continue;
+        const tid = s.tenant_id || (s as any).tenantId;
+        if (tid && !existingIds.has(tid) && !isTenantDeleted(tid)) {
+          existingIds.add(tid);
+          list.push({ id: tid });
+        }
+      }
+
+      return list.length;
+    }
   );
 
   // Update internal tab when external initialTab prop changes
