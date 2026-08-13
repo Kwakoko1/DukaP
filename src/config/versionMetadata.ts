@@ -51,8 +51,8 @@ export const getVersionMetadata = (): ApplicationMetadata => {
   const environment = getEnvValue('VITE_APP_ENV', 'production');
 
   return {
-    appName: 'KwakoPos',
-    copyrightHolder: 'KwakoPos',
+    appName: 'Kwakoko',
+    copyrightHolder: 'Kwakoko',
     currentYear,
     version,
     buildNumber,

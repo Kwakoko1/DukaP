@@ -1,7 +1,7 @@
 {
-  "short_name": "KwakoPos",
-  "name": "KwakoPos Business Operating System",
-  "description": "The complete Business Operating System for retail, restaurants, pharmacies, SACCOs and more. Sell Smart. Grow More.",
+  "short_name": "Kwakoko",
+  "name": "Kwakoko Business Operating System",
+  "description": "The complete Business Operating System for retail, restaurants, pharmacies, SACCOs and more. Powered by KwakoPos.",
   "icons": [
     {
       "src": "/kwakopos-logo.png",
