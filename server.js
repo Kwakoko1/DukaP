@@ -492,6 +492,11 @@ async function initDatabaseSchema() {
       $$ LANGUAGE plpgsql;
     `;
 
+    // ─── IDEMPOTENT MIGRATION STEP: Legacy deleted_at normalization ─────────
+    await sql`UPDATE tenants SET deleted_at = 0 WHERE deleted_at IS NULL;`;
+    await sql`UPDATE products SET deleted_at = 0 WHERE deleted_at IS NULL;`;
+    await sql`UPDATE product_variants SET deleted_at = 0 WHERE deleted_at IS NULL;`;
+
     console.log(`[Neon Backend Engine] Schema initialization & enterprise extensions complete.`);
   } catch (err) {
     console.error(`[Neon Backend Engine] Error initializing schema:`, err);
