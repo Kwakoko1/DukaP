@@ -43,7 +43,7 @@ export const DocumentAttachmentManager: React.FC<DocumentAttachmentManagerProps>
   };
 
   useEffect(() => {
-    fetchDocs();
+    void fetchDocs();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId, entityType, entityId]);
 

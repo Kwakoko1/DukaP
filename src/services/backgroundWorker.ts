@@ -26,7 +26,7 @@ class BackgroundWorkerQueue {
       createdAt: Date.now()
     };
     this.queue.push(job);
-    this.processQueue();
+    void this.processQueue();
     return job;
   }
 

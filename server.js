@@ -492,7 +492,9 @@ async function initDatabaseSchema() {
   }
 }
 
-initDatabaseSchema();
+initDatabaseSchema().catch((err) => {
+  console.error('[Neon Backend Engine] Fatal error initializing schema:', err);
+});
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',

@@ -73,7 +73,7 @@ export function useTenantProducts(tenantId?: string) {
   }, [tenantId]);
 
   useEffect(() => {
-    fetchProducts();
+    void fetchProducts();
   }, [fetchProducts]);
 
   return { products, loading, error, refetch: fetchProducts };

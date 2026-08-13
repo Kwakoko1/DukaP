@@ -60,4 +60,7 @@ async function runHealthCheck() {
   }
 }
 
-runHealthCheck();
+runHealthCheck().catch((err) => {
+  console.error('❌ [Health Probe Fatal Error]:', err);
+  process.exit(1);
+});

@@ -35,7 +35,7 @@ export const offlineSyncWorker = {
     }, intervalMs);
 
     // 3. Register Browser Native Background Sync tag with Service Worker
-    this.registerBackgroundSync();
+    void this.registerBackgroundSync();
 
     console.info(`[OfflineSyncWorker] Sync worker active (Interval: ${intervalMs}ms).`);
   },

@@ -37,7 +37,7 @@ export const ProductionReadinessControl: React.FC = () => {
   };
 
   useEffect(() => {
-    runDiagnostics();
+    void runDiagnostics();
     const interval = setInterval(() => {
       setTelemetry(monitoringService.getTelemetry());
     }, 5000);

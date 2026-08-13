@@ -28,6 +28,7 @@ self.addEventListener('activate', (event) => {
           if (key !== CACHE_NAME) {
             return caches.delete(key);
           }
+          return Promise.resolve(false);
         })
       );
     }).then(() => self.clients.claim())
@@ -55,7 +56,9 @@ self.addEventListener('fetch', (event) => {
 
           const responseToCache = response.clone();
           caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, responseToCache);
+            return cache.put(event.request, responseToCache);
+          }).catch((err) => {
+            console.warn('[ServiceWorker] Cache put error:', err);
           });
 
           return response;

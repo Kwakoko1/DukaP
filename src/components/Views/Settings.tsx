@@ -606,7 +606,7 @@ export const Settings: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
                           value={formInventory.stockValuationMethod}
                           onChange={(e) => {
                             setFormInventory(p => ({ ...p, stockValuationMethod: e.target.value as any }));
-                            handleSaveConfig('INVENTORY', 'stockValuationMethod', e.target.value);
+                            void handleSaveConfig('INVENTORY', 'stockValuationMethod', e.target.value);
                           }}
                           className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 text-xs px-2 focus:outline-none dark:border-darkbg-border dark:bg-darkbg dark:text-white"
                         >
@@ -659,7 +659,7 @@ export const Settings: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
                           onChange={(e) => {
                             const val = e.target.value === 'true';
                             setFormTax(p => ({ ...p, vatEnabled: val }));
-                            handleSaveConfig('TAX', 'vatEnabled', val);
+                            void handleSaveConfig('TAX', 'vatEnabled', val);
                           }}
                           className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 text-xs px-2 focus:outline-none dark:border-darkbg-border dark:bg-darkbg dark:text-white"
                         >
@@ -714,7 +714,7 @@ export const Settings: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
                             onChange={(e) => {
                               const val = Number(e.target.value);
                               setFormSecurity(p => ({ ...p, maxDevices: val }));
-                              handleSaveConfig('SECURITY', 'maxDevices', val);
+                              void handleSaveConfig('SECURITY', 'maxDevices', val);
                             }}
                             className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 text-xs px-2 focus:outline-none dark:border-darkbg-border dark:bg-darkbg dark:text-white"
                           >
@@ -740,7 +740,7 @@ export const Settings: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
                             onChange={(e) => {
                               const val = e.target.value === 'true';
                               setFormSecurity(p => ({ ...p, allowMultipleSessions: val }));
-                              handleSaveConfig('SECURITY', 'allowMultipleSessions', val);
+                              void handleSaveConfig('SECURITY', 'allowMultipleSessions', val);
                             }}
                             className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 text-xs px-2 focus:outline-none dark:border-darkbg-border dark:bg-darkbg dark:text-white"
                           >
@@ -765,7 +765,7 @@ export const Settings: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
                             onChange={(e) => {
                               const val = Number(e.target.value);
                               setFormSecurity(p => ({ ...p, offlineGraceHours: val }));
-                              handleSaveConfig('SECURITY', 'offlineGraceHours', val);
+                              void handleSaveConfig('SECURITY', 'offlineGraceHours', val);
                             }}
                             className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 text-xs px-2 focus:outline-none dark:border-darkbg-border dark:bg-darkbg dark:text-white"
                           >
@@ -797,7 +797,7 @@ export const Settings: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
                             onChange={(e) => {
                               const val = e.target.value === 'true';
                               setFormSecurity(p => ({ ...p, allowBackdatedSales: val }));
-                              handleSaveConfig('SECURITY', 'allowBackdatedSales', val);
+                              void handleSaveConfig('SECURITY', 'allowBackdatedSales', val);
                             }}
                             className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 text-xs px-2 focus:outline-none dark:border-darkbg-border dark:bg-darkbg dark:text-white"
                           >
@@ -822,7 +822,7 @@ export const Settings: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
                             onChange={(e) => {
                               const val = e.target.value === 'true';
                               setFormSecurity(p => ({ ...p, allowBackdatedProducts: val }));
-                              handleSaveConfig('SECURITY', 'allowBackdatedProducts', val);
+                              void handleSaveConfig('SECURITY', 'allowBackdatedProducts', val);
                             }}
                             className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 text-xs px-2 focus:outline-none dark:border-darkbg-border dark:bg-darkbg dark:text-white"
                           >
@@ -847,7 +847,7 @@ export const Settings: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
                             onChange={(e) => {
                               const val = e.target.value === 'true';
                               setFormSecurity(p => ({ ...p, allowBackdatedInventory: val }));
-                              handleSaveConfig('SECURITY', 'allowBackdatedInventory', val);
+                              void handleSaveConfig('SECURITY', 'allowBackdatedInventory', val);
                             }}
                             className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 text-xs px-2 focus:outline-none dark:border-darkbg-border dark:bg-darkbg dark:text-white"
                           >
@@ -1429,7 +1429,7 @@ const UserManualSection: React.FC = () => {
 - Cross-Branch Stock Requisitions: Request -> Approval -> Ledger Requisition (TRANSFER-OUT from source, TRANSFER-IN to target).
 - Subscriptions & Lockout Policies: 14-day trial. Overdue subscriptions trigger read-only lock.`;
 
-    navigator.clipboard.writeText(text);
+    void navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };

@@ -127,7 +127,7 @@ export const AIInsightsView: React.FC<AIInsightsViewProps> = ({ initialTab = 'he
   }, [currentTenant?.id, user?.tenant_id, currentBranch?.id, selectedBranchId]);
 
   useEffect(() => {
-    loadEngineData();
+    void loadEngineData();
   }, [loadEngineData]);
 
   // Handle Natural Language Copilot Submit
@@ -157,7 +157,7 @@ export const AIInsightsView: React.FC<AIInsightsViewProps> = ({ initialTab = 'he
       ];
       const randomP = voicePrompts[Math.floor(Math.random() * voicePrompts.length)];
       setCopilotInput(randomP);
-      handleCopilotSubmit(randomP);
+      void handleCopilotSubmit(randomP);
     }, 2000);
   };
 
@@ -380,7 +380,7 @@ export const AIInsightsView: React.FC<AIInsightsViewProps> = ({ initialTab = 'he
               key={idx}
               onClick={() => {
                 setCopilotInput(promptText);
-                handleCopilotSubmit(promptText);
+                void handleCopilotSubmit(promptText);
               }}
               className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-indigo-50 dark:bg-darkbg dark:hover:bg-indigo-950/40 border border-slate-200 dark:border-darkbg-border text-[11px] font-semibold text-slate-700 dark:text-slate-300 hover:text-indigo-600 transition shrink-0 cursor-pointer"
             >

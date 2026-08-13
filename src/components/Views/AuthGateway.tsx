@@ -963,6 +963,7 @@ export const AuthGateway: React.FC = () => {
         return;
       }
 
+      const defaultTenantId = userTenantId || (roles.length > 0 ? roles[0].tenant_id : '');
       let tenant: any = existingTenant;
       if (!tenant && defaultTenantId) {
         // Direct query to central production database cloudDb.cloud_tenants

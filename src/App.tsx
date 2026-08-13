@@ -53,7 +53,7 @@ const DukaPosAppContent: React.FC = () => {
 
   // Initialize production database on mount (idempotent — safe to call multiple times)
   useEffect(() => {
-    initProductionDatabase();
+    void initProductionDatabase();
   }, []);
 
   // Bootstrap pull: whenever a user logs in, immediately fetch their products

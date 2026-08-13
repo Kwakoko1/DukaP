@@ -74,4 +74,7 @@ async function runCheck() {
   }
 }
 
-runCheck();
+runCheck().catch((err) => {
+  console.error('❌ [DB Health Check Fatal Error]:', err);
+  process.exit(1);
+});

@@ -6729,7 +6729,7 @@ export const Inventory: React.FC = () => {
                 placeholder="e.g. Beverages, Electronics, Grains…"
                 onKeyDown={e => {
                   if (e.key === 'Enter' && newCategoryName.trim()) {
-                    openEditor(null, { category: newCategoryName.trim() });
+                    void openEditor(null, { category: newCategoryName.trim() });
                     setNewCategoryName('');
                     setIsCategoryManagerOpen(false);
                   }
@@ -6741,7 +6741,7 @@ export const Inventory: React.FC = () => {
               style={{alignSelf:'flex-end', whiteSpace:'nowrap'}}
               onClick={() => {
                 if (!newCategoryName.trim()) return;
-                openEditor(null, { category: newCategoryName.trim() });
+                void openEditor(null, { category: newCategoryName.trim() });
                 setNewCategoryName('');
                 setIsCategoryManagerOpen(false);
               }}
@@ -6789,7 +6789,7 @@ export const Inventory: React.FC = () => {
                       className="inv-add-btn outline"
                       style={{padding:'4px 10px',fontSize:'0.75rem', marginLeft: '4px'}}
                       onClick={() => {
-                        openEditor(null, { category: c.name });
+                        void openEditor(null, { category: c.name });
                         setIsCategoryManagerOpen(false);
                       }}
                     >

@@ -408,4 +408,7 @@ async function setupPostgres() {
   }
 }
 
-setupPostgres();
+setupPostgres().catch((err) => {
+  console.error('❌ [Setup Local Postgres Fatal Error]:', err);
+  process.exit(1);
+});

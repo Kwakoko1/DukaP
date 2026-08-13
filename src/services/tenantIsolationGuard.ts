@@ -87,7 +87,7 @@ class TenantIsolationGuard {
       };
 
       this.violations.push(violation);
-      this.logViolationToCloud(violation);
+      void this.logViolationToCloud(violation);
 
       throw new Error(`[RLS Security Violation] Access Denied: Attempted to access ${resourceName} belonging to tenant "${recordTenant}".`);
     }

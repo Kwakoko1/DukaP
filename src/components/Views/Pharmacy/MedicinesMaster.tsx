@@ -65,7 +65,7 @@ export const MedicinesMaster: React.FC = () => {
 
   const categories = useMemo(() => {
     const cats = new Set(medicines.map(m => (m as any).category || 'General').filter(Boolean));
-    return ['all', ...Array.from(cats).sort()];
+    return ['all', ...Array.from(cats).sort((a, b) => a.localeCompare(b))];
   }, [medicines]);
 
   const filtered = useMemo(() => {

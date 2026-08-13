@@ -48,7 +48,7 @@ export const ReleaseCenter: React.FC = () => {
   };
 
   useEffect(() => {
-    loadData();
+    void loadData();
   }, []);
 
   const handleRollback = async () => {

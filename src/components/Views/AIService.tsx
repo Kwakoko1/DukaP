@@ -89,7 +89,7 @@ export const AIService: React.FC<AIServiceProps> = ({ isOpen, onClose }) => {
         'Show slow-moving stock'
       ];
       const randomText = voiceTexts[Math.floor(Math.random() * voiceTexts.length)];
-      handleSend(randomText);
+      void handleSend(randomText);
     }, 2000);
   };
 

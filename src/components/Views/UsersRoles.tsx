@@ -1899,7 +1899,7 @@ export const UsersRoles: React.FC = () => {
                     disabled={pinSwitching}
                     onClick={() => {
                       if (isCLR) handleKeypadClear();
-                      else if (isOK) handlePINSubmit();
+                      else if (isOK) void handlePINSubmit();
                       else handleKeypadPress(key);
                     }}
                     className={`h-12 w-12 rounded-full flex items-center justify-center font-bold text-sm transition-all active:scale-95 disabled:opacity-50 ${
@@ -2164,7 +2164,7 @@ export const UsersRoles: React.FC = () => {
                       variant="outline"
                       className="h-7 text-[10px] px-2"
                       onClick={() => {
-                        navigator.clipboard.writeText(createdEmployee.inviteUrl);
+                        void navigator.clipboard.writeText(createdEmployee.inviteUrl);
                         alert('Invite URL copied to clipboard!');
                       }}
                     >

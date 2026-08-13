@@ -414,7 +414,7 @@ export const Receipts: React.FC<ReceiptsProps> = ({ initialTab = 'history' }) =>
       // e.g. await fetch('/api/send-email', { method:'POST', body: JSON.stringify({ to: emailTo, subject: emailSubject, body: emailBody, receiptId: selectedReceipt.id }) });
       await new Promise(r => setTimeout(r, 1200)); // simulate latency
       if (user && currentTenant && currentBranch) {
-        logShare(selectedReceipt.id, currentTenant.id, currentBranch.id, user.id, user.name, 'EMAIL');
+        void logShare(selectedReceipt.id, currentTenant.id, currentBranch.id, user.id, user.name, 'EMAIL');
       }
       showToast(`Email sent to ${emailTo} ✅`);
       setShowEmailDialog(false);
@@ -438,7 +438,7 @@ export const Receipts: React.FC<ReceiptsProps> = ({ initialTab = 'history' }) =>
       // e.g. await fetch('/api/send-sms', { method:'POST', body: JSON.stringify({ to: smsPhone, receiptId: selectedReceipt.id }) });
       await new Promise(r => setTimeout(r, 900));
       if (user && currentTenant && currentBranch) {
-        logShare(selectedReceipt.id, currentTenant.id, currentBranch.id, user.id, user.name, 'SMS');
+        void logShare(selectedReceipt.id, currentTenant.id, currentBranch.id, user.id, user.name, 'SMS');
       }
       showToast(`SMS sent to ${smsPhone} ✅`);
       setShowSmsDialog(false);
@@ -646,12 +646,12 @@ export const Receipts: React.FC<ReceiptsProps> = ({ initialTab = 'history' }) =>
   const handleShare = useCallback((receipt: Receipt) => {
     shareViaWhatsApp(receipt);
     if (user && currentTenant && currentBranch) {
-      logShare(receipt.id, currentTenant.id, currentBranch.id, user.id, user.name, 'WHATSAPP');
+      void logShare(receipt.id, currentTenant.id, currentBranch.id, user.id, user.name, 'WHATSAPP');
     }
   }, [user, currentTenant, currentBranch]);
 
   const handleCopyNumber = useCallback((number: string) => {
-    navigator.clipboard.writeText(number).then(() => showToast('Receipt number copied!'));
+    void navigator.clipboard.writeText(number).then(() => showToast('Receipt number copied!'));
   }, [showToast]);
 
   // ── Template State ─────────────────────────────────────────────────────────
@@ -695,7 +695,7 @@ export const Receipts: React.FC<ReceiptsProps> = ({ initialTab = 'history' }) =>
     setAnalyticsLoading(true);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    getReceiptAnalytics(currentTenant.id, currentBranch?.id, today.getTime())
+    void getReceiptAnalytics(currentTenant.id, currentBranch?.id, today.getTime())
       .then(setAnalytics)
       .finally(() => setAnalyticsLoading(false));
   }, [activeTab, currentTenant?.id, currentBranch?.id]);
