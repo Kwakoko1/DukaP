@@ -49,6 +49,54 @@ jobs:
           NODE_ENV: test
           DATABASE_URL: postgresql://kwako_operator:test_secure_password@localhost:5432/kwakopos_test
 
+      - name: Dispatch Fail-Safe Engineering Team Notification
+        if: failure()
+        run: |
+          WEBHOOK_URL="${{ secrets.ENGINEERING_NOTIFY_WEBHOOK_URL }}"
+          if [ -n "$WEBHOOK_URL" ]; then
+            if [[ "$WEBHOOK_URL" == *"discord.com"* ]]; then
+              PAYLOAD=$(cat <<EOF
+              {
+                "username": "KwakoPos CI/CD Guard",
+                "avatar_url": "https://githubusercontent.com",
+                "embeds": [{
+                  "title": "🚨 CRITICAL: Database Migration & Deployment Failure",
+                  "description": "The latest software revision failed validation barriers. Production deployment has been blocked to protect multi-tenant isolation.",
+                  "color": 15158332,
+                  "fields": [
+                    { "name": "Repository Branch", "value": "${{ github.ref_name }}", "inline": true },
+                    { "name": "Triggered By", "value": "${{ github.actor }}", "inline": true },
+                    { "name": "Commit Hash", "value": "\`${{ github.sha }}\`", "inline": false }
+                  ],
+                  "footer": { "text": "Action Required: Check GitHub Actions workflow logs immediately." }
+                }]
+              }
+  EOF
+              )
+            else
+              PAYLOAD=$(cat <<EOF
+              {
+                "blocks": [
+                  {
+                    "type": "header",
+                    "text": { "type": "plain_text", "text": "🚨 KwakoPos Production Guard Alert", "emoji": true }
+                  },
+                  {
+                    "type": "section",
+                    "text": { "type": "mrkdwn", "text": "*Status:* Critical Container Pipeline Collapse\n*Commit:* \`${{ github.sha }}\` by *${{ github.actor }}*" }
+                  },
+                  {
+                    "type": "context",
+                    "elements": [{ "type": "mrkdwn", "text": "⚠️ Container boot aborted. Database table structures preserved safely." }]
+                  }
+                ]
+              }
+  EOF
+              )
+            fi
+            curl -X POST -H "Content-Type: application/json" -d "$PAYLOAD" "$WEBHOOK_URL" || true
+          fi
+
   deploy-to-production:
     needs: validate-and-test
     runs-on: ubuntu-latest

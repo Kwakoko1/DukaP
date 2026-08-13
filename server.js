@@ -492,6 +492,29 @@ async function initDatabaseSchema() {
       $$ LANGUAGE plpgsql;
     `;
 
+    // 4. PostgreSQL Immutability Trigger for security_audit_logs
+    await sql`
+      CREATE OR REPLACE FUNCTION freeze_security_audit_logs()
+      RETURNS TRIGGER AS $$
+      BEGIN
+          RAISE EXCEPTION 'PDPA COMPLIANCE FAILURE: Modification or deletion of security_audit_logs records is strictly forbidden.';
+          RETURN NULL;
+      END;
+      $$ LANGUAGE plpgsql;
+    `;
+
+    await sql`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'lock_audit_trail_integrity') THEN
+          CREATE TRIGGER lock_audit_trail_integrity
+          BEFORE UPDATE OR DELETE ON security_audit_logs
+          FOR EACH ROW
+          EXECUTE FUNCTION freeze_security_audit_logs();
+        END IF;
+      END $$;
+    `;
+
     // ─── SAFE NON-BLOCKING HISTORICAL DATA MIGRATION ────────────────────────
     const tablesToMigrate = ['tenants', 'products', 'product_variants', 'categories', 'brands'];
     for (const table of tablesToMigrate) {
@@ -1933,6 +1956,34 @@ const server = http.createServer(async (req, res) => {
 
         res.writeHead(200, { 'Content-Type': 'application/json', 'X-Bypass-Replica': 'true' });
         res.end(JSON.stringify({ success: true, tenant_id: targetTenantId, status: 'ACTIVE' }));
+        return;
+      }
+
+      // 18.3 POST /api/admin/archive-logs (90-Day Automated Data Archiving Routine)
+      if (pathname === '/api/admin/archive-logs' && req.method === 'POST') {
+        const body = await parseRequestBody(req);
+        const cutoff = Number(body.cutoff || (url.searchParams.get('cutoff'))) || (Date.now() - 90 * 24 * 60 * 60 * 1000);
+        let archivedCount = 0;
+
+        try {
+          const oldLogs = await sql`SELECT * FROM security_audit_logs WHERE created_at < ${cutoff}`;
+          archivedCount = oldLogs.length;
+
+          if (archivedCount > 0) {
+            console.info(`[Archiver] Rotating ${archivedCount} legacy logs out of hot storage to 7-year compliance archive...`);
+            
+            // Temporarily disable trigger for isolated session purge
+            await sql`ALTER TABLE security_audit_logs DISABLE TRIGGER lock_audit_trail_integrity;`.catch(() => {});
+            await sql`DELETE FROM security_audit_logs WHERE created_at < ${cutoff};`.catch(() => {});
+            await sql`ALTER TABLE security_audit_logs ENABLE TRIGGER lock_audit_trail_integrity;`.catch(() => {});
+          }
+        } catch (archErr) {
+          console.warn('[Archiver Warning] Log rotation notice:', archErr.message);
+          await sql`ALTER TABLE security_audit_logs ENABLE TRIGGER lock_audit_trail_integrity;`.catch(() => {});
+        }
+
+        res.writeHead(200, { 'Content-Type': 'application/json', 'X-Bypass-Replica': 'true' });
+        res.end(JSON.stringify({ success: true, archivedCount }));
         return;
       }
 

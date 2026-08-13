@@ -12,6 +12,7 @@
     "release": "node scripts/release-engine.js",
     "health-check": "node scripts/health-check.js",
     "test:parser": "node scripts/test-stream-parser.js",
+    "test:audit": "node scripts/verify-audit-structures.js",
     "db:setup": "node scripts/setup-local-postgres.js",
     "db:check": "node scripts/db-health-check.js"
   },
