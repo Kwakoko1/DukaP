@@ -156,6 +156,26 @@ export class SuperAdminService {
         }
       }
 
+      // 4. Persist all active non-deleted tenant metadata to central Neon PostgreSQL server database
+      const finalTenants = await cloudDb.cloud_tenants.toArray().catch(() => []);
+      for (const t of finalTenants) {
+        if (!isTenantDeleted(t)) {
+          fetch('/api/tenants', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-tenant-id': 'tenant-admin-system' },
+            body: JSON.stringify({
+              id: t.id,
+              name: t.name,
+              plan: t.plan || 'Business',
+              status: t.status || 'Active',
+              email: t.email || '',
+              business_type: t.business_type || 'Retail',
+              created_at: t.created_at || Date.now()
+            })
+          }).catch(() => {});
+        }
+      }
+
       console.log('[SuperAdminService] Platform registry synchronization complete.');
     } catch (err) {
       console.warn('[SuperAdminService] Sync platform registry failed:', err);
