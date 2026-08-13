@@ -17,6 +17,7 @@ import { tenantRecoveryService } from '../../services/tenantRecoveryService';
 import { SuperAdminService } from '../../services/superAdminService';
 import { versionMetadata } from '../../config/versionMetadata';
 import { Html5Qrcode } from 'html5-qrcode';
+import { LegalPolicyModal, type LegalTab } from '../Legal/LegalPolicyModal';
 
 export type LoginInterfaceMode = 'split-hero' | 'sleek-portal' | 'pos-kiosk' | 'workspace-launcher';
 type AuthMode = 'select' | 'tenant-login' | 'admin-login' | 'context-selection' | 'register-wizard';
@@ -157,6 +158,10 @@ export const AuthGateway: React.FC = () => {
 
   // Active view mode
   const [authMode, setAuthMode] = useState<AuthMode>('tenant-login');
+
+  // Legal Policy Modal State
+  const [legalModalOpen, setLegalModalOpen] = useState(false);
+  const [legalModalTab, setLegalModalTab] = useState<LegalTab>('privacy');
 
   // Interface Mode Selection Engine ('split-hero' | 'sleek-portal' | 'pos-kiosk' | 'workspace-launcher')
   const [interfaceMode, setInterfaceMode] = useState<LoginInterfaceMode>(() => {
@@ -2565,8 +2570,8 @@ export const AuthGateway: React.FC = () => {
 </main>
 
       {/* Production Clean Full-Bleed End-to-End Login Page Footer Strip */}
-      <footer className="lg:col-span-12 w-full border-t border-slate-200/80 dark:border-darkbg-border bg-white dark:bg-darkbg-card px-6 py-3.5 shadow-sm flex items-center justify-center text-xs select-none z-20">
-        <div className="flex items-center justify-center space-x-1.5 flex-wrap gap-y-1 text-[11px] font-medium text-slate-400 dark:text-slate-500">
+      <footer className="lg:col-span-12 w-full border-t border-slate-200/80 dark:border-darkbg-border bg-white dark:bg-darkbg-card px-6 py-3.5 shadow-sm flex items-center justify-between text-xs select-none z-20 flex-wrap gap-3">
+        <div className="flex items-center space-x-1.5 flex-wrap gap-y-1 text-[11px] font-medium text-slate-400 dark:text-slate-500">
           <span className="font-semibold text-slate-600 dark:text-slate-300">{versionMetadata.appName}</span>
           <span>&copy; {versionMetadata.currentYear}</span>
           <span className="text-slate-300 dark:text-slate-700">&bull;</span>
@@ -2574,7 +2579,40 @@ export const AuthGateway: React.FC = () => {
           <span className="text-slate-300 dark:text-slate-700">&bull;</span>
           <span>Build <code className="font-mono text-[10px] bg-slate-100 dark:bg-slate-800/80 px-1.5 py-0.5 rounded text-slate-500 dark:text-slate-400 border border-slate-200/50 dark:border-slate-700/50">{versionMetadata.buildNumber}</code></span>
         </div>
+
+        <div className="flex items-center gap-3 text-[11px] font-bold text-slate-500 dark:text-slate-400">
+          <button 
+            type="button" 
+            onClick={() => { setLegalModalTab('privacy'); setLegalModalOpen(true); }} 
+            className="hover:text-indigo-600 dark:hover:text-indigo-400 transition hover:underline cursor-pointer"
+          >
+            Privacy Policy
+          </button>
+          <span>&bull;</span>
+          <button 
+            type="button" 
+            onClick={() => { setLegalModalTab('copyright'); setLegalModalOpen(true); }} 
+            className="hover:text-indigo-600 dark:hover:text-indigo-400 transition hover:underline cursor-pointer"
+          >
+            Copyright & IP Policy
+          </button>
+          <span>&bull;</span>
+          <button 
+            type="button" 
+            onClick={() => { setLegalModalTab('terms'); setLegalModalOpen(true); }} 
+            className="hover:text-indigo-600 dark:hover:text-indigo-400 transition hover:underline cursor-pointer"
+          >
+            Terms of Service & SLA
+          </button>
+        </div>
       </footer>
+
+      {/* Global Legal & Governance Modal */}
+      <LegalPolicyModal 
+        isOpen={legalModalOpen} 
+        onClose={() => setLegalModalOpen(false)} 
+        initialTab={legalModalTab} 
+      />
 
       {/* Mock QR Code Scanner Modal */}
       {showQRScanner && (

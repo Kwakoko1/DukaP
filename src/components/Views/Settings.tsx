@@ -23,6 +23,7 @@ import {
   type TaxConfig,
   type SecurityConfig
 } from '../../services/settingsService';
+import { LegalPolicyModal, type LegalTab } from '../Legal/LegalPolicyModal';
 import { Subscriptions } from './Subscriptions';
 import { BusinessProfile } from './BusinessProfile';
 import { AppVersionFooter } from '../Layout/AppVersionFooter';
@@ -180,6 +181,10 @@ export const Settings: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
   const [formInventory, setFormInventory] = useState<InventoryConfig>({ ...resolvedInventory });
   const [formTax, setFormTax] = useState<TaxConfig>({ ...resolvedTax });
   const [formSecurity, setFormSecurity] = useState<SecurityConfig>({ ...resolvedSecurity });
+
+  // Legal Policy Modal State
+  const [legalModalOpen, setLegalModalOpen] = useState(false);
+  const [legalModalTab, setLegalModalTab] = useState<LegalTab>('privacy');
 
   // Sync state hooks when resolved values or selected scope changes
 
@@ -861,6 +866,51 @@ export const Settings: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
                       </div>
                     </div>
                   </div>
+
+                  {/* Legal & Governance Policies Card */}
+                  <div className="p-4 rounded-2xl bg-indigo-50/60 dark:bg-indigo-950/20 border border-indigo-200/80 dark:border-indigo-900/40 space-y-3 mt-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <div className="p-2 rounded-xl bg-indigo-600 text-white shadow-xs">
+                          <ShieldCheck className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <h4 className="font-extrabold text-slate-900 dark:text-white text-xs">Legal & Data Governance Documentation</h4>
+                          <p className="text-[10px] text-slate-500 dark:text-slate-400">Review Kwakoko Privacy Policies, Copyright & IP ownership, and Terms of Service (SLA).</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="text-xs h-8 font-bold border-indigo-200 text-indigo-700 dark:text-indigo-300 dark:border-indigo-800 hover:bg-indigo-100 dark:hover:bg-indigo-900/40"
+                        onClick={() => { setLegalModalTab('privacy'); setLegalModalOpen(true); }}
+                      >
+                        Privacy Policy
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="text-xs h-8 font-bold border-indigo-200 text-indigo-700 dark:text-indigo-300 dark:border-indigo-800 hover:bg-indigo-100 dark:hover:bg-indigo-900/40"
+                        onClick={() => { setLegalModalTab('copyright'); setLegalModalOpen(true); }}
+                      >
+                        Copyright & IP Policy
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="text-xs h-8 font-bold border-indigo-200 text-indigo-700 dark:text-indigo-300 dark:border-indigo-800 hover:bg-indigo-100 dark:hover:bg-indigo-900/40"
+                        onClick={() => { setLegalModalTab('terms'); setLegalModalOpen(true); }}
+                      >
+                        Terms of Service & SLA
+                      </Button>
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -1147,6 +1197,13 @@ export const Settings: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
           </Card>
         )}
       </div>
+
+      {/* Global Legal Policy Modal */}
+      <LegalPolicyModal 
+        isOpen={legalModalOpen} 
+        onClose={() => setLegalModalOpen(false)} 
+        initialTab={legalModalTab} 
+      />
     </div>
   );
 };
