@@ -1,12 +1,12 @@
-# DukaPos User Operational Manual
+# KwakoPos User Operational Manual
 
-This operational guide outlines the user role capabilities (RBAC), checkout workflows, offline features, and inventory transfer protocols in DukaPos.
+This operational guide outlines the user role capabilities (RBAC), checkout workflows, offline features, and inventory transfer protocols in KwakoPos.
 
 ---
 
 ## 1. Role-Based Access Control (RBAC) Matrix
 
-DukaPos enforces strict functional permission boundaries per seat:
+KwakoPos enforces strict functional permission boundaries per seat:
 
 | Role | Target Users | Master Catalog Edit | POS Checkout | Branch Allocations | Financial Audit Logs | Org settings |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: |

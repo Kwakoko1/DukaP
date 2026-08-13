@@ -81,7 +81,7 @@ export const SALayout: React.FC<SALayoutProps> = ({ active, onNavigate, children
             <ShieldCheck className="h-5 w-5 text-white" />
           </div>
           <div className="min-w-0">
-            <div className="text-xs font-black tracking-widest text-slate-900 dark:text-white uppercase truncate">DukaPos</div>
+            <div className="text-xs font-black tracking-widest text-slate-900 dark:text-white uppercase truncate">KwakoPos</div>
             <div className="text-[10px] font-bold tracking-wider text-slate-500 dark:text-slate-400 uppercase truncate">Super Admin Console</div>
           </div>
         </div>
@@ -144,7 +144,7 @@ export const SALayout: React.FC<SALayoutProps> = ({ active, onNavigate, children
           <span>Logout Console</span>
         </button>
         <div className="text-[9px] font-mono text-slate-500 dark:text-slate-600 text-center">
-          DukaPos Platform © {new Date().getFullYear()}
+          KwakoPos Platform © {new Date().getFullYear()}
         </div>
       </div>
     </nav>

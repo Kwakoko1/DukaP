@@ -971,13 +971,13 @@ export async function logShare(
 
 export function shareViaWhatsApp(receipt: Receipt): void {
   const text = [
-    `🧾 *Receipt from DukaPos*`,
+    `🧾 *Receipt from KwakoPos*`,
     `Receipt No: ${receipt.receipt_number}`,
     `Amount: ${receipt.currency} ${receipt.total.toLocaleString()}`,
     `Payment: ${receipt.payment_method}`,
     `Date: ${new Date(receipt.created_at).toLocaleString()}`,
     receipt.customer_name ? `Customer: ${receipt.customer_name}` : '',
-    `\nVerify: https://dukapos.com/verify/${receipt.receipt_number}`,
+    `\nVerify: https://kwakopos.com/verify/${receipt.receipt_number}`,
   ].filter(Boolean).join('\n');
 
   const url = `https://wa.me/?text=${encodeURIComponent(text)}`;

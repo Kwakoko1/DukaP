@@ -151,7 +151,7 @@ export const MANUAL_TOPICS: ManualTopic[] = [
   },
   {
     id: 'trash_can_recovery',
-    title: 'DukaPOS Trash Can & Data Loss Prevention (DLP)',
+    title: 'KwakoPOS Trash Can & Data Loss Prevention (DLP)',
     category: '⚙️ Tenant Administration & Security',
     requiredRole: 'ADMIN_OWNER',
     description: 'Restoring deleted receipts, products, customers, and executing role-gated permanent purges.',

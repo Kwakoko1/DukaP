@@ -453,7 +453,7 @@ export const Settings: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
                 {activeTab === 'audit' && 'Configuration Audit History'}
                 {activeTab === 'bar' && 'Bar Layout & Happy Hour Rules'}
                 {activeTab === 'developer' && 'Developer & System Control Options'}
-                {activeTab === 'manual' && 'DukaPos Operational User Manual & Training Guide'}
+                {activeTab === 'manual' && 'KwakoPos Operational User Manual & Training Guide'}
               </CardTitle>
               <CardDescription>
                 {activeTab === 'pos' && 'Enforce checkout restrictions, receipt headers, printing targets, and prefix rules.'}
@@ -1443,7 +1443,7 @@ const UserManualSection: React.FC = () => {
             <BookOpen className="w-5 h-5" />
           </div>
           <div>
-            <h3 className="font-black text-amber-950 dark:text-amber-200 text-sm">DukaPos Operational User Manual</h3>
+            <h3 className="font-black text-amber-950 dark:text-amber-200 text-sm">KwakoPos Operational User Manual</h3>
             <p className="text-[11px] text-amber-800/80 dark:text-amber-300">RBAC matrices, POS checkout rules, offline sync protocols & stock requisitions.</p>
           </div>
         </div>

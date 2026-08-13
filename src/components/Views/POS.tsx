@@ -2547,7 +2547,7 @@ export const POS: React.FC = () => {
             <div className="receipt-paper">
               <div className="receipt-header">
                 <div className="flex justify-center mb-1.5">
-                  <img src="/dukapos-logo.png" alt="DukaPos Logo" className="h-9 w-auto object-contain" />
+                  <img src="/kwakopos-logo.png" alt="KwakoPos Logo" className="h-9 w-auto object-contain" />
                 </div>
                 <h4>{currentTenant.name.toUpperCase()}</h4>
                 <p className="text-[10px] m-0">Branch: {currentBranch.name}</p>

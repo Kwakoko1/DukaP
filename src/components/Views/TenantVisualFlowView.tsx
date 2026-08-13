@@ -106,10 +106,10 @@ export const TenantVisualFlowView: React.FC<TenantVisualFlowViewProps> = ({
   };
 
   return (
-    <div className="flex flex-col xl:flex-row gap-6 p-6 min-h-[620px] bg-slate-50/60 dark:bg-darkbg/40 rounded-3xl border border-slate-200 dark:border-darkbg-border">
+    <div className="flex flex-col xl:flex-row gap-5 p-5 min-h-[620px] bg-slate-50/60 dark:bg-darkbg/40 rounded-3xl border border-slate-200 dark:border-darkbg-border">
       
       {/* LEFT COLUMN: BUSINESS DIRECTORY */}
-      <div className="w-full xl:w-80 flex flex-col gap-4 bg-white dark:bg-darkbg-card p-4 rounded-2xl border border-slate-200 dark:border-darkbg-border shadow-sm">
+      <div className="w-full xl:w-72 shrink-0 flex flex-col gap-4 bg-white dark:bg-darkbg-card p-4 rounded-2xl border border-slate-200 dark:border-darkbg-border shadow-sm">
         <div className="flex items-center justify-between">
           <h3 className="font-bold text-slate-800 dark:text-slate-200 text-xs uppercase tracking-wider">Business Directory</h3>
           <span className="text-[10px] bg-slate-100 dark:bg-darkbg text-slate-600 dark:text-slate-400 px-2 py-0.5 rounded-full font-mono font-bold">
@@ -153,7 +153,7 @@ export const TenantVisualFlowView: React.FC<TenantVisualFlowViewProps> = ({
                       {getStatusBadge(tenant.status)}
                     </div>
                     <div className="flex items-center justify-between text-[11px] text-slate-400">
-                      <span className="truncate max-w-[150px] text-[10px] text-slate-400">{tenant.email || 'no-email@dukapos.com'}</span>
+                      <span className="truncate max-w-[140px] text-[10px] text-slate-400">{tenant.email || 'no-email@dukapos.com'}</span>
                       <span className="font-mono bg-slate-100 dark:bg-darkbg px-1.5 py-0.5 rounded text-[9px] font-bold text-slate-400">
                         {tenant.tenantCode || tenant.tenant_code || 'N/A'}
                       </span>
@@ -192,7 +192,7 @@ export const TenantVisualFlowView: React.FC<TenantVisualFlowViewProps> = ({
       </div>
 
       {/* RIGHT CANVAS: TOPOLOGY MAP */}
-      <div className="flex-1 bg-white dark:bg-darkbg-card border border-slate-200 dark:border-darkbg-border rounded-2xl p-6 flex flex-col justify-between shadow-sm min-h-[520px]">
+      <div className="flex-1 min-w-0 bg-white dark:bg-darkbg-card border border-slate-200 dark:border-darkbg-border rounded-2xl p-5 flex flex-col justify-between shadow-sm min-h-[520px] overflow-hidden">
         {activeTenant ? (
           <div className="flex flex-col h-full justify-between gap-6">
             
@@ -223,22 +223,22 @@ export const TenantVisualFlowView: React.FC<TenantVisualFlowViewProps> = ({
             </div>
 
             {/* INTERACTIVE FLOW CANVAS */}
-            <div className="flex-1 flex flex-col lg:flex-row items-center justify-center gap-8 lg:gap-8 relative py-6">
+            <div className="flex-1 flex flex-col lg:flex-row items-center justify-between gap-3 lg:gap-4 relative py-6 overflow-x-auto scrollbar-thin">
               
               {/* LEVEL 1: PLATFORM MASTER NODE */}
-              <div className="z-10 flex flex-col items-center">
+              <div className="z-10 flex flex-col items-center shrink-0">
                 <motion.div 
                   initial={{ scale: 0.9, opacity: 0 }}
                   animate={{ scale: 1, opacity: 1 }}
-                  className="w-52 p-5 rounded-3xl bg-slate-950 dark:bg-darkbg border border-indigo-500/40 text-white text-center shadow-2xl relative"
+                  className="w-44 p-4 rounded-3xl bg-slate-950 dark:bg-darkbg border border-indigo-500/40 text-white text-center shadow-2xl relative"
                 >
                   <div className="relative z-10 flex flex-col items-center">
-                    <div className="p-3 bg-indigo-600/30 rounded-2xl border border-indigo-500/40 mb-2.5">
-                      <Globe className="w-6 h-6 text-indigo-300" />
+                    <div className="p-2.5 bg-indigo-600/30 rounded-2xl border border-indigo-500/40 mb-2">
+                      <Globe className="w-5 h-5 text-indigo-300" />
                     </div>
-                    <span className="font-extrabold text-sm block">DukaPos Platform</span>
-                    <span className="text-[9px] text-slate-400 uppercase font-bold tracking-wider mt-0.5 block">SUPER CONSOLE</span>
-                    <div className="mt-3 flex items-center gap-1.5 bg-emerald-500/20 border border-emerald-500/30 px-3 py-0.5 rounded-full text-[9px] text-emerald-400 font-mono font-bold">
+                    <span className="font-extrabold text-xs block">KwakoPos Platform</span>
+                    <span className="text-[8px] text-slate-400 uppercase font-bold tracking-wider mt-0.5 block">SUPER CONSOLE</span>
+                    <div className="mt-2.5 flex items-center gap-1.5 bg-emerald-500/20 border border-emerald-500/30 px-2.5 py-0.5 rounded-full text-[8px] text-emerald-400 font-mono font-bold">
                       <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-ping" />
                       <span>Live Admin: Super</span>
                     </div>
@@ -247,10 +247,10 @@ export const TenantVisualFlowView: React.FC<TenantVisualFlowViewProps> = ({
               </div>
 
               {/* CONNECTOR 1: PLATFORM TO BUSINESS */}
-              <div className="hidden lg:block w-16 h-0.5 relative z-0">
+              <div className="hidden lg:block w-12 h-0.5 relative z-0 shrink-0">
                 <svg className="absolute inset-0 w-full h-full" style={{ overflow: 'visible' }}>
                   <path 
-                    d="M0,0 L64,0" 
+                    d="M0,0 L48,0" 
                     fill="none" 
                     stroke="#818cf8" 
                     strokeWidth="2.5" 
@@ -261,37 +261,37 @@ export const TenantVisualFlowView: React.FC<TenantVisualFlowViewProps> = ({
               </div>
 
               {/* LEVEL 2: ACTIVE BUSINESS NODE */}
-              <div className="z-10 flex flex-col items-center">
+              <div className="z-10 flex flex-col items-center shrink-0">
                 <motion.div 
                   initial={{ y: 15, opacity: 0 }}
                   animate={{ y: 0, opacity: 1 }}
                   key={activeTenant.id}
-                  className="w-64 p-5 rounded-3xl bg-white dark:bg-darkbg-card border-2 border-indigo-500 shadow-2xl relative flex flex-col items-center"
+                  className="w-56 p-4 rounded-3xl bg-white dark:bg-darkbg-card border-2 border-indigo-500 shadow-2xl relative flex flex-col items-center"
                 >
                   <div className="absolute -top-3 -right-2">
                     {getStatusBadge(activeTenant.status)}
                   </div>
-                  <div className="flex flex-col items-center text-center w-full">
-                    <div className="p-3 bg-indigo-50 dark:bg-indigo-950/50 rounded-2xl text-indigo-600 dark:text-indigo-400 mb-2 border border-indigo-100 dark:border-indigo-900/60">
-                      <Building2 className="w-7 h-7" />
+                  <div className="flex flex-col items-center text-center w-full min-w-0">
+                    <div className="p-2.5 bg-indigo-50 dark:bg-indigo-950/50 rounded-2xl text-indigo-600 dark:text-indigo-400 mb-1.5 border border-indigo-100 dark:border-indigo-900/60">
+                      <Building2 className="w-6 h-6" />
                     </div>
-                    <span className="font-extrabold text-base text-slate-900 dark:text-white tracking-tight block truncate max-w-full">
+                    <span className="font-extrabold text-sm text-slate-900 dark:text-white tracking-tight block truncate max-w-full">
                       {activeTenant.name}
                     </span>
-                    <span className="text-[10px] font-mono text-slate-400 bg-slate-50 dark:bg-darkbg border border-slate-200 dark:border-darkbg-border px-2.5 py-0.5 rounded-full mt-1 font-bold">
+                    <span className="text-[9px] font-mono text-slate-400 bg-slate-50 dark:bg-darkbg border border-slate-200 dark:border-darkbg-border px-2 py-0.5 rounded-full mt-1 font-bold">
                       Code: {activeTenant.tenantCode || activeTenant.tenant_code || 'N/A'}
                     </span>
 
-                    <div className="grid grid-cols-2 gap-2 w-full mt-4 border-t border-slate-100 dark:border-darkbg-border pt-3 text-center">
+                    <div className="grid grid-cols-2 gap-1.5 w-full mt-3 border-t border-slate-100 dark:border-darkbg-border pt-2 text-center">
                       <div>
-                        <span className="text-[9px] uppercase tracking-wider text-slate-400 block font-bold">PLAN</span>
-                        <span className="text-xs font-black text-indigo-600 dark:text-indigo-400 block mt-0.5">
+                        <span className="text-[8px] uppercase tracking-wider text-slate-400 block font-bold">PLAN</span>
+                        <span className="text-[11px] font-black text-indigo-600 dark:text-indigo-400 block mt-0.5">
                           {(activeTenant.plan || 'PROFESSIONAL').toUpperCase()}
                         </span>
                       </div>
                       <div>
-                        <span className="text-[9px] uppercase tracking-wider text-slate-400 block font-bold">USERS</span>
-                        <span className="text-xs font-black text-slate-700 dark:text-slate-200 block mt-0.5">
+                        <span className="text-[8px] uppercase tracking-wider text-slate-400 block font-bold">USERS</span>
+                        <span className="text-[11px] font-black text-slate-700 dark:text-slate-200 block mt-0.5">
                           {activeTenant.usersCount || 1}
                         </span>
                       </div>
@@ -301,16 +301,16 @@ export const TenantVisualFlowView: React.FC<TenantVisualFlowViewProps> = ({
               </div>
 
               {/* CONNECTOR 2: BUSINESS TO BRANCHES */}
-              <div className="hidden lg:block w-16 h-0.5 relative z-0">
+              <div className="hidden lg:block w-12 h-0.5 relative z-0 shrink-0">
                 <svg className="absolute inset-0 w-full h-full" style={{ overflow: 'visible' }}>
                   {displayBranches.map((_, idx) => {
                     const total = displayBranches.length;
                     const mid = (total - 1) / 2;
                     const diff = idx - mid;
                     const startY = 0;
-                    const endY = diff * 85;
-                    const controlX = 32;
-                    const pathD = `M 0,${startY} C ${controlX},${startY} ${controlX},${endY} 64,${endY}`;
+                    const endY = diff * 80;
+                    const controlX = 24;
+                    const pathD = `M 0,${startY} C ${controlX},${startY} ${controlX},${endY} 48,${endY}`;
 
                     return (
                       <g key={idx}>
@@ -329,7 +329,7 @@ export const TenantVisualFlowView: React.FC<TenantVisualFlowViewProps> = ({
               </div>
 
               {/* LEVEL 3: OPERATING BRANCH CARDS */}
-              <div className="z-10 flex flex-col gap-3.5 w-72">
+              <div className="z-10 flex flex-col gap-3 w-60 shrink-0">
                 <AnimatePresence mode="popLayout">
                   {displayBranches.map((branch, idx) => (
                     <motion.div
@@ -337,27 +337,27 @@ export const TenantVisualFlowView: React.FC<TenantVisualFlowViewProps> = ({
                       initial={{ x: 20, opacity: 0 }}
                       animate={{ x: 0, opacity: 1 }}
                       transition={{ delay: idx * 0.05 }}
-                      className="p-4 bg-white dark:bg-darkbg-card border border-slate-200 dark:border-darkbg-border rounded-2xl shadow-sm text-xs"
+                      className="p-3.5 bg-white dark:bg-darkbg-card border border-slate-200 dark:border-darkbg-border rounded-2xl shadow-sm text-xs"
                     >
-                      <div className="flex items-start justify-between gap-1">
-                        <div className="flex flex-col">
-                          <span className="font-bold text-slate-800 dark:text-slate-200 text-xs">{branch.name}</span>
-                          <span className="text-[10px] font-mono text-slate-400 mt-0.5 font-bold">
+                      <div className="flex items-start justify-between gap-1.5 min-w-0">
+                        <div className="flex flex-col min-w-0">
+                          <span className="font-bold text-slate-800 dark:text-slate-200 text-xs truncate max-w-[130px]">{branch.name}</span>
+                          <span className="text-[9px] font-mono text-slate-400 mt-0.5 font-bold truncate">
                             [{branch.branchCode || (idx === 0 ? 'HQ' : `TN-00${idx}`)}]
                           </span>
                         </div>
-                        <span className="bg-emerald-100 text-emerald-800 font-bold uppercase text-[9px] px-2 py-0.5 rounded-full">
+                        <span className="bg-emerald-100 text-emerald-800 font-bold uppercase text-[9px] px-2 py-0.5 rounded-full shrink-0">
                           Active
                         </span>
                       </div>
                       
                       {/* Branch Metrics */}
-                      <div className="grid grid-cols-2 gap-2 mt-3 border-t border-slate-100 dark:border-darkbg-border pt-2 text-[10px]">
-                        <div className="flex items-center gap-1">
-                          <span className="text-[10px] font-mono text-emerald-600 font-bold">$ Sales: $0</span>
+                      <div className="grid grid-cols-2 gap-1.5 mt-2.5 border-t border-slate-100 dark:border-darkbg-border pt-2 text-[9px]">
+                        <div className="flex items-center gap-1 min-w-0">
+                          <span className="font-mono text-emerald-600 font-bold truncate">$ Sales: $0</span>
                         </div>
-                        <div className="flex items-center gap-1">
-                          <span className="text-[10px] font-mono text-indigo-600 font-bold">🌐 Value: $0</span>
+                        <div className="flex items-center gap-1 min-w-0">
+                          <span className="font-mono text-indigo-600 font-bold truncate">🌐 Value: $0</span>
                         </div>
                       </div>
                     </motion.div>

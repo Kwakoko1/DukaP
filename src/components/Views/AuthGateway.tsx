@@ -1296,10 +1296,10 @@ export const AuthGateway: React.FC = () => {
       <header className="w-full bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-darkbg-border px-4 py-3 flex flex-wrap items-center justify-between gap-3 sticky top-0 z-50 shadow-sm">
         <div className="flex items-center gap-3">
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white p-1 shadow-sm border border-slate-200/80 dark:border-white/20 overflow-hidden shrink-0">
-            <img src="/dukapos-logo.png" alt="DukaPos Logo" className="h-full w-full object-contain" />
+            <img src="/kwakopos-logo.png" alt="KwakoPos Logo" className="h-full w-full object-contain" />
           </div>
           <div>
-            <span className="text-sm font-black tracking-tight text-slate-900 dark:text-white block leading-none">DukaPos</span>
+            <span className="text-sm font-black tracking-tight text-slate-900 dark:text-white block leading-none">KwakoPos</span>
             <span className="text-[9px] font-bold text-[#5b3ce4] dark:text-indigo-400 tracking-wider block mt-0.5">BUSINESS OPERATING SYSTEM</span>
           </div>
         </div>
@@ -1662,7 +1662,7 @@ export const AuthGateway: React.FC = () => {
                 
                 <div className="w-full bg-white dark:bg-darkbg-card border border-slate-200 dark:border-darkbg-border rounded-2xl shadow-xl overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-300">
                   <div className="bg-gradient-to-r from-primary to-blue-600 p-4 text-white text-center">
-                    <h2 className="text-sm font-bold tracking-tight">DukaPos Gateway</h2>
+                    <h2 className="text-sm font-bold tracking-tight">KwakoPos Gateway</h2>
                     <p className="text-[10px] text-white/80 mt-0.5">Business Operating System · Secure Multi-Tenant Access</p>
                   </div>
 

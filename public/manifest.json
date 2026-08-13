@@ -1,10 +1,10 @@
 {
-  "short_name": "DukaPos",
-  "name": "DukaPos Business Operating System",
-  "description": "The complete Business Operating System for retail, restaurants, pharmacies, SACCOs and more.",
+  "short_name": "KwakoPos",
+  "name": "KwakoPos Business Operating System",
+  "description": "The complete Business Operating System for retail, restaurants, pharmacies, SACCOs and more. Sell Smart. Grow More.",
   "icons": [
     {
-      "src": "/dukapos-logo.png",
+      "src": "/kwakopos-logo.png",
       "type": "image/png",
       "sizes": "512x512",
       "purpose": "any maskable"

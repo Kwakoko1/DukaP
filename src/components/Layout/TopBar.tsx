@@ -432,11 +432,11 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenSearch }) => {
           </button>
 
           <div className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl bg-white p-0.5 shadow-md border border-slate-200/80 dark:border-darkbg-border overflow-hidden shrink-0">
-            <img src={(currentTenant as any)?.logo_url || (currentTenant as any)?.logoUrl || "/dukapos-logo.png"} alt={currentTenant.name || "Tenant Logo"} className="h-full w-full object-contain" />
+            <img src={(currentTenant as any)?.logo_url || (currentTenant as any)?.logoUrl || "/kwakopos-logo.png"} alt={currentTenant.name || "Tenant Logo"} className="h-full w-full object-contain" />
           </div>
           <div className="truncate max-w-[150px] sm:max-w-[240px]">
             <h2 className="font-extrabold text-xs sm:text-sm text-slate-900 dark:text-white truncate leading-tight">
-              {getShortModuleName(manifest.name) || currentTenant.name || 'DukaPos'}
+              {getShortModuleName(manifest.name) || currentTenant.name || 'KwakoPos'}
             </h2>
             <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-400 truncate hidden sm:block">
               {currentTenant.name ? `${currentTenant.name} • ${role}` : role}
