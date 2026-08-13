@@ -3628,128 +3628,145 @@ export async function recordStockMovement(entryInput: Omit<StockLedgerEntry, 'id
   const created_at = entryInput.created_at || Date.now();
   const synced = false;
 
-  const variantKey = entryInput.variant_id || 'no-variant';
+  const variantKey = (!entryInput.variant_id || entryInput.variant_id === 'null' || entryInput.variant_id === 'undefined') 
+    ? 'no-variant' 
+    : entryInput.variant_id;
   
-  // 1. Fetch current balance cache
-  const cacheKey = [entryInput.branch_id, entryInput.product_id, variantKey];
-  let balance = await db.stockBalance.where('[branch_id+product_id+variant_id]').equals(cacheKey).first();
+  // Enforce strict signed polarity based on immutable movement type
+  const isOutbound = ['SALE', 'TRANSFER_OUT', 'DAMAGE', 'EXPIRY', 'SUPPLIER_RETURN', 'ADJUSTMENT_LOSS', 'PRODUCTION_USAGE', 'WASTAGE'].includes(entryInput.movement_type);
+  const mathSign = isOutbound ? -1 : 1;
+  const deltaQuantity = Math.abs(Number(entryInput.quantity_change) || 0) * mathSign;
+  const unitCost = Number(entryInput.unit_cost) >= 0 ? Number(entryInput.unit_cost) : 0;
 
-  const quantity_before = balance ? balance.current_quantity : 0;
-  const quantity_after = quantity_before + entryInput.quantity_change;
+  let ledgerEntryResult: StockLedgerEntry | null = null;
 
-  // 2. Cost calculations
-  let average_cost = balance ? balance.average_cost : 0;
-  const isIncoming = entryInput.quantity_change > 0;
-  if (isIncoming) {
-    const oldTotalCost = quantity_before * average_cost;
-    const newTotalCost = entryInput.quantity_change * entryInput.unit_cost;
-    const totalQty = quantity_after;
-    if (totalQty > 0) {
-      average_cost = (oldTotalCost + newTotalCost) / totalQty;
-    } else {
-      average_cost = entryInput.unit_cost;
-    }
-  }
-  
-  const stock_value = quantity_after * average_cost;
+  // Execute in isolated atomic Dexie read-write transaction
+  await db.transaction('rw', [db.stockBalance, db.stockLedger, db.products, db.productVariants, db.syncQueue, db.syncOutbox], async () => {
+    // 1. Fetch current balance cache matching compound index tuple [branch_id+product_id+variant_id]
+    const cacheKey = [entryInput.branch_id, entryInput.product_id, variantKey];
+    let balance = await db.stockBalance.where('[branch_id+product_id+variant_id]').equals(cacheKey).first();
 
-  const idempotency_key = (entryInput as any).idempotency_key || `idem-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-  const sync_status = (entryInput as any).sync_status || 'PENDING';
-  const event_version = (entryInput as any).event_version || Date.now();
+    const quantity_before = balance ? balance.current_quantity : 0;
+    const quantity_after = Math.max(0, quantity_before + deltaQuantity);
 
-  // 3. Save Ledger Entry
-  const ledgerEntry: StockLedgerEntry = {
-    ...entryInput,
-    id,
-    quantity_before,
-    quantity_after,
-    created_at,
-    synced,
-    idempotency_key,
-    event_version,
-    sync_status,
-    retry_count: 0
-  };
-
-  await db.stockLedger.put(ledgerEntry);
-
-  // 4. Update Balance Cache
-  const updatedBalance: ProductBranchStock = {
-    id: balance ? balance.id : `sb-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-    tenant_id: entryInput.tenant_id,
-    branch_id: entryInput.branch_id,
-    warehouse_id: entryInput.warehouse_id,
-    product_id: entryInput.product_id,
-    variant_id: variantKey,
-    current_quantity: quantity_after,
-    average_cost,
-    stock_value,
-    updated_at: created_at
-  };
-
-  await db.stockBalance.put(updatedBalance);
-
-  // 5. Update Simple Display Stock in Products / ProductVariants tables
-  if (entryInput.variant_id) {
-    const variant = await db.productVariants.get(entryInput.variant_id);
-    if (variant) {
-      const updatedVariant = { ...variant, stock: quantity_after, syncStatus: 'PENDING' as const, isSynced: 0 };
-      await db.productVariants.put(updatedVariant);
-      
-      await db.syncQueue.add({
-        actionType: 'UPDATE',
-        entityName: 'productVariants',
-        payload: updatedVariant,
-        timestamp: Date.now(),
-        status: 'Pending'
-      });
-      
-      const effectiveParentId = variant.productId || entryInput.product_id;
-      if (effectiveParentId) {
-        await syncParentStock(effectiveParentId);
+    // 2. Cost calculations (WAC)
+    let average_cost = balance ? balance.average_cost : 0;
+    if (mathSign === 1) { // Inbound stock update WAC
+      const oldTotalCost = quantity_before * average_cost;
+      const newTotalCost = Math.abs(deltaQuantity) * unitCost;
+      const totalQty = quantity_after;
+      if (totalQty > 0) {
+        average_cost = (oldTotalCost + newTotalCost) / totalQty;
+      } else {
+        average_cost = unitCost;
       }
     }
-  } else {
-    const product = await db.products.get(entryInput.product_id);
-    if (product) {
-      if (product.hasVariants) {
-        await syncParentStock(entryInput.product_id);
-      } else {
-        const updatedProd = { ...product, stock: quantity_after, syncStatus: 'PENDING' as const };
-        await db.products.put(updatedProd);
+    
+    const stock_value = quantity_after * average_cost;
 
-        const { mapProductToCloud } = await import('../services/productService');
+    const idempotency_key = (entryInput as any).idempotency_key || `idem-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const sync_status = (entryInput as any).sync_status || 'PENDING';
+    const event_version = (entryInput as any).event_version || Date.now();
+
+    // 3. Save Immutable Ledger Entry
+    const ledgerEntry: StockLedgerEntry = {
+      ...entryInput,
+      id,
+      variant_id: variantKey,
+      quantity_before,
+      quantity_change: deltaQuantity,
+      quantity_after,
+      unit_cost: unitCost,
+      total_cost: Math.abs(deltaQuantity) * unitCost,
+      created_at,
+      synced,
+      idempotency_key,
+      event_version,
+      sync_status,
+      retry_count: 0
+    };
+
+    await db.stockLedger.put(ledgerEntry);
+    ledgerEntryResult = ledgerEntry;
+
+    // 4. Update Balance Cache
+    const updatedBalance: ProductBranchStock = {
+      id: balance ? balance.id : `sb-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      tenant_id: entryInput.tenant_id,
+      branch_id: entryInput.branch_id,
+      warehouse_id: entryInput.warehouse_id,
+      product_id: entryInput.product_id,
+      variant_id: variantKey,
+      current_quantity: quantity_after,
+      average_cost,
+      stock_value,
+      updated_at: created_at
+    };
+
+    await db.stockBalance.put(updatedBalance);
+
+    // 5. Update Simple Display Stock in Products / ProductVariants tables
+    if (variantKey !== 'no-variant') {
+      const variant = await db.productVariants.get(variantKey);
+      if (variant) {
+        const updatedVariant = { ...variant, stock: quantity_after, syncStatus: 'PENDING' as const, isSynced: 0 };
+        await db.productVariants.put(updatedVariant);
+        
         await db.syncQueue.add({
           actionType: 'UPDATE',
-          entityName: 'products',
-          payload: mapProductToCloud(updatedProd),
+          entityName: 'productVariants',
+          payload: updatedVariant,
           timestamp: Date.now(),
           status: 'Pending'
         });
+        
+        const effectiveParentId = variant.productId || entryInput.product_id;
+        if (effectiveParentId) {
+          await syncParentStock(effectiveParentId);
+        }
+      }
+    } else {
+      const product = await db.products.get(entryInput.product_id);
+      if (product) {
+        if (product.hasVariants) {
+          await syncParentStock(entryInput.product_id);
+        } else {
+          const updatedProd = { ...product, stock: quantity_after, syncStatus: 'PENDING' as const };
+          await db.products.put(updatedProd);
+
+          const { mapProductToCloud } = await import('../services/productService');
+          await db.syncQueue.add({
+            actionType: 'UPDATE',
+            entityName: 'products',
+            payload: mapProductToCloud(updatedProd),
+            timestamp: Date.now(),
+            status: 'Pending'
+          });
+        }
       }
     }
-  }
 
-  // 6. Enqueue into Transactional Outbox for resilient background delivery
-  try {
-    await db.syncOutbox.put({
-      outbox_id: `outbox-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
-      operation_id: `op-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
-      idempotency_key,
-      tenant_id: entryInput.tenant_id,
-      branch_id: entryInput.branch_id,
-      entity: 'stockLedger',
-      action: 'INSERT_EVENT',
-      payload: ledgerEntry,
-      status: 'PENDING',
-      retry_count: 0,
-      max_retries: 5,
-      created_at: created_at,
-      updated_at: created_at,
-    });
-  } catch (_) {}
+    // 6. Enqueue into Transactional Outbox for resilient background delivery
+    try {
+      await db.syncOutbox.put({
+        outbox_id: `outbox-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+        operation_id: `op-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+        idempotency_key,
+        tenant_id: entryInput.tenant_id,
+        branch_id: entryInput.branch_id,
+        entity: 'stockLedger',
+        action: 'INSERT_EVENT',
+        payload: ledgerEntry,
+        status: 'PENDING',
+        retry_count: 0,
+        max_retries: 5,
+        created_at: created_at,
+        updated_at: created_at,
+      });
+    } catch (_) {}
+  });
 
-  return ledgerEntry;
+  return ledgerEntryResult!;
 }
 
 export async function recalculateStockFromLedger(productId: string, branchId: string) {

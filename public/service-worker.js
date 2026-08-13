@@ -73,19 +73,43 @@ self.addEventListener('fetch', (event) => {
   );
 });
 
-// Native Background Sync API Event Handler
+// Native Background Sync API Event Handler with Web Locks Isolation
 self.addEventListener('sync', (event) => {
   if (event.tag === 'dukapos-sync-queue') {
     event.waitUntil(
-      fetch('/api/sync/push', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Background-Sync': 'true' },
-        body: JSON.stringify({ trigger: 'sw-background-sync', timestamp: Date.now() })
-      }).then(() => {
-        console.info('[ServiceWorker] Background sync queue flush completed successfully.');
-      }).catch((err) => {
-        console.warn('[ServiceWorker] Background sync queue flush postponed:', err);
-      })
+      navigator.locks && navigator.locks.request
+        ? navigator.locks.request('sw_background_sync_lock', async () => {
+            console.info('[ServiceWorker] Background Sync Lock Acquired (sw_background_sync_lock).');
+            try {
+              const res = await fetch('/api/sync/push', {
+                method: 'POST',
+                headers: { 
+                  'Content-Type': 'application/json', 
+                  'X-Background-Sync': 'true',
+                  'X-Bypass-Replica': 'true'
+                },
+                body: JSON.stringify({ trigger: 'sw-background-sync', timestamp: Date.now() })
+              });
+              if (res.ok) {
+                console.info('[ServiceWorker] Background sync queue flush completed successfully.');
+              }
+            } catch (err) {
+              console.warn('[ServiceWorker] Background sync queue flush postponed:', err);
+            }
+          })
+        : fetch('/api/sync/push', {
+            method: 'POST',
+            headers: { 
+              'Content-Type': 'application/json', 
+              'X-Background-Sync': 'true',
+              'X-Bypass-Replica': 'true'
+            },
+            body: JSON.stringify({ trigger: 'sw-background-sync', timestamp: Date.now() })
+          }).then(() => {
+            console.info('[ServiceWorker] Background sync queue flush completed successfully.');
+          }).catch((err) => {
+            console.warn('[ServiceWorker] Background sync queue flush postponed:', err);
+          })
     );
   }
 });
