@@ -9,7 +9,12 @@ import {
   Calendar, 
   ExternalLink,
   Sliders,
-  AlertCircle
+  AlertCircle,
+  FolderOpen,
+  ChevronDown,
+  X,
+  Check,
+  ShieldCheck
 } from 'lucide-react';
 import { Button } from '../UI/custom-ui';
 
@@ -70,6 +75,8 @@ export const TenantVisualFlowView: React.FC<TenantVisualFlowViewProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTenantId, setSelectedTenantId] = useState<string | null>(null);
   const [animateFlow, setAnimateFlow] = useState(true);
+  const [isDirectoryOpen, setIsDirectoryOpen] = useState(false);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
   // Filter tenants based on search term
   const filteredTenants = tenants.filter(t => 
@@ -106,131 +113,225 @@ export const TenantVisualFlowView: React.FC<TenantVisualFlowViewProps> = ({
   };
 
   return (
-    <div className="flex flex-col xl:flex-row gap-5 p-5 min-h-[620px] bg-slate-50/60 dark:bg-darkbg/40 rounded-3xl border border-slate-200 dark:border-darkbg-border">
+    <div className="relative w-full p-5 min-h-[620px] bg-slate-50/60 dark:bg-darkbg/40 rounded-3xl border border-slate-200 dark:border-darkbg-border flex flex-col gap-4 overflow-hidden">
       
-      {/* LEFT COLUMN: BUSINESS DIRECTORY */}
-      <div className="w-full xl:w-72 shrink-0 flex flex-col gap-4 bg-white dark:bg-darkbg-card p-4 rounded-2xl border border-slate-200 dark:border-darkbg-border shadow-sm">
-        <div className="flex items-center justify-between">
-          <h3 className="font-bold text-slate-800 dark:text-slate-200 text-xs uppercase tracking-wider">Business Directory</h3>
-          <span className="text-[10px] bg-slate-100 dark:bg-darkbg text-slate-600 dark:text-slate-400 px-2 py-0.5 rounded-full font-mono font-bold">
-            {filteredTenants.length} of {tenants.length}
-          </span>
-        </div>
-
-        {/* Search */}
-        <div className="relative">
-          <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-400" />
-          <input
-            type="text"
-            placeholder="Search tenants, emails..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-8 pr-3 py-1.5 text-xs rounded-xl border border-slate-200 dark:border-darkbg-border bg-slate-50 dark:bg-darkbg text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary/20"
-          />
-        </div>
-
-        {/* Directory List */}
-        <div className="flex-1 overflow-y-auto max-h-[480px] xl:max-h-[550px] space-y-2.5 pr-1 scrollbar-thin">
-          <AnimatePresence mode="popLayout">
-            {filteredTenants.length > 0 ? (
-              filteredTenants.map((tenant) => {
-                const isSelected = tenant.id === selectedTenantId;
-                return (
-                  <motion.button
-                    key={tenant.id}
-                    layoutId={`tenant-btn-${tenant.id}`}
-                    onClick={() => setSelectedTenantId(tenant.id)}
-                    className={`w-full text-left p-3.5 rounded-2xl border transition-all flex flex-col gap-1.5 relative ${
-                      isSelected
-                        ? 'border-2 border-indigo-500 bg-indigo-50/40 dark:bg-indigo-950/20 shadow-md ring-2 ring-indigo-500/10'
-                        : 'border-slate-200 dark:border-darkbg-border hover:bg-slate-50 dark:hover:bg-darkbg/60'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className={`font-bold truncate text-xs ${isSelected ? 'text-indigo-950 dark:text-indigo-300' : 'text-slate-800 dark:text-slate-200'}`}>
-                        {tenant.name}
-                      </span>
-                      {getStatusBadge(tenant.status)}
-                    </div>
-                    <div className="flex items-center justify-between text-[11px] text-slate-400">
-                      <span className="truncate max-w-[140px] text-[10px] text-slate-400">{tenant.email || 'no-email@dukapos.com'}</span>
-                      <span className="font-mono bg-slate-100 dark:bg-darkbg px-1.5 py-0.5 rounded text-[9px] font-bold text-slate-400">
-                        {tenant.tenantCode || tenant.tenant_code || 'N/A'}
-                      </span>
-                    </div>
-                  </motion.button>
-                );
-              })
-            ) : (
-              <div className="text-center py-8 text-slate-400 text-xs">
-                <AlertCircle className="w-6 h-6 mx-auto mb-2 text-slate-300" />
-                No businesses match search filter.
-              </div>
-            )}
-          </AnimatePresence>
-        </div>
-
-        {/* View Controls */}
-        <div className="border-t border-slate-100 dark:border-darkbg-border pt-3 flex items-center justify-between text-xs">
-          <span className="text-slate-400 flex items-center gap-1.5 font-bold text-[10px] uppercase tracking-wider">
-            <Sliders className="w-3.5 h-3.5" /> Flow Animation
-          </span>
+      {/* TOP CONTROL BAR & DIRECTORY TRIGGER */}
+      <div className="bg-white dark:bg-darkbg-card border border-slate-200 dark:border-darkbg-border rounded-2xl p-4 flex flex-col md:flex-row items-center justify-between gap-3 shadow-sm z-20">
+        
+        <div className="flex items-center gap-3 w-full md:w-auto flex-wrap">
+          {/* Floating Directory Toggle Button */}
           <button
             type="button"
-            onClick={() => setAnimateFlow(!animateFlow)}
-            className={`w-8 h-4 rounded-full transition-colors relative ${
-              animateFlow ? 'bg-indigo-600' : 'bg-slate-200 dark:bg-darkbg'
+            onClick={() => setIsDirectoryOpen(!isDirectoryOpen)}
+            className={`px-3.5 py-2 rounded-xl text-xs font-extrabold flex items-center gap-2 transition cursor-pointer shadow-xs border ${
+              isDirectoryOpen 
+                ? 'bg-indigo-600 text-white border-indigo-600 ring-2 ring-indigo-500/20' 
+                : 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border-indigo-200/80 dark:border-indigo-800 hover:bg-indigo-100 dark:hover:bg-indigo-900/60'
             }`}
           >
-            <motion.div
-              animate={{ x: animateFlow ? 16 : 2 }}
-              transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-              className="w-3.5 h-3.5 rounded-full bg-white absolute top-0.5 shadow-sm"
-            />
+            <FolderOpen className="w-4 h-4" />
+            <span>Business Directory</span>
+            <span className="bg-indigo-200/60 dark:bg-indigo-900/80 text-indigo-900 dark:text-indigo-200 text-[10px] font-mono px-2 py-0.5 rounded-full">
+              {tenants.length}
+            </span>
           </button>
+
+          {/* Quick Select Tenant Dropdown */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+              className="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-darkbg border border-slate-200 dark:border-darkbg-border text-slate-800 dark:text-slate-200 text-xs font-bold flex items-center gap-2 hover:bg-slate-200/70 transition cursor-pointer max-w-[260px] truncate"
+            >
+              <Building2 className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+              <span className="truncate">{activeTenant?.name || 'Select Tenant...'}</span>
+              <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0 ml-auto" />
+            </button>
+
+            {/* Quick Dropdown Menu */}
+            {isDropdownOpen && (
+              <div className="absolute top-11 left-0 z-50 w-72 bg-white dark:bg-darkbg-card border border-slate-200 dark:border-darkbg-border rounded-2xl shadow-xl p-2 animate-in fade-in duration-150">
+                <div className="p-2 border-b border-slate-100 dark:border-darkbg-border mb-1">
+                  <input
+                    type="text"
+                    placeholder="Quick search tenant..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-darkbg-border bg-slate-50 dark:bg-darkbg focus:outline-none"
+                    autoFocus
+                  />
+                </div>
+                <div className="max-h-56 overflow-y-auto space-y-1 scrollbar-thin">
+                  {filteredTenants.map(t => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedTenantId(t.id);
+                        setIsDropdownOpen(false);
+                      }}
+                      className={`w-full text-left px-3 py-2 rounded-xl text-xs flex items-center justify-between transition ${
+                        t.id === selectedTenantId 
+                          ? 'bg-indigo-50 dark:bg-indigo-950/40 font-extrabold text-indigo-700 dark:text-indigo-300' 
+                          : 'hover:bg-slate-100 dark:hover:bg-darkbg text-slate-700 dark:text-slate-300'
+                      }`}
+                    >
+                      <span className="truncate">{t.name}</span>
+                      {t.id === selectedTenantId && <Check className="w-4 h-4 text-indigo-600 shrink-0" />}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-4 w-full md:w-auto justify-between md:justify-end">
+          {/* Flow Animation Toggle */}
+          <div className="flex items-center gap-2 text-xs font-bold text-slate-600 dark:text-slate-400">
+            <Sliders className="w-3.5 h-3.5 text-indigo-500" />
+            <span className="text-[11px]">Flow Motion</span>
+            <button
+              type="button"
+              onClick={() => setAnimateFlow(!animateFlow)}
+              className={`w-8 h-4 rounded-full transition-colors relative cursor-pointer ${
+                animateFlow ? 'bg-indigo-600' : 'bg-slate-200 dark:bg-darkbg'
+              }`}
+            >
+              <motion.div
+                animate={{ x: animateFlow ? 16 : 2 }}
+                transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                className="w-3.5 h-3.5 rounded-full bg-white absolute top-0.5 shadow-xs"
+              />
+            </button>
+          </div>
+
+          {/* Tenant Owner Badge */}
+          {activeTenant && (
+            <div className="flex items-center gap-2 text-xs bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200/80 dark:border-indigo-900/50 px-3 py-1.5 rounded-xl text-indigo-900 dark:text-indigo-300 font-extrabold">
+              <ShieldCheck className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+              <span>Owner: {activeTenant.ownerName || (activeTenant as any).owner_name || activeTenant.email || 'Business Owner'}</span>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* RIGHT CANVAS: TOPOLOGY MAP */}
-      <div className="flex-1 min-w-0 bg-white dark:bg-darkbg-card border border-slate-200 dark:border-darkbg-border rounded-2xl p-5 flex flex-col justify-between shadow-sm min-h-[520px] overflow-hidden">
+      {/* FLOATING GLASSMORPHISM BUSINESS DIRECTORY DRAWER */}
+      <AnimatePresence>
+        {isDirectoryOpen && (
+          <motion.div
+            initial={{ opacity: 0, x: -30, scale: 0.96 }}
+            animate={{ opacity: 1, x: 0, scale: 1 }}
+            exit={{ opacity: 0, x: -30, scale: 0.96 }}
+            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+            className="absolute top-20 left-6 z-40 w-80 max-h-[500px] bg-white/95 dark:bg-darkbg-card/95 backdrop-blur-2xl border border-slate-200 dark:border-darkbg-border rounded-3xl shadow-2xl p-4 flex flex-col gap-3"
+          >
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-darkbg-border pb-2.5">
+              <div className="flex items-center gap-2">
+                <FolderOpen className="w-4 h-4 text-indigo-600" />
+                <h3 className="font-extrabold text-slate-900 dark:text-white text-xs uppercase tracking-wider">Business Directory</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsDirectoryOpen(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-darkbg transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Search Input */}
+            <div className="relative">
+              <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search tenant or email..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-8 pr-3 py-1.5 text-xs rounded-xl border border-slate-200 dark:border-darkbg-border bg-slate-50 dark:bg-darkbg focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+              />
+            </div>
+
+            {/* Tenant Cards List */}
+            <div className="flex-1 overflow-y-auto space-y-2 pr-1 scrollbar-thin max-h-[380px]">
+              {filteredTenants.length > 0 ? (
+                filteredTenants.map((tenant) => {
+                  const isSelected = tenant.id === selectedTenantId;
+                  return (
+                    <button
+                      key={tenant.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedTenantId(tenant.id);
+                        setIsDirectoryOpen(false);
+                      }}
+                      className={`w-full text-left p-3 rounded-2xl border transition-all flex flex-col gap-1 cursor-pointer ${
+                        isSelected
+                          ? 'border-2 border-indigo-500 bg-indigo-50/50 dark:bg-indigo-950/30 shadow-sm'
+                          : 'border-slate-200 dark:border-darkbg-border hover:bg-slate-50 dark:hover:bg-darkbg/60'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className={`font-bold truncate text-xs ${isSelected ? 'text-indigo-950 dark:text-indigo-300' : 'text-slate-800 dark:text-slate-200'}`}>
+                          {tenant.name}
+                        </span>
+                        {getStatusBadge(tenant.status)}
+                      </div>
+                      <div className="flex items-center justify-between text-[10px] text-slate-400">
+                        <span className="truncate max-w-[140px] text-slate-400">{tenant.email || 'no-email@dukapos.com'}</span>
+                        <span className="font-mono bg-slate-100 dark:bg-darkbg px-1.5 py-0.5 rounded font-bold text-slate-400">
+                          {tenant.tenantCode || tenant.tenant_code || 'N/A'}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })
+              ) : (
+                <div className="text-center py-6 text-slate-400 text-xs">
+                  <AlertCircle className="w-5 h-5 mx-auto mb-1.5 text-slate-300" />
+                  No matching tenants found.
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* FULL-WIDTH TOPOLOGY MAP CANVAS */}
+      <div className="flex-1 w-full bg-white dark:bg-darkbg-card border border-slate-200 dark:border-darkbg-border rounded-2xl p-6 flex flex-col justify-between shadow-sm min-h-[480px] overflow-hidden">
         {activeTenant ? (
           <div className="flex flex-col h-full justify-between gap-6">
             
-            {/* CANVAS HEADER */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-darkbg-border pb-4">
-              <div>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] uppercase tracking-wider font-bold text-indigo-600 dark:text-indigo-400">TOPOLOGY MAP</span>
-                  <Activity className="w-3.5 h-3.5 text-emerald-500 animate-pulse" />
-                </div>
-                <h4 className="font-extrabold text-lg text-slate-900 dark:text-slate-100 flex items-center gap-2 mt-0.5">
-                  <span>{activeTenant.name}</span>
-                  {onSelectTenantDetails && (
-                    <button 
-                      type="button"
-                      onClick={() => onSelectTenantDetails(activeTenant)} 
-                      className="text-slate-400 hover:text-indigo-600 transition"
-                      title="View tenant 360 profile"
-                    >
-                      <ExternalLink className="w-4 h-4 inline" />
-                    </button>
-                  )}
-                </h4>
+            {/* CANVAS SUBHEADER */}
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-darkbg-border pb-3.5">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] uppercase tracking-wider font-black text-indigo-600 dark:text-indigo-400">TENANT TOPOLOGY MAP</span>
+                <Activity className="w-3.5 h-3.5 text-emerald-500 animate-pulse" />
               </div>
-              <div className="flex items-center gap-2 text-xs bg-slate-50 dark:bg-darkbg border border-slate-200 dark:border-darkbg-border px-3 py-1.5 rounded-xl text-slate-600 dark:text-slate-300 font-bold">
-                <span>Owner: {activeTenant.ownerName || (activeTenant as any).owner_name || activeTenant.email || 'Business Owner'}</span>
-              </div>
+              <h4 className="font-extrabold text-base text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                <span>{activeTenant.name}</span>
+                {onSelectTenantDetails && (
+                  <button 
+                    type="button"
+                    onClick={() => onSelectTenantDetails(activeTenant)} 
+                    className="text-slate-400 hover:text-indigo-600 transition cursor-pointer"
+                    title="View tenant 360 profile"
+                  >
+                    <ExternalLink className="w-4 h-4 inline" />
+                  </button>
+                )}
+              </h4>
             </div>
 
-            {/* INTERACTIVE FLOW CANVAS */}
-            <div className="flex-1 flex flex-col lg:flex-row items-center justify-between gap-3 lg:gap-4 relative py-6 overflow-x-auto scrollbar-thin">
+            {/* 100% UN-CLIPPED INTERACTIVE FLOW CANVAS */}
+            <div className="flex-1 w-full flex flex-col lg:flex-row items-center justify-around gap-4 relative py-6 overflow-hidden">
               
               {/* LEVEL 1: PLATFORM MASTER NODE */}
               <div className="z-10 flex flex-col items-center shrink-0">
                 <motion.div 
                   initial={{ scale: 0.9, opacity: 0 }}
                   animate={{ scale: 1, opacity: 1 }}
-                  className="w-44 p-4 rounded-3xl bg-slate-950 dark:bg-darkbg border border-indigo-500/40 text-white text-center shadow-2xl relative"
+                  className="w-48 p-4 rounded-3xl bg-slate-950 dark:bg-darkbg border border-indigo-500/40 text-white text-center shadow-2xl relative"
                 >
                   <div className="relative z-10 flex flex-col items-center">
                     <div className="p-2.5 bg-indigo-600/30 rounded-2xl border border-indigo-500/40 mb-2">
@@ -247,10 +348,10 @@ export const TenantVisualFlowView: React.FC<TenantVisualFlowViewProps> = ({
               </div>
 
               {/* CONNECTOR 1: PLATFORM TO BUSINESS */}
-              <div className="hidden lg:block w-12 h-0.5 relative z-0 shrink-0">
+              <div className="hidden lg:block w-16 lg:w-24 h-0.5 relative z-0 shrink-0">
                 <svg className="absolute inset-0 w-full h-full" style={{ overflow: 'visible' }}>
                   <path 
-                    d="M0,0 L48,0" 
+                    d="M0,0 L96,0" 
                     fill="none" 
                     stroke="#818cf8" 
                     strokeWidth="2.5" 
@@ -266,7 +367,7 @@ export const TenantVisualFlowView: React.FC<TenantVisualFlowViewProps> = ({
                   initial={{ y: 15, opacity: 0 }}
                   animate={{ y: 0, opacity: 1 }}
                   key={activeTenant.id}
-                  className="w-56 p-4 rounded-3xl bg-white dark:bg-darkbg-card border-2 border-indigo-500 shadow-2xl relative flex flex-col items-center"
+                  className="w-64 p-4.5 rounded-3xl bg-white dark:bg-darkbg-card border-2 border-indigo-500 shadow-2xl relative flex flex-col items-center"
                 >
                   <div className="absolute -top-3 -right-2">
                     {getStatusBadge(activeTenant.status)}
@@ -301,7 +402,7 @@ export const TenantVisualFlowView: React.FC<TenantVisualFlowViewProps> = ({
               </div>
 
               {/* CONNECTOR 2: BUSINESS TO BRANCHES */}
-              <div className="hidden lg:block w-12 h-0.5 relative z-0 shrink-0">
+              <div className="hidden lg:block w-16 lg:w-24 h-0.5 relative z-0 shrink-0">
                 <svg className="absolute inset-0 w-full h-full" style={{ overflow: 'visible' }}>
                   {displayBranches.map((_, idx) => {
                     const total = displayBranches.length;
@@ -309,8 +410,8 @@ export const TenantVisualFlowView: React.FC<TenantVisualFlowViewProps> = ({
                     const diff = idx - mid;
                     const startY = 0;
                     const endY = diff * 80;
-                    const controlX = 24;
-                    const pathD = `M 0,${startY} C ${controlX},${startY} ${controlX},${endY} 48,${endY}`;
+                    const controlX = 40;
+                    const pathD = `M 0,${startY} C ${controlX},${startY} ${controlX},${endY} 96,${endY}`;
 
                     return (
                       <g key={idx}>
@@ -318,8 +419,8 @@ export const TenantVisualFlowView: React.FC<TenantVisualFlowViewProps> = ({
                           d={pathD} 
                           fill="none" 
                           stroke="#10b981" 
-                          strokeWidth="2" 
-                          strokeDasharray="4,4"
+                          strokeWidth="2.5" 
+                          strokeDasharray="5,5"
                           className={animateFlow ? 'animate-flow-dash' : ''}
                         />
                       </g>
@@ -329,7 +430,7 @@ export const TenantVisualFlowView: React.FC<TenantVisualFlowViewProps> = ({
               </div>
 
               {/* LEVEL 3: OPERATING BRANCH CARDS */}
-              <div className="z-10 flex flex-col gap-3 w-60 shrink-0">
+              <div className="z-10 flex flex-col gap-3 w-64 shrink-0">
                 <AnimatePresence mode="popLayout">
                   {displayBranches.map((branch, idx) => (
                     <motion.div
@@ -337,11 +438,11 @@ export const TenantVisualFlowView: React.FC<TenantVisualFlowViewProps> = ({
                       initial={{ x: 20, opacity: 0 }}
                       animate={{ x: 0, opacity: 1 }}
                       transition={{ delay: idx * 0.05 }}
-                      className="p-3.5 bg-white dark:bg-darkbg-card border border-slate-200 dark:border-darkbg-border rounded-2xl shadow-sm text-xs"
+                      className="p-4 bg-white dark:bg-darkbg-card border border-slate-200 dark:border-darkbg-border rounded-2xl shadow-sm text-xs"
                     >
                       <div className="flex items-start justify-between gap-1.5 min-w-0">
                         <div className="flex flex-col min-w-0">
-                          <span className="font-bold text-slate-800 dark:text-slate-200 text-xs truncate max-w-[130px]">{branch.name}</span>
+                          <span className="font-bold text-slate-800 dark:text-slate-200 text-xs truncate max-w-[140px]">{branch.name}</span>
                           <span className="text-[9px] font-mono text-slate-400 mt-0.5 font-bold truncate">
                             [{branch.branchCode || (idx === 0 ? 'HQ' : `TN-00${idx}`)}]
                           </span>
@@ -367,7 +468,7 @@ export const TenantVisualFlowView: React.FC<TenantVisualFlowViewProps> = ({
 
             </div>
 
-            {/* BOTTOM CONSOLE BAR */}
+            {/* BOTTOM CONSOLE ACTIONS */}
             <div className="bg-slate-50/80 dark:bg-darkbg/60 border border-slate-200 dark:border-darkbg-border rounded-2xl p-4 flex flex-col md:flex-row items-center justify-between gap-4">
               
               <div className="flex items-center gap-3">
@@ -426,7 +527,7 @@ export const TenantVisualFlowView: React.FC<TenantVisualFlowViewProps> = ({
             <Building2 className="w-12 h-12 text-slate-300 mb-2 animate-pulse" />
             <h4 className="font-bold text-slate-800 dark:text-slate-200 text-sm">No Business Selected</h4>
             <p className="text-xs text-slate-400 mt-1 max-w-sm text-center">
-              Select a tenant business from the directory list on the left to inspect its live topology map.
+              Use the Business Directory button or dropdown selector at the top to inspect a live tenant topology map.
             </p>
           </div>
         )}
