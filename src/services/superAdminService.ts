@@ -40,7 +40,45 @@ export class SuperAdminService {
     try {
       console.log('[SuperAdminService] Synchronizing central platform registry...');
 
-      // Reconcile local Dexie tenants into cloudDb.cloud_tenants so Super Admin CPanel displays all registrations
+      // 1. Fetch authoritative platform datasets from API / server backend
+      const [tenantsRes, branchesRes, usersRes, subsRes] = await Promise.all([
+        supabase.from('tenants').select().catch(() => ({ data: [] })),
+        supabase.from('branches').select().catch(() => ({ data: [] })),
+        supabase.from('users').select().catch(() => ({ data: [] })),
+        supabase.from('tenantSubscriptions').select().catch(() => ({ data: [] })),
+        supabase.from('subscriptionPlans').select().catch(() => ({ data: [] }))
+      ]);
+
+      const fetchedTenants: any[] = Array.isArray(tenantsRes) ? tenantsRes : (tenantsRes?.data || []);
+      const fetchedBranches: any[] = Array.isArray(branchesRes) ? branchesRes : (branchesRes?.data || []);
+      const fetchedUsers: any[] = Array.isArray(usersRes) ? usersRes : (usersRes?.data || []);
+      const fetchedSubs: any[] = Array.isArray(subsRes) ? subsRes : (subsRes?.data || []);
+
+      if (fetchedTenants.length > 0) {
+        await cloudDb.cloud_tenants.bulkPut(fetchedTenants).catch(() => {});
+        for (const t of fetchedTenants) {
+          if (!isTenantDeleted(t)) {
+            await db.tenants.put({
+              id: t.id,
+              name: t.name,
+              slug: t.slug || t.name?.toLowerCase().replace(/\s+/g, '-'),
+              status: t.status || 'Active',
+              plan: t.plan || 'Business',
+              business_type: t.business_type || 'Retail',
+              email: t.email || '',
+              created_at: t.created_at || Date.now(),
+              updated_at: Date.now(),
+              registration_completed: true
+            } as any).catch(() => {});
+          }
+        }
+      }
+
+      if (fetchedBranches.length > 0) await cloudDb.cloud_branches.bulkPut(fetchedBranches).catch(() => {});
+      if (fetchedUsers.length > 0) await cloudDb.cloud_users.bulkPut(fetchedUsers).catch(() => {});
+      if (fetchedSubs.length > 0) await cloudDb.cloud_subscriptions.bulkPut(fetchedSubs).catch(() => {});
+
+      // 2. Reconcile local Dexie tenants into cloudDb.cloud_tenants so Super Admin CPanel displays all registrations
       const [localTs, cloudTs] = await Promise.all([
         db.tenants.toArray().catch(() => []),
         cloudDb.cloud_tenants.toArray().catch(() => [])
@@ -92,13 +130,32 @@ export class SuperAdminService {
         }
       }
 
-      await Promise.all([
-        supabase.from('tenants').select().catch(() => {}),
-        supabase.from('branches').select().catch(() => {}),
-        supabase.from('users').select().catch(() => {}),
-        supabase.from('tenantSubscriptions').select().catch(() => {}),
-        supabase.from('subscriptionPlans').select().catch(() => {})
-      ]);
+      // 3. Auto-heal synthesized tenant records for any active subscriptions whose tenant is missing
+      const allTenantsList = await cloudDb.cloud_tenants.toArray().catch(() => []);
+      const tenantIdSet = new Set(allTenantsList.map(t => t.id));
+      const allSubsList = await cloudDb.cloud_subscriptions.toArray().catch(() => []);
+
+      for (const sub of allSubsList) {
+        const subTenantId = sub.tenant_id || (sub as any).tenantId || sub.id;
+        if (subTenantId && !tenantIdSet.has(subTenantId) && subTenantId !== 'tenant-admin-system' && subTenantId !== 'tenant-admin-master') {
+          const healedTenant = {
+            id: subTenantId,
+            name: (sub as any).tenant_name || `Merchant Business (${subTenantId.substring(0, 8)})`,
+            slug: `merchant-${subTenantId.substring(0, 8)}`,
+            status: sub.status === 'EXPIRED' ? 'Suspended' : 'Active',
+            plan: (sub as any).plan_name || sub.plan_id || 'Business',
+            business_type: 'Retail',
+            email: (sub as any).email || '',
+            created_at: (sub as any).created_at || Date.now(),
+            updated_at: Date.now(),
+            registration_completed: true
+          };
+          await cloudDb.cloud_tenants.put(healedTenant as any).catch(() => {});
+          await db.tenants.put(healedTenant as any).catch(() => {});
+          tenantIdSet.add(subTenantId);
+        }
+      }
+
       console.log('[SuperAdminService] Platform registry synchronization complete.');
     } catch (err) {
       console.warn('[SuperAdminService] Sync platform registry failed:', err);

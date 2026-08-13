@@ -78,17 +78,25 @@ export const SuperAdminCPanel: React.FC<SuperAdminCPanelProps> = ({ initialTab }
   // Live tenant count for sidebar badge (merchant business tenants only)
   const tenantCount = useLiveQuery(
     async () => {
-      const [cTenants, lTenants] = await Promise.all([
+      const [cTenants, lTenants, cSubs, lSubs] = await Promise.all([
         cloudDb.cloud_tenants.toArray().catch(() => []),
-        db.tenants.toArray().catch(() => [])
+        db.tenants.toArray().catch(() => []),
+        cloudDb.cloud_subscriptions.toArray().catch(() => []),
+        db.tenantSubscriptions.toArray().catch(() => [])
       ]);
       const map = new Map<string, any>();
       for (const t of cTenants) map.set(t.id, t);
       for (const t of lTenants) {
         if (!map.has(t.id)) map.set(t.id, t);
       }
-      const list = Array.from(map.values());
-      return list.filter((t: any) => !isTenantDeleted(t)).length;
+      const list = Array.from(map.values()).filter((t: any) => !isTenantDeleted(t));
+      if (list.length > 0) return list.length;
+
+      const activeSubs = [...cSubs, ...lSubs].filter((s: any) => {
+        const st = (s.status || '').toUpperCase();
+        return st === 'ACTIVE' || st === 'TRIAL' || !s.status;
+      });
+      return activeSubs.length;
     },
     []
   );

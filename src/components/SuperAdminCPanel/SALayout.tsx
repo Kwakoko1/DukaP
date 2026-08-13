@@ -2,7 +2,7 @@ import React from 'react';
 import {
   LayoutDashboard, Building2, Users, CreditCard, ShoppingBag,
   DollarSign, Activity, ShieldCheck, Code2, PackageCheck,
-  Rocket, Settings, ChevronRight, Menu, X, Sun, Moon, LogOut
+  Rocket, ChevronRight, Menu, X, Sun, Moon, LogOut
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
@@ -70,8 +70,8 @@ export const SALayout: React.FC<SALayoutProps> = ({ active, onNavigate, children
       {/* Brand */}
       <div className="px-5 pt-6 pb-5 border-b border-slate-200/80 dark:border-white/8 shrink-0">
         <div className="flex items-center gap-3">
-          <div className="p-2 rounded-xl bg-gradient-to-br from-blue-500 to-violet-600 shadow-lg shadow-blue-500/30 shrink-0">
-            <Settings className="h-5 w-5 text-white" />
+          <div className="p-2.5 rounded-2xl bg-gradient-to-br from-indigo-600 via-blue-600 to-violet-600 shadow-md shadow-indigo-500/20 shrink-0 flex items-center justify-center">
+            <ShieldCheck className="h-5 w-5 text-white" />
           </div>
           <div className="min-w-0">
             <div className="text-xs font-black tracking-widest text-slate-900 dark:text-white uppercase truncate">DukaPos</div>
@@ -79,9 +79,9 @@ export const SALayout: React.FC<SALayoutProps> = ({ active, onNavigate, children
           </div>
         </div>
         {tenantCount !== undefined && (
-          <div className="mt-3 px-3 py-2 rounded-xl bg-blue-500/10 border border-blue-500/20">
-            <div className="text-[9px] text-slate-500 dark:text-slate-400 uppercase tracking-wider font-bold">Active Tenants</div>
-            <div className="text-lg font-black text-slate-900 dark:text-white tabular-nums">{tenantCount}</div>
+          <div className="mt-3 px-3 py-2 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-between">
+            <span className="text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-wider font-bold">Active Tenants</span>
+            <span className="text-xs font-black text-blue-600 dark:text-blue-400 tabular-nums px-2 py-0.5 rounded-lg bg-blue-500/15">{tenantCount}</span>
           </div>
         )}
       </div>
