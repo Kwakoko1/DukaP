@@ -77,6 +77,7 @@ export const offlineSyncWorker = {
     try {
       const { productionSyncEngine } = await import('./productionSyncEngine');
       const prodRes = await productionSyncEngine.processQueue(tenantId);
+      await productionSyncEngine.pullChanges(tenantId, branchId).catch(() => {});
       let stockRes = { syncedCount: 0, failedCount: 0 };
       if (branchId) {
         stockRes = await stockLedgerSyncEngine.syncPendingEvents(tenantId, branchId);

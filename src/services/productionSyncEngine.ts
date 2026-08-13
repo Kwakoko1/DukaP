@@ -249,6 +249,58 @@ class ProductionSyncEngine {
   }
 
   /**
+   * Pulls incremental server updates from Neon PostgreSQL and bulk-puts them directly into Dexie local IDB.
+   * This bridges cross-browser / multi-device synchronization: updates committed by Browser A to Neon
+   * will be pulled by Browser B and immediately trigger Dexie's reactive useLiveQuery UI re-renders!
+   */
+  async pullChanges(tenantId: string, branchId?: string): Promise<{ pulledCount: number }> {
+    if (!tenantId || (typeof navigator !== 'undefined' && !navigator.onLine)) {
+      return { pulledCount: 0 };
+    }
+
+    try {
+      const syncKey = `dukapos_last_sync_${tenantId}`;
+      const lastSync = localStorage.getItem(syncKey) || '0';
+      const since = parseInt(lastSync, 10) || 0;
+
+      const branchQuery = branchId ? `&branchId=${encodeURIComponent(branchId)}` : '';
+      const res = await fetch(`/api/sync/pull?tenantId=${encodeURIComponent(tenantId)}&since=${since}${branchQuery}`);
+      if (!res.ok) return { pulledCount: 0 };
+
+      const data = await res.json();
+      const changes = data.changes || {};
+      let totalPulled = 0;
+
+      if (Array.isArray(changes.products) && changes.products.length > 0) {
+        await db.products.bulkPut(changes.products.map((p: any) => ({ ...p, syncStatus: 'synced' }))).catch(() => {});
+        totalPulled += changes.products.length;
+      }
+      if (Array.isArray(changes.productVariants) && changes.productVariants.length > 0) {
+        await db.productVariants.bulkPut(changes.productVariants.map((v: any) => ({ ...v, syncStatus: 'synced' }))).catch(() => {});
+        totalPulled += changes.productVariants.length;
+      }
+      if (Array.isArray(changes.customers) && changes.customers.length > 0) {
+        await db.customers.bulkPut(changes.customers.map((c: any) => ({ ...c, syncStatus: 'synced' }))).catch(() => {});
+        totalPulled += changes.customers.length;
+      }
+      if (Array.isArray(changes.orders) && changes.orders.length > 0) {
+        await db.orders.bulkPut(changes.orders.map((o: any) => ({ ...o, syncStatus: 'synced' }))).catch(() => {});
+        totalPulled += changes.orders.length;
+      }
+      if (Array.isArray(changes.branches) && changes.branches.length > 0) {
+        await db.branches.bulkPut(changes.branches.map((b: any) => ({ ...b, syncStatus: 'synced' }))).catch(() => {});
+        totalPulled += changes.branches.length;
+      }
+
+      localStorage.setItem(syncKey, String(data.serverTimestamp || Date.now()));
+      return { pulledCount: totalPulled };
+    } catch (err) {
+      console.warn('[ProductionSyncEngine] Incremental delta pull notice:', err);
+      return { pulledCount: 0 };
+    }
+  }
+
+  /**
    * Conflict Resolution Engine (LWW / Vector Clock / Tombstone Priority / Server Wins)
    */
   resolveConflict(

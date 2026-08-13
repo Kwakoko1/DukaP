@@ -1454,14 +1454,14 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
-      // 17. GET /api/sync (Master Incremental Sync from Neon PostgreSQL)
-      if (pathname === '/api/sync' && req.method === 'GET') {
+      // 17. GET /api/sync & /api/sync/pull (Master Incremental Sync from Neon PostgreSQL)
+      if ((pathname === '/api/sync' || pathname === '/api/sync/pull') && req.method === 'GET') {
         const since = parseInt(fullUrl.searchParams.get('since') || '0', 10);
         const sinceVersion = parseInt(fullUrl.searchParams.get('sinceVersion') || '0', 10);
         const targetTenant = tenantId || fullUrl.searchParams.get('tenantId') || 'tenant-101';
         const filterSince = Math.max(since, sinceVersion);
 
-        const [prods, vars, cats, brds, ledger, brs, settings, modules, flags, devList] = await Promise.all([
+        const [prods, vars, cats, brds, ledger, brs, settings, modules, flags, devList, custs, ords] = await Promise.all([
           sql`SELECT * FROM products WHERE tenant_id = ${targetTenant} AND (updated_at > ${since} OR created_at > ${since})`,
           sql`SELECT * FROM product_variants WHERE tenant_id = ${targetTenant} AND (updated_at > ${since} OR created_at > ${since})`,
           sql`SELECT * FROM categories WHERE tenant_id = ${targetTenant} AND (updated_at > ${filterSince} OR created_at > ${filterSince} OR sync_version > ${sinceVersion})`,
@@ -1471,7 +1471,9 @@ const server = http.createServer(async (req, res) => {
           sql`SELECT * FROM tenant_settings WHERE tenant_id = ${targetTenant}`,
           sql`SELECT * FROM tenant_modules WHERE tenant_id = ${targetTenant}`,
           sql`SELECT * FROM feature_flags WHERE tenant_id = ${targetTenant}`,
-          sql`SELECT * FROM user_devices WHERE tenant_id = ${targetTenant}`
+          sql`SELECT * FROM user_devices WHERE tenant_id = ${targetTenant}`,
+          sql`SELECT * FROM customers WHERE tenant_id = ${targetTenant} AND (updated_at > ${since} OR created_at > ${since})`.catch(() => []),
+          sql`SELECT * FROM orders WHERE tenant_id = ${targetTenant} AND (updated_at > ${since} OR created_at > ${since})`.catch(() => [])
         ]);
 
         res.writeHead(200);
@@ -1489,7 +1491,9 @@ const server = http.createServer(async (req, res) => {
             tenantSettings: settings,
             tenantModules: modules,
             featureFlags: flags,
-            userDevices: devList
+            userDevices: devList,
+            customers: custs,
+            orders: ords
           }
         }));
         return;
