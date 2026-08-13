@@ -2,6 +2,7 @@ import React, { useState, useEffect, Suspense } from 'react';
 
 import { SALayout, type SATab } from './SALayout';
 import { cloudDb } from '../../db/supabaseMock';
+import { db } from '../../db/dexie';
 import { SuperAdminService } from '../../services/superAdminService';
 import { useLiveQuery } from 'dexie-react-hooks';
 
@@ -77,7 +78,16 @@ export const SuperAdminCPanel: React.FC<SuperAdminCPanelProps> = ({ initialTab }
   // Live tenant count for sidebar badge (merchant business tenants only)
   const tenantCount = useLiveQuery(
     async () => {
-      const list = await cloudDb.cloud_tenants.toArray();
+      const [cTenants, lTenants] = await Promise.all([
+        cloudDb.cloud_tenants.toArray().catch(() => []),
+        db.tenants.toArray().catch(() => [])
+      ]);
+      const map = new Map<string, any>();
+      for (const t of cTenants) map.set(t.id, t);
+      for (const t of lTenants) {
+        if (!map.has(t.id)) map.set(t.id, t);
+      }
+      const list = Array.from(map.values());
       return list.filter((t: any) => !isTenantDeleted(t)).length;
     },
     []

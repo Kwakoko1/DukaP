@@ -124,8 +124,7 @@ export function isTenantDeleted(t: any): boolean {
   if (typeof t === 'object') {
     if (t.deleted_at || t.deletedAt || (t as any).deleted) return true;
     const status = String(t.status || '').toUpperCase();
-    if (status === 'DELETED' || status === 'ARCHIVED' || status === 'DRAFT') return true;
-    if (t.registration_completed === false) return true;
+    if (status === 'DELETED' || status === 'ARCHIVED' || status === 'CANCELLED') return true;
   }
 
   // 3. Persistent LocalStorage Tombstone Verification
@@ -141,10 +140,6 @@ export function isTenantDeleted(t: any): boolean {
         if (t.tenant_uuid && deletedList.includes(t.tenant_uuid)) return true;
         if (t.slug && deletedList.includes(t.slug)) return true;
       }
-
-      const rawEmails = localStorage.getItem('DUKAPOS_DELETED_USER_EMAILS') || '[]';
-      const emailList: string[] = JSON.parse(rawEmails);
-      if (typeof t === 'object' && t.email && emailList.includes(t.email.trim().toLowerCase())) return true;
     } catch (_) {}
   }
 

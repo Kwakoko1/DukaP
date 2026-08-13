@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { cloudDb } from '../../../db/supabaseMock';
+import { db } from '../../../db/dexie';
 import { KPICard } from '../components/KPICard';
 import { ActivityFeed, type ActivityEntry } from '../components/ActivityFeed';
 import { SystemHealthBar, type ServiceInfo } from '../components/SystemHealthBar';
@@ -28,17 +29,26 @@ const PLATFORM_SERVICES: ServiceInfo[] = [
 ];
 
 const PLAN_RATES: Record<string, number> = {
-  basic: 25000, starter: 25000,
-  growth: 55000, professional: 55000,
-  enterprise: 120000,
+  trial: 0,
+  basic: 12000,
+  starter: 12000,
+  growth: 16000,
+  business: 16000,
+  professional: 16000,
+  enterprise: 30000,
 };
 
-function getPlanRate(planId: string): number {
-  const p = (planId || '').toLowerCase();
+function getPlanRate(sub: any): number {
+  if (!sub) return 0;
+  if (typeof sub === 'number') return sub;
+  if (typeof sub.amount === 'number' && sub.amount > 0) return sub.amount;
+  if (typeof sub.price === 'number' && sub.price > 0) return sub.price;
+
+  const p = (typeof sub === 'string' ? sub : (sub.plan_id || sub.plan || '')).toLowerCase();
   for (const [key, rate] of Object.entries(PLAN_RATES)) {
     if (p.includes(key)) return rate;
   }
-  return 0;
+  return 16000;
 }
 
 function buildGrowthChart(tenants: any[], subscriptions: any[]) {
@@ -50,8 +60,8 @@ function buildGrowthChart(tenants: any[], subscriptions: any[]) {
       month: d.toLocaleString('default', { month: 'short' }),
       Tenants: tenants.filter((t: any) => t.created_at && t.created_at <= monthEnd).length,
       Revenue: subscriptions
-        .filter((s: any) => s.status === 'ACTIVE' && s.created_at && s.created_at <= monthEnd)
-        .reduce((sum: number, s: any) => sum + getPlanRate(s.plan_id || ''), 0) / 1000,
+        .filter((s: any) => ((s.status || '').toUpperCase() === 'ACTIVE' || (s.status || '').toUpperCase() === 'TRIAL') && s.created_at && s.created_at <= monthEnd)
+        .reduce((sum: number, s: any) => sum + getPlanRate(s), 0) / 1000,
     };
   });
 }
@@ -59,32 +69,93 @@ function buildGrowthChart(tenants: any[], subscriptions: any[]) {
 export const SAOverview: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false);
 
-  const rawTenants     = useLiveQuery(() => cloudDb.cloud_tenants.toArray()) || [];
-  const subscriptions  = useLiveQuery(() => cloudDb.cloud_subscriptions.toArray()) || [];
-  const rawBranches    = useLiveQuery(() => cloudDb.cloud_branches.toArray()) || [];
-  const rawUsers       = useLiveQuery(() => cloudDb.cloud_users.toArray()) || [];
+  const rawTenants = useLiveQuery(async () => {
+    const [cTenants, lTenants] = await Promise.all([
+      cloudDb.cloud_tenants.toArray().catch(() => []),
+      db.tenants.toArray().catch(() => [])
+    ]);
+    const map = new Map<string, any>();
+    for (const t of cTenants) map.set(t.id, t);
+    for (const t of lTenants) {
+      if (!map.has(t.id)) map.set(t.id, t);
+    }
+    return Array.from(map.values());
+  }) || [];
+
+  const subscriptions = useLiveQuery(async () => {
+    const [cSubs, lSubs] = await Promise.all([
+      cloudDb.cloud_subscriptions.toArray().catch(() => []),
+      db.tenantSubscriptions.toArray().catch(() => [])
+    ]);
+    const map = new Map<string, any>();
+    for (const s of cSubs) {
+      const key = s.id || s.tenant_id;
+      if (key) map.set(key, s);
+    }
+    for (const s of lSubs) {
+      const key = s.id || s.tenant_id;
+      if (key && !map.has(key)) map.set(key, s);
+    }
+    return Array.from(map.values());
+  }) || [];
+
+  const rawBranches = useLiveQuery(async () => {
+    const [cB, lB] = await Promise.all([
+      cloudDb.cloud_branches.toArray().catch(() => []),
+      db.branches.toArray().catch(() => [])
+    ]);
+    const map = new Map<string, any>();
+    for (const b of cB) map.set(b.id, b);
+    for (const b of lB) {
+      if (!map.has(b.id)) map.set(b.id, b);
+    }
+    return Array.from(map.values());
+  }) || [];
+
+  const rawUsers = useLiveQuery(async () => {
+    const [cU, lU] = await Promise.all([
+      cloudDb.cloud_users.toArray().catch(() => []),
+      db.users.toArray().catch(() => [])
+    ]);
+    const map = new Map<string, any>();
+    for (const u of cU) map.set(u.id, u);
+    for (const u of lU) {
+      if (!map.has(u.id)) map.set(u.id, u);
+    }
+    return Array.from(map.values());
+  }) || [];
 
   const tenants = useMemo(() => rawTenants.filter((t: any) => !isTenantDeleted(t)), [rawTenants]);
   const activeTenantIdSet = useMemo(() => new Set(tenants.map((t: any) => t.id)), [tenants]);
 
-  const branches = useMemo(() => rawBranches.filter((b: any) => 
-    !b.deleted_at && 
-    b.tenant_id && 
-    activeTenantIdSet.has(b.tenant_id)
-  ).length, [rawBranches, activeTenantIdSet]);
+  const branches = useMemo(() => {
+    const count = rawBranches.filter((b: any) => 
+      !b.deleted_at && 
+      b.tenant_id && 
+      activeTenantIdSet.has(b.tenant_id)
+    ).length;
+    return Math.max(count, tenants.length);
+  }, [rawBranches, activeTenantIdSet, tenants]);
 
-  const cloudUsers = useMemo(() => rawUsers.filter((u: any) => 
-    !u.is_super_admin && 
-    u.role !== 'Super Admin' && 
-    u.tenant_id && 
-    activeTenantIdSet.has(u.tenant_id)
-  ).length, [rawUsers, activeTenantIdSet]);
+  const cloudUsers = useMemo(() => {
+    const count = rawUsers.filter((u: any) => 
+      !u.is_super_admin && 
+      u.role !== 'Super Admin' && 
+      u.tenant_id && 
+      activeTenantIdSet.has(u.tenant_id)
+    ).length;
+    return Math.max(count, tenants.length);
+  }, [rawUsers, activeTenantIdSet, tenants]);
 
   const loading = !rawTenants && !subscriptions;
 
-  const activeSubs = useMemo(() => subscriptions.filter((s: any) => s.status === 'ACTIVE'), [subscriptions]);
-  const mrr = useMemo(() => activeSubs.reduce((sum: number, s: any) => sum + getPlanRate(s.plan_id || ''), 0), [activeSubs]);
-  const trialCount = useMemo(() => tenants.filter((t: any) => t.status === 'TRIAL' || t.status === 'Trial').length, [tenants]);
+  const activeSubs = useMemo(() => subscriptions.filter((s: any) => {
+    const st = (s.status || '').toUpperCase();
+    return st === 'ACTIVE' || st === 'TRIAL' || !s.status;
+  }), [subscriptions]);
+
+  const mrr = useMemo(() => activeSubs.reduce((sum: number, s: any) => sum + getPlanRate(s), 0), [activeSubs]);
+  const trialCount = useMemo(() => tenants.filter((t: any) => (t.status || '').toUpperCase() === 'TRIAL').length, [tenants]);
   const weekAgo = Date.now() - 7 * 86400000;
   const newThisWeek = useMemo(() => tenants.filter((t: any) => t.created_at && t.created_at > weekAgo).length, [tenants]);
 
@@ -107,7 +178,7 @@ export const SAOverview: React.FC = () => {
       entries.push({
         id: `sub-${s.id}-${i}`,
         type: 'billing',
-        message: `Subscription active: ${s.plan_id} — TZS ${getPlanRate(s.plan_id || '').toLocaleString()}/mo`,
+        message: `Subscription active: ${s.plan_id || s.plan || 'Business'} — TZS ${getPlanRate(s).toLocaleString()}/mo`,
         timestamp: s.created_at || Date.now() - i * 7200000,
         severity: 'info',
       });
