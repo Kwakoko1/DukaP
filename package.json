@@ -11,6 +11,7 @@
     "preview": "vite preview --host 0.0.0.0 --port ${PORT:-8080}",
     "release": "node scripts/release-engine.js",
     "health-check": "node scripts/health-check.js",
+    "test:parser": "node scripts/test-stream-parser.js",
     "db:setup": "node scripts/setup-local-postgres.js",
     "db:check": "node scripts/db-health-check.js"
   },
