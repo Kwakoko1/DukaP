@@ -58,6 +58,13 @@ interface SALayoutProps {
 export const SALayout: React.FC<SALayoutProps> = ({ active, onNavigate, children, tenantCount }) => {
   const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
   const { theme, toggleTheme, logout } = useAuth();
+  const mainRef = React.useRef<HTMLElement>(null);
+
+  React.useEffect(() => {
+    if (mainRef.current) {
+      mainRef.current.scrollTop = 0;
+    }
+  }, [active]);
 
   const handleLogout = () => {
     if (window.confirm('Are you sure you want to log out of Super Admin Console?')) {
@@ -229,7 +236,7 @@ export const SALayout: React.FC<SALayoutProps> = ({ active, onNavigate, children
         </header>
 
         {/* Page content */}
-        <main className="flex-1 overflow-y-auto p-5 sm:p-6 pb-24 lg:pb-6 scrollbar-thin">
+        <main ref={mainRef} className="flex-1 overflow-y-auto p-5 sm:p-6 pb-24 lg:pb-6 scrollbar-thin">
           <div className="animate-page-enter">
             {children}
           </div>

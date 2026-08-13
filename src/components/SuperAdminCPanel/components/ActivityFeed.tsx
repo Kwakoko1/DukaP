@@ -41,11 +41,11 @@ function fmtAge(ts: number): string {
 export const ActivityFeed: React.FC<ActivityFeedProps> = ({
   entries, maxHeight = '320px', autoScroll = true
 }) => {
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (autoScroll && bottomRef.current) {
-      bottomRef.current.scrollIntoView({ behavior: 'smooth' });
+    if (autoScroll && containerRef.current) {
+      containerRef.current.scrollTop = containerRef.current.scrollHeight;
     }
   }, [entries.length, autoScroll]);
 
@@ -59,7 +59,7 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({
   }
 
   return (
-    <div className="space-y-1.5 overflow-y-auto scrollbar-thin pr-1" style={{ maxHeight }}>
+    <div ref={containerRef} className="space-y-1.5 overflow-y-auto scrollbar-thin pr-1" style={{ maxHeight }}>
       {[...entries].reverse().map((e) => {
         const meta = TYPE_META[e.type];
         const bg = SEVERITY_BG[e.severity || 'info'];
@@ -93,7 +93,6 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({
           </div>
         );
       })}
-      <div ref={bottomRef} />
     </div>
   );
 };
