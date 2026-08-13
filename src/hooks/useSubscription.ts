@@ -46,17 +46,17 @@ export function useSubscription(): UseSubscriptionReturn {
   );
 
   const liveProductCount = useLiveQuery(
-    () => db.products.where('tenant_id').equals(tenantId).count(),
+    () => db.products.where('tenant_id').equals(tenantId).filter(p => !((p as any).deleted_at || (p as any).deletedAt)).count(),
     [tenantId]
   ) || 0;
 
   const liveUserCount = useLiveQuery(
-    () => db.users.where('tenant_id').equals(tenantId).count(),
+    () => db.users.where('tenant_id').equals(tenantId).filter(u => !((u as any).deleted_at || (u as any).deletedAt)).count(),
     [tenantId]
   ) || 0;
 
   const liveBranchCount = useLiveQuery(
-    () => db.branches.where('tenant_id').equals(tenantId).count(),
+    () => db.branches.where('tenant_id').equals(tenantId).filter(b => !((b as any).deleted_at || (b as any).deletedAt)).count(),
     [tenantId]
   ) || 0;
 

@@ -264,6 +264,12 @@ async function initDatabaseSchema() {
     await sql`ALTER TABLE brands ALTER COLUMN deleted_at TYPE BIGINT USING deleted_at::BIGINT;`.catch(() => {});
     await sql`ALTER TABLE brands ALTER COLUMN last_synced_at TYPE BIGINT USING last_synced_at::BIGINT;`.catch(() => {});
     await sql`ALTER TABLE stock_ledger ALTER COLUMN created_at TYPE BIGINT USING created_at::BIGINT;`.catch(() => {});
+
+    // 3. Partial composite indexes for Super Admin KPI analytics & soft deletion filtering
+    await sql`CREATE INDEX IF NOT EXISTS idx_tenants_kpi_lookup ON tenants (status) WHERE deleted_at IS NULL;`.catch(() => {});
+    await sql`CREATE INDEX IF NOT EXISTS idx_orders_revenue_lookup ON orders (tenant_id, total, status) WHERE created_at > 0;`.catch(() => {});
+    await sql`CREATE INDEX IF NOT EXISTS idx_tenant_subs_kpi ON tenant_subscriptions (tenant_id, status) WHERE updated_at > 0;`.catch(() => {});
+
     await sql`
       CREATE TABLE IF NOT EXISTS user_branch_roles (
         id TEXT PRIMARY KEY,
@@ -628,6 +634,31 @@ const server = http.createServer(async (req, res) => {
       if (tenantId && typeof tenantId === 'string' && tenantId.includes(',')) {
         tenantId = tenantId.split(',')[0].trim();
       }
+
+      // Server-Side Mutation Guard: Reject sync & mutation payloads for archived/deleted tenants
+      const isMutationMethod = req.method === 'POST' || req.method === 'PUT' || req.method === 'DELETE';
+      const isSuperAdminAction = pathname.startsWith('/api/superadmin/') || pathname === '/api/tenants/all';
+
+      if (isMutationMethod && tenantId && tenantId !== 'tenant-admin-system' && !isSuperAdminAction) {
+        try {
+          const tRows = await sql`SELECT deleted_at, status FROM tenants WHERE id = ${tenantId} LIMIT 1`;
+          if (tRows && tRows.length > 0) {
+            const tRec = tRows[0];
+            const isArchived = (tRec.deleted_at !== null && tRec.deleted_at !== undefined && BigInt(tRec.deleted_at) > 0n) ||
+                               ['DELETED', 'ARCHIVED'].includes(String(tRec.status || '').toUpperCase());
+            if (isArchived) {
+              res.writeHead(410, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({
+                error: 'Tenant account is archived. Synchronization and mutations rejected.',
+                tenant_id: tenantId,
+                status: 'ARCHIVED'
+              }));
+              return;
+            }
+          }
+        } catch (_) {}
+      }
+
       const emailParam = fullUrl.searchParams.get('email');
       const usernameParam = fullUrl.searchParams.get('username');
 
@@ -862,6 +893,88 @@ const server = http.createServer(async (req, res) => {
         res.writeHead(200);
         res.end(JSON.stringify({ success: true }));
         return;
+      }
+
+      // 0.E GET /api/superadmin/dashboard-kpis — Server-Side Raw Parameterized KPI Aggregation Endpoint
+      if (pathname === '/api/superadmin/dashboard-kpis' && req.method === 'GET') {
+        try {
+          const [kpiRows, statsRows] = await Promise.all([
+            sql`
+              SELECT 
+                COUNT(CASE WHEN (status = 'Active' OR status = 'Trial') AND (deleted_at IS NULL OR deleted_at = 0) THEN 1 END)::INT AS active_merchants,
+                COUNT(CASE WHEN status = 'Suspended' AND (deleted_at IS NULL OR deleted_at = 0) THEN 1 END)::INT AS suspended_merchants,
+                COUNT(CASE WHEN deleted_at IS NOT NULL AND deleted_at > 0 THEN 1 END)::INT AS archived_merchants
+              FROM tenants
+              WHERE id != 'tenant-admin-system';
+            `,
+            sql`
+              SELECT 
+                (SELECT COUNT(*)::INT FROM users WHERE (deleted_at IS NULL OR deleted_at = 0) AND role != 'Super Admin') AS total_users,
+                (SELECT COUNT(*)::INT FROM branches WHERE (deleted_at IS NULL OR deleted_at = 0)) AS total_branches,
+                (SELECT COUNT(*)::INT FROM tenant_subscriptions WHERE status = 'ACTIVE') AS active_subscriptions,
+                (SELECT COALESCE(SUM(amount), 0)::NUMERIC FROM tenant_subscriptions WHERE status = 'ACTIVE') AS total_mrr;
+            `
+          ]);
+
+          res.writeHead(200);
+          res.end(JSON.stringify({
+            success: true,
+            data: {
+              activeMerchants: kpiRows[0]?.active_merchants || 0,
+              suspendedMerchants: kpiRows[0]?.suspended_merchants || 0,
+              archivedMerchants: kpiRows[0]?.archived_merchants || 0,
+              totalMrr: Number(statsRows[0]?.total_mrr || 0),
+              totalUsers: statsRows[0]?.total_users || 0,
+              totalBranches: statsRows[0]?.total_branches || 0,
+              activeSubscriptions: statsRows[0]?.active_subscriptions || 0,
+              serverTimestamp: Date.now()
+            }
+          }));
+          return;
+        } catch (kpiErr) {
+          console.error('[server.js] /api/superadmin/dashboard-kpis error:', kpiErr);
+          res.writeHead(500);
+          res.end(JSON.stringify({ error: 'Failed compiling structural platform statistics.' }));
+          return;
+        }
+      }
+
+      // 0.F POST & GET /api/cron/subscriptions/process-expirations — Safe Automated Sub Expiration & Soft Deactivation Engine
+      if (pathname === '/api/cron/subscriptions/process-expirations' && (req.method === 'POST' || req.method === 'GET')) {
+        const currentEpochMs = Date.now();
+        try {
+          // STEP 1: Safely flag subscriptions that have expired using 13-digit BIGINT millisecond timestamp comparisons in PostgreSQL
+          const subResult = await sql`
+            UPDATE tenant_subscriptions
+            SET status = 'EXPIRED', updated_at = ${currentEpochMs}
+            WHERE status = 'ACTIVE' AND end_date < ${currentEpochMs}
+          `;
+
+          // STEP 2: Downstream cascading "Soft Deactivation" — flip tenant status to Suspended without touching deleted_at or dropping rows
+          const tenantResult = await sql`
+            UPDATE tenants t
+            SET status = 'Suspended', updated_at = ${currentEpochMs}
+            FROM tenant_subscriptions ts
+            WHERE t.id = ts.tenant_id
+            AND ts.status = 'EXPIRED'
+            AND (t.deleted_at IS NULL OR t.deleted_at = 0);
+          `;
+
+          res.writeHead(200);
+          res.end(JSON.stringify({
+            success: true,
+            evaluatedAt: currentEpochMs,
+            expiredSubscriptionsCount: subResult.rowCount || 0,
+            suspendedTenantsCount: tenantResult.rowCount || 0,
+            message: 'Automated subscription expiration check executed successfully.'
+          }));
+          return;
+        } catch (cronErr) {
+          console.error('[Cron Worker Error] Subscription expiration processing failed:', cronErr);
+          res.writeHead(500);
+          res.end(JSON.stringify({ error: 'Internal subscription evaluation failure.' }));
+          return;
+        }
       }
 
       // 0.1 POST /api/bootstrap — Optimized Fast Bootstrap Snapshot Endpoint (ETag 304 + Pre-Stringified Buffer Caching)

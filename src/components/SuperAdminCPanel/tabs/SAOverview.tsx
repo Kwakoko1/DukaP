@@ -125,6 +125,19 @@ export const SAOverview: React.FC = () => {
     return Array.from(map.values());
   }) || [];
 
+  const [serverKpis, setServerKpis] = useState<any>(null);
+
+  React.useEffect(() => {
+    fetch('/api/superadmin/dashboard-kpis')
+      .then(res => res.json())
+      .then(data => {
+        if (data && data.success && data.data) {
+          setServerKpis(data.data);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   const tenants = useMemo(() => {
     const filtered = rawTenants.filter((t: any) => !isTenantDeleted(t));
     const existingIds = new Set(filtered.map((t: any) => t.id));
@@ -174,7 +187,12 @@ export const SAOverview: React.FC = () => {
 
   const loading = !rawTenants && !subscriptions;
 
-  const mrr = useMemo(() => activeSubs.reduce((sum: number, s: any) => sum + getPlanRate(s), 0), [activeSubs]);
+  const displayTenantsCount = serverKpis?.activeMerchants ?? tenants.length;
+  const displayMrr = serverKpis?.totalMrr !== undefined ? serverKpis.totalMrr : activeSubs.reduce((sum: number, s: any) => sum + getPlanRate(s), 0);
+  const displayUsers = serverKpis?.totalUsers ?? cloudUsers;
+  const displayBranches = serverKpis?.totalBranches ?? branches;
+  const displayActiveSubs = serverKpis?.activeSubscriptions ?? activeSubs.length;
+
   const trialCount = useMemo(() => tenants.filter((t: any) => (t.status || '').toUpperCase() === 'TRIAL').length, [tenants]);
   const weekAgo = Date.now() - 7 * 86400000;
   const newThisWeek = useMemo(() => tenants.filter((t: any) => t.created_at && t.created_at > weekAgo).length, [tenants]);
@@ -247,7 +265,7 @@ export const SAOverview: React.FC = () => {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <KPICard
           label="Total Tenants"
-          value={tenants.length}
+          value={displayTenantsCount}
           sub="Isolated database clusters"
           delta={newThisWeek > 0 ? { value: `+${newThisWeek} this week`, positive: true } : undefined}
           icon={<Building2 className="h-4 w-4" />}
@@ -256,15 +274,15 @@ export const SAOverview: React.FC = () => {
         />
         <KPICard
           label="Monthly Recurring Rev"
-          value={`Tsh. ${(mrr / 1000).toFixed(0)}K`}
-          sub={`${activeSubs.length} active subscriptions`}
+          value={`Tsh. ${(displayMrr / 1000).toFixed(0)}K`}
+          sub={`${displayActiveSubs} active subscriptions`}
           icon={<DollarSign className="h-4 w-4" />}
           accent="emerald"
           loading={loading}
         />
         <KPICard
           label="Total Platform Users"
-          value={cloudUsers}
+          value={displayUsers}
           sub="Across all branches"
           icon={<Users className="h-4 w-4" />}
           accent="violet"
@@ -272,7 +290,7 @@ export const SAOverview: React.FC = () => {
         />
         <KPICard
           label="Total Branches"
-          value={branches}
+          value={displayBranches}
           sub="Physical outlets"
           icon={<Globe className="h-4 w-4" />}
           accent="cyan"
@@ -280,7 +298,7 @@ export const SAOverview: React.FC = () => {
         />
         <KPICard
           label="Active Subscriptions"
-          value={activeSubs.length}
+          value={displayActiveSubs}
           sub="Paid licenses"
           icon={<BarChart3 className="h-4 w-4" />}
           accent="indigo"
