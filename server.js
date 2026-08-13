@@ -524,13 +524,49 @@ const MIME_TYPES = {
   '.wasm': 'application/wasm'
 };
 
+// Deep structural normalization for native JSON hydration
+function sanitizeIncomingPayload(data) {
+  if (Array.isArray(data)) {
+    return data.map(item => sanitizeIncomingPayload(item));
+  }
+  if (data !== null && typeof data === 'object') {
+    // A. Fix structural variant_id dropouts for Dexie compound indexing
+    if ('variant_id' in data || 'variantId' in data) {
+      const v = data.variant_id || data.variantId;
+      if (v === null || v === undefined || v === 'null' || v === 'undefined' || v === 'no-variant') {
+        data.variant_id = 'no-variant';
+        data.variantId = 'no-variant';
+      }
+    }
+    
+    // B. Fix structural timestamp dropouts for 13-digit millisecond standard
+    if ('deleted_at' in data || 'deletedAt' in data) {
+      const d = data.deleted_at !== undefined ? data.deleted_at : data.deletedAt;
+      const numD = d === null || d === undefined ? 0 : Number(d);
+      data.deleted_at = numD;
+      data.deletedAt = numD;
+    }
+
+    // Recurse into nested arrays/objects safely
+    for (const key in data) {
+      if (typeof data[key] === 'object' && data[key] !== null) {
+        data[key] = sanitizeIncomingPayload(data[key]);
+      }
+    }
+  }
+  return data;
+}
+
 async function parseRequestBody(req) {
   return new Promise((resolve) => {
     let body = '';
     req.on('data', chunk => { body += chunk; });
     req.on('end', () => {
       try {
-        resolve(body ? JSON.parse(body) : {});
+        if (!body) return resolve({});
+        const parsed = JSON.parse(body);
+        const sanitized = sanitizeIncomingPayload(parsed);
+        resolve(sanitized);
       } catch (e) {
         resolve({});
       }

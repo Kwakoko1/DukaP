@@ -36,6 +36,10 @@ export function resolveEntityConflict<T extends SyncableRecord>(
   const isLocalDeleted = localDeletedAt > 0;
   const isRemoteDeleted = remoteDeletedAt > 0;
 
+  // Standardize values on instances to avoid mutation anomalies downstream
+  local.deleted_at = localDeletedAt;
+  remote.deleted_at = remoteDeletedAt;
+
   // RULE 1: Deletion Tombstone Protection (Prevent Resurrections)
   // If local is deleted, preserve local tombstone UNLESS remote has an explicitly higher 
   // version & timestamp than the local deletion (meaning an intentional re-creation occurred)
