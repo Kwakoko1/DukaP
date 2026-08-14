@@ -160,6 +160,54 @@ export class SuperAdminService {
         }
       }
 
+      // Check active branches for missing tenants
+      const allBranchesList = await cloudDb.cloud_branches.toArray().catch(() => []);
+      for (const b of allBranchesList) {
+        if ((b as any).deleted_at) continue;
+        const bTenantId = b.tenant_id || (b as any).tenantId;
+        if (bTenantId && !isTenantDeleted(bTenantId) && bTenantId !== 'tenant-admin-system' && !tenantIdSet.has(bTenantId)) {
+          const healedTenant = {
+            id: bTenantId,
+            name: b.name ? `${b.name} Store` : `Merchant Business (${bTenantId.substring(0, 8)})`,
+            slug: `merchant-${bTenantId.substring(0, 8)}`,
+            status: 'Active',
+            plan: 'Business',
+            business_type: 'Retail',
+            email: '',
+            created_at: b.created_at || Date.now(),
+            updated_at: Date.now(),
+            registration_completed: true
+          };
+          await cloudDb.cloud_tenants.put(healedTenant as any).catch(() => {});
+          await db.tenants.put(healedTenant as any).catch(() => {});
+          tenantIdSet.add(bTenantId);
+        }
+      }
+
+      // Check active users for missing tenants
+      const allUsersList = await cloudDb.cloud_users.toArray().catch(() => []);
+      for (const u of allUsersList) {
+        if (u.is_super_admin || (u as any).role === 'Super Admin' || (u as any).deleted_at) continue;
+        const uTenantId = u.tenant_id || (u as any).tenantId;
+        if (uTenantId && !isTenantDeleted(uTenantId) && uTenantId !== 'tenant-admin-system' && !tenantIdSet.has(uTenantId)) {
+          const healedTenant = {
+            id: uTenantId,
+            name: (u as any).username ? `${(u as any).username}'s Business` : `Merchant Business (${uTenantId.substring(0, 8)})`,
+            slug: `merchant-${uTenantId.substring(0, 8)}`,
+            status: 'Active',
+            plan: 'Business',
+            business_type: 'Retail',
+            email: u.email || '',
+            created_at: u.created_at || Date.now(),
+            updated_at: Date.now(),
+            registration_completed: true
+          };
+          await cloudDb.cloud_tenants.put(healedTenant as any).catch(() => {});
+          await db.tenants.put(healedTenant as any).catch(() => {});
+          tenantIdSet.add(uTenantId);
+        }
+      }
+
       // 4. Persist all active non-deleted tenant metadata to central Neon PostgreSQL server database
       const finalTenants = await cloudDb.cloud_tenants.toArray().catch(() => []);
       for (const t of finalTenants) {

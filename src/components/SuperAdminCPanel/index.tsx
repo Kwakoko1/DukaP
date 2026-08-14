@@ -106,6 +106,31 @@ export const SuperAdminCPanel: React.FC<SuperAdminCPanelProps> = ({ initialTab }
         }
       }
 
+      const [cB, lB, cU, lU] = await Promise.all([
+        cloudDb.cloud_branches.toArray().catch(() => []),
+        db.branches.toArray().catch(() => []),
+        cloudDb.cloud_users.toArray().catch(() => []),
+        db.users.toArray().catch(() => [])
+      ]);
+
+      for (const b of [...cB, ...lB]) {
+        if ((b as any).deleted_at) continue;
+        const tid = b.tenant_id || (b as any).tenantId;
+        if (tid && !existingIds.has(tid) && !isTenantDeleted(tid) && tid !== 'tenant-admin-system') {
+          existingIds.add(tid);
+          list.push({ id: tid });
+        }
+      }
+
+      for (const u of [...cU, ...lU]) {
+        if (u.is_super_admin || (u as any).role === 'Super Admin' || (u as any).deleted_at) continue;
+        const tid = u.tenant_id || (u as any).tenantId;
+        if (tid && !existingIds.has(tid) && !isTenantDeleted(tid) && tid !== 'tenant-admin-system') {
+          existingIds.add(tid);
+          list.push({ id: tid });
+        }
+      }
+
       return list.length;
     }
   );

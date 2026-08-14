@@ -1034,8 +1034,12 @@ const server = http.createServer(async (req, res) => {
           const [kpiRows, statsRows] = await Promise.all([
             sql`
               SELECT 
-                COUNT(CASE WHEN (status = 'Active' OR status = 'Trial') AND (deleted_at IS NULL OR deleted_at = 0) THEN 1 END)::INT AS active_merchants,
-                COUNT(CASE WHEN status = 'Suspended' AND (deleted_at IS NULL OR deleted_at = 0) THEN 1 END)::INT AS suspended_merchants,
+                GREATEST(
+                  COUNT(CASE WHEN (UPPER(status) = 'ACTIVE' OR UPPER(status) = 'TRIAL' OR status IS NULL) AND (deleted_at IS NULL OR deleted_at = 0) THEN 1 END)::INT,
+                  (SELECT COUNT(DISTINCT tenant_id)::INT FROM branches WHERE tenant_id IS NOT NULL AND tenant_id != '' AND tenant_id != 'tenant-admin-system' AND (deleted_at IS NULL OR deleted_at = 0)),
+                  (SELECT COUNT(DISTINCT tenant_id)::INT FROM users WHERE tenant_id IS NOT NULL AND tenant_id != '' AND tenant_id != 'tenant-admin-system' AND (deleted_at IS NULL OR deleted_at = 0) AND role != 'Super Admin')
+                )::INT AS active_merchants,
+                COUNT(CASE WHEN UPPER(status) = 'SUSPENDED' AND (deleted_at IS NULL OR deleted_at = 0) THEN 1 END)::INT AS suspended_merchants,
                 COUNT(CASE WHEN deleted_at IS NOT NULL AND deleted_at > 0 THEN 1 END)::INT AS archived_merchants
               FROM tenants
               WHERE id != 'tenant-admin-system';

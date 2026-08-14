@@ -159,8 +159,40 @@ export const SAOverview: React.FC = () => {
         });
       }
     }
+    // Check active branches
+    for (const b of rawBranches) {
+      if (b.deleted_at) continue;
+      const tid = b.tenant_id || (b as any).tenantId;
+      if (tid && !existingIds.has(tid) && !isTenantDeleted(tid) && tid !== 'tenant-admin-system') {
+        existingIds.add(tid);
+        missingSubTenants.push({
+          id: tid,
+          name: b.name ? `${b.name} Store` : `Merchant Tenant (${tid.substring(0, 8)})`,
+          status: 'Active',
+          plan: 'Business',
+          created_at: b.created_at || Date.now()
+        });
+      }
+    }
+
+    // Check active users
+    for (const u of rawUsers) {
+      if (u.is_super_admin || u.role === 'Super Admin') continue;
+      const tid = u.tenant_id || (u as any).tenantId;
+      if (tid && !existingIds.has(tid) && !isTenantDeleted(tid) && tid !== 'tenant-admin-system') {
+        existingIds.add(tid);
+        missingSubTenants.push({
+          id: tid,
+          name: u.username ? `${u.username}'s Business` : `Merchant Tenant (${tid.substring(0, 8)})`,
+          status: 'Active',
+          plan: 'Business',
+          created_at: u.created_at || Date.now()
+        });
+      }
+    }
+
     return [...filtered, ...missingSubTenants];
-  }, [rawTenants, subscriptions]);
+  }, [rawTenants, subscriptions, rawBranches, rawUsers]);
 
   const activeTenantIdSet = useMemo(() => new Set(tenants.map((t: any) => t.id)), [tenants]);
 
@@ -187,7 +219,7 @@ export const SAOverview: React.FC = () => {
 
   const loading = !rawTenants && !subscriptions;
 
-  const displayTenantsCount = serverKpis?.activeMerchants ?? tenants.length;
+  const displayTenantsCount = Math.max(serverKpis?.activeMerchants ?? 0, tenants.length);
   const displayMrr = serverKpis?.totalMrr !== undefined ? serverKpis.totalMrr : activeSubs.reduce((sum: number, s: any) => sum + getPlanRate(s), 0);
   const displayUsers = serverKpis?.totalUsers ?? cloudUsers;
   const displayBranches = serverKpis?.totalBranches ?? branches;
