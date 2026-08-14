@@ -3300,6 +3300,14 @@ export async function initProductionDatabase() {
   if (isSeedingInProgress) return;
   isSeedingInProgress = true;
 
+  try {
+    if (!db.isOpen()) {
+      await db.open();
+    }
+  } catch (err) {
+    console.warn('[Dexie] Database open check during initProductionDatabase:', err);
+  }
+
   if (typeof window !== 'undefined') {
     localStorage.setItem('DUKAPOS_PRODUCTION_LOCKED', 'true');
   }

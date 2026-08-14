@@ -129,8 +129,28 @@ export function initPWAUpdateService(): void {
     let refreshing = false;
     navigator.serviceWorker.addEventListener('controllerchange', () => {
       if (!refreshing) {
-        refreshing = true;
+        // If user is actively looking at this tab, perform clean reload
+        if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+          refreshing = true;
+          window.location.reload();
+        } else if (typeof sessionStorage !== 'undefined') {
+          // Background/idle tabs mark themselves as stale instead of executing a blind concurrent reload
+          sessionStorage.setItem('dukapos_pwa_stale_reload', 'true');
+        }
+      }
+    });
+
+    // Check deferred reload when background tab regains focus or visibility
+    const handleDeferredReload = () => {
+      if (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('dukapos_pwa_stale_reload') === 'true') {
+        sessionStorage.removeItem('dukapos_pwa_stale_reload');
         window.location.reload();
+      }
+    };
+    window.addEventListener('focus', handleDeferredReload);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        handleDeferredReload();
       }
     });
   }
