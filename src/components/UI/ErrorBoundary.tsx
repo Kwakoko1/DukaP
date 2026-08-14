@@ -27,9 +27,30 @@ export class ErrorBoundary extends Component<Props, State> {
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error('[Global ErrorBoundary Caught Exception]:', error, errorInfo);
     this.setState({ errorInfo });
+
+    const isChunkError =
+      error?.name === 'ChunkLoadError' ||
+      (error?.message && (
+        error.message.includes('Failed to fetch dynamically imported module') ||
+        error.message.includes('Importing a module script failed') ||
+        error.message.includes('error loading chunk') ||
+        error.message.includes('Loading chunk')
+      ));
+
+    if (isChunkError && typeof window !== 'undefined') {
+      const attempts = parseInt(sessionStorage.getItem('dukapos_chunk_reload_attempts') || '0', 10);
+      if (attempts < 2) {
+        sessionStorage.setItem('dukapos_chunk_reload_attempts', String(attempts + 1));
+        console.info('[ErrorBoundary] Auto-healing dynamic module import failure via page reload...');
+        window.location.reload();
+      }
+    }
   }
 
   private handleReload = () => {
+    if (typeof window !== 'undefined') {
+      sessionStorage.removeItem('dukapos_chunk_reload_attempts');
+    }
     window.location.reload();
   };
 

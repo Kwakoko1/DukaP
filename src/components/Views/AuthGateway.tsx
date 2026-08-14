@@ -1340,6 +1340,14 @@ export const AuthGateway: React.FC = () => {
     });
     setActiveModule((businessType as IndustryModule) || 'Retail');
     setActiveTab('Dashboard');
+
+    // Pre-preload Dashboard module chunk before switching active user view
+    try {
+      await import('./Dashboard');
+    } catch (e) {
+      console.warn('[Launch Workspace] Dashboard chunk pre-fetch notice:', e);
+    }
+
     setUser(createdUser);
   };
 
