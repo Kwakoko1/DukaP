@@ -199,38 +199,73 @@ export const Dialog: React.FC<DialogProps> = ({
 
   if (!isOpen) return null;
 
-  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+  const startDrag = (clientX: number, clientY: number, target: HTMLElement) => {
     if (!draggable) return;
-    const target = e.target as HTMLElement;
-    if (target.closest('button, input, select, textarea, a, kbd')) return;
+    if (target.closest('button, input, select, textarea, a, kbd, [role="button"]')) return;
 
     setIsDragging(true);
     dragStartRef.current = {
-      startX: e.clientX,
-      startY: e.clientY,
+      startX: clientX,
+      startY: clientY,
       initialX: position.x,
       initialY: position.y,
     };
 
-    const handleMouseMove = (moveEvent: MouseEvent) => {
+    document.body.style.userSelect = 'none';
+
+    const handlePointerMove = (moveX: number, moveY: number) => {
       if (!dragStartRef.current) return;
-      const deltaX = moveEvent.clientX - dragStartRef.current.startX;
-      const deltaY = moveEvent.clientY - dragStartRef.current.startY;
-      setPosition({
-        x: dragStartRef.current.initialX + deltaX,
-        y: dragStartRef.current.initialY + deltaY,
-      });
+      const deltaX = moveX - dragStartRef.current.startX;
+      const deltaY = moveY - dragStartRef.current.startY;
+
+      const newX = dragStartRef.current.initialX + deltaX;
+      const newY = dragStartRef.current.initialY + deltaY;
+
+      // Soft clamp to viewport to prevent losing modal off-screen
+      const maxClampX = Math.max(100, window.innerWidth * 0.45);
+      const maxClampY = Math.max(100, window.innerHeight * 0.45);
+      const clampedX = Math.max(-maxClampX, Math.min(maxClampX, newX));
+      const clampedY = Math.max(-maxClampY, Math.min(maxClampY, newY));
+
+      setPosition({ x: clampedX, y: clampedY });
     };
 
-    const handleMouseUp = () => {
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      handlePointerMove(moveEvent.clientX, moveEvent.clientY);
+    };
+
+    const handleTouchMove = (touchEvent: TouchEvent) => {
+      if (touchEvent.touches.length > 0) {
+        handlePointerMove(touchEvent.touches[0].clientX, touchEvent.touches[0].clientY);
+      }
+    };
+
+    const stopDrag = () => {
       setIsDragging(false);
       dragStartRef.current = null;
+      document.body.style.userSelect = '';
       window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('mouseup', stopDrag);
+      window.removeEventListener('touchmove', handleTouchMove);
+      window.removeEventListener('touchend', stopDrag);
+      window.removeEventListener('touchcancel', stopDrag);
     };
 
     window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
+    window.addEventListener('mouseup', stopDrag);
+    window.addEventListener('touchmove', handleTouchMove, { passive: true });
+    window.addEventListener('touchend', stopDrag);
+    window.addEventListener('touchcancel', stopDrag);
+  };
+
+  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    startDrag(e.clientX, e.clientY, e.target as HTMLElement);
+  };
+
+  const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (e.touches.length > 0) {
+      startDrag(e.touches[0].clientX, e.touches[0].clientY, e.target as HTMLElement);
+    }
   };
 
   const sizes: Record<string, string> = {
@@ -258,24 +293,27 @@ export const Dialog: React.FC<DialogProps> = ({
             : undefined
         }
         className={`relative flex flex-col w-full ${sizes[size]} max-h-[calc(100vh-32px)] rounded-2xl bg-white dark:bg-darkbg-card border border-slate-200 dark:border-darkbg-border shadow-2xl z-10 animate-scale-in overflow-hidden ${
-          isDragging ? 'opacity-95 shadow-indigo-500/30' : ''
+          isDragging ? 'opacity-95 shadow-indigo-500/40 ring-2 ring-indigo-500/30' : ''
         }`}
       >
         {/* ── Sticky Header (Draggable Handle) ── */}
         <div
-          className={`flex-none border-b border-slate-100 dark:border-darkbg-border/40 bg-slate-50/50 dark:bg-darkbg/50 ${
+          className={`flex-none border-b border-slate-100 dark:border-darkbg-border/40 bg-slate-50/70 dark:bg-darkbg/70 ${
             draggable ? 'cursor-grab active:cursor-grabbing select-none' : ''
           }`}
           onMouseDown={handleMouseDown}
+          onTouchStart={handleTouchStart}
           title={draggable ? 'Click & drag header to move modal' : undefined}
         >
-          <div className="px-5 pt-3 pb-2 flex items-center justify-between">
+          {/* Top Visual Drag Handle Bar */}
+          {draggable && (
+            <div className="flex justify-center pt-2 pb-0">
+              <div className="w-12 h-1 bg-slate-300 dark:bg-slate-700 rounded-full opacity-60 hover:opacity-100 transition-opacity" />
+            </div>
+          )}
+
+          <div className="px-5 pt-2 pb-2.5 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              {draggable && (
-                <span className="text-slate-400 dark:text-slate-500 text-xs font-mono select-none opacity-60 hover:opacity-100" title="Drag handle">
-                  ⋮⋮
-                </span>
-              )}
               <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">{title}</h3>
             </div>
             <button
