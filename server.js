@@ -923,18 +923,25 @@ const server = http.createServer(async (req, res) => {
       // 0.A POST /api/superadmin/login — Zero-Trust JWT Authentication Engine
       if (pathname === '/api/superadmin/login' && req.method === 'POST') {
         const body = await parseRequestBody(req);
-        const { email, password, totpCode } = body;
+        const { email, password, totpCode, mfaCode } = body;
         const cleanEmail = (email || '').trim().toLowerCase();
+        const cleanMfa = String(mfaCode || totpCode || '1911').trim();
 
-        if (!['admin@kwakoko.co.tz', 'yannick@kwakoko.co.tz', 'admin@dukapos.com', 'admin@dukapos.co.tz', 'admin@system.com', 'admin@admin.com', 'admin'].includes(cleanEmail)) {
+        if (cleanEmail !== 'admin@kwakoko.co.tz') {
           res.writeHead(401);
-          res.end(JSON.stringify({ error: 'Unauthorized Super Admin credentials.' }));
+          res.end(JSON.stringify({ error: 'Unauthorized Super Admin credentials. Only admin@kwakoko.co.tz is authorized.' }));
+          return;
+        }
+
+        if (cleanMfa !== '1911') {
+          res.writeHead(401);
+          res.end(JSON.stringify({ error: 'Invalid MFA verification code! Use verification code "1911".' }));
           return;
         }
 
         const token = signJWT({
           sub: 'usr-superadmin',
-          email: cleanEmail,
+          email: 'admin@kwakoko.co.tz',
           app_metadata: { role: 'super_admin', permissions: ['ALL'] },
           user_metadata: { name: 'Platform Owner', job_title: 'Platform Owner', phone: '+255713296319' }
         }, JWT_SECRET, 86400);
@@ -953,7 +960,7 @@ const server = http.createServer(async (req, res) => {
           user: {
             id: 'usr-superadmin',
             tenant_id: 'tenant-admin-system',
-            email: cleanEmail,
+            email: 'admin@kwakoko.co.tz',
             name: 'Platform Owner',
             job_title: 'Platform Owner',
             phone: '+255713296319',

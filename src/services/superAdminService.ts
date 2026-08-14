@@ -621,17 +621,29 @@ export class SuperAdminService {
     ipAddress: string = '127.0.0.1'
   ): Promise<CloudUser | null> {
     const cleanEmail = email.trim().toLowerCase();
+
+    if (cleanEmail !== 'admin@kwakoko.co.tz') {
+      await logCloudAudit({
+        tenant_id: 'tenant-admin-system',
+        user_id: 'usr-unknown',
+        action: 'super_admin.auth.failed',
+        ip_address: ipAddress,
+        status: 'FAILED',
+        details: `Unauthorized Super Admin email attempt: ${cleanEmail}`
+      });
+      return null;
+    }
     
     // Query central cloudDb users table directly
     let admin = await cloudDb.cloud_users.where('email').equals(cleanEmail).first();
     
-    if (!admin && ['admin@kwakoko.co.tz', 'yannick@kwakoko.co.tz', 'admin@dukapos.com', 'admin@dukapos.co.tz', 'admin@system.com', 'admin@admin.com', 'admin'].includes(cleanEmail)) {
+    if (!admin) {
       // Provision default Super Admin in cloudDb if missing
       const NOW = Date.now();
       admin = {
         id: 'usr-superadmin',
         tenant_id: 'tenant-admin-system',
-        email: cleanEmail.includes('@') ? cleanEmail : 'admin@kwakoko.co.tz',
+        email: 'admin@kwakoko.co.tz',
         password_hash: passwordHash || 'Kwakoko@2026&$',
         is_super_admin: true,
         name: 'Platform Owner',

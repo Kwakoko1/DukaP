@@ -15,6 +15,7 @@ import { cloudDb } from '../../db/supabaseMock';
 import { tenantProvisioningService } from '../../services/tenantProvisioningService';
 import { tenantRecoveryService } from '../../services/tenantRecoveryService';
 import { SuperAdminService } from '../../services/superAdminService';
+import { SuperAdminAuthEngine } from '../../services/productionAuthService';
 import { validateTenantSlug } from '../../utils/slugValidator';
 import { otpVerificationService } from '../../services/otpVerificationService';
 import { notificationDispatcher } from '../../services/notificationDispatcher';
@@ -357,6 +358,7 @@ export const AuthGateway: React.FC = () => {
   const [adminEmail, setAdminEmail] = useState('admin@kwakoko.co.tz');
   const [adminPassword, setAdminPassword] = useState('Kwakoko@2026&$');
   const [adminMfa, setAdminMfa] = useState('1911');
+  const [isAdminLoading, setIsAdminLoading] = useState(false);
 
   const [showPassword, setShowPassword] = useState(false);
   const [showTenantId, setShowTenantId] = useState(false);
@@ -1056,6 +1058,7 @@ export const AuthGateway: React.FC = () => {
   const handleAdminLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
+    setIsAdminLoading(true);
 
     const cleanEmail = (adminEmail || 'admin@kwakoko.co.tz').trim().toLowerCase();
     const cleanPass = (adminPassword || 'Kwakoko@2026&$').trim();
@@ -1063,27 +1066,40 @@ export const AuthGateway: React.FC = () => {
 
     if (!cleanEmail || !cleanPass) {
       setErrorMsg('Please enter your Super Admin email and password.');
+      setIsAdminLoading(false);
       return;
     }
 
-    if (cleanMfa && cleanMfa !== '1911' && cleanMfa !== '123456') {
-      setErrorMsg('Invalid MFA verification code! Use verification code "1911" or "123456".');
+    if (cleanEmail !== 'admin@kwakoko.co.tz') {
+      setErrorMsg('Unauthorized Super Admin credentials. Only admin@kwakoko.co.tz is authorized.');
+      setIsAdminLoading(false);
+      return;
+    }
+
+    if (cleanMfa !== '1911') {
+      setErrorMsg('Invalid MFA verification code! Use verification code "1911".');
+      setIsAdminLoading(false);
       return;
     }
 
     try {
-      // Authenticate directly against central production database (cloudDb)
+      // 1. Authenticate against server JWT login endpoint to acquire Zero-Trust JWT token
+      await SuperAdminAuthEngine.login(cleanEmail, cleanPass);
+      SuperAdminAuthEngine.setStepUpToken('SUPER_ADMIN_ELEVATED');
+
+      // 2. Authenticate directly against central production database (cloudDb)
       const cloudAdmin = await SuperAdminService.authenticateSuperAdmin(cleanEmail, cleanPass);
 
       if (!cloudAdmin) {
         setErrorMsg('Invalid admin credentials or unauthorized Super Admin account.');
+        setIsAdminLoading(false);
         return;
       }
 
       const adminUser: User = {
         id: cloudAdmin.id || 'usr-superadmin',
         name: cloudAdmin.name || 'Platform Owner',
-        email: cloudAdmin.email || 'admin@kwakoko.co.tz',
+        email: 'admin@kwakoko.co.tz',
         phone: cloudAdmin.phone || '+255713296319',
         role: 'Super Admin',
         tenant_id: 'tenant-admin-system',
@@ -1091,9 +1107,16 @@ export const AuthGateway: React.FC = () => {
       };
 
       setUser(adminUser);
+
+      // 3. Trigger immediate background platform registry synchronization
+      SuperAdminService.syncPlatformRegistry().catch(err => {
+        console.warn('[Super Admin Login] Background registry sync warning:', err);
+      });
     } catch (err) {
       console.error('[Super Admin Login Error]', err);
       setErrorMsg('Super admin login failed. Please check server logs.');
+    } finally {
+      setIsAdminLoading(false);
     }
   };
 
@@ -1964,12 +1987,15 @@ export const AuthGateway: React.FC = () => {
 
                 {/* MFA code */}
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 tracking-wider uppercase">ADMIN MFA CODE</label>
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 tracking-wider uppercase">ADMIN MFA CODE</label>
+                    <span className="text-[10px] text-indigo-500 font-semibold">Verification Code: 1911</span>
+                  </div>
                   <div className="relative">
                     <KeyIcon className="absolute left-4 top-3.5 h-5 w-5 text-slate-400" />
                     <input
                       type="text"
-                      placeholder="MFA Code: 1911"
+                      placeholder="Verification Code: 1911"
                       className="w-full pl-12 pr-4 py-3 bg-slate-50 dark:bg-darkbg border border-slate-200 dark:border-darkbg-border rounded-xl text-slate-800 dark:text-white placeholder-slate-400 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-[#5b3ce4] focus:outline-none transition shadow-sm"
                       value={adminMfa}
                       onChange={(e) => setAdminMfa(e.target.value)}
@@ -1979,9 +2005,18 @@ export const AuthGateway: React.FC = () => {
                 </div>
 
                 {/* Submit Button */}
-                <Button type="submit" variant="primary" className="w-full bg-[#5b3ce4] hover:bg-[#4c30c9] py-6 shadow-md shadow-indigo-600/10 hover:shadow-indigo-600/25 transition flex items-center justify-center gap-2 border-none text-white font-bold rounded-xl">
-                  <span>Secure Console Access</span>
-                  <ArrowRight className="h-4 w-4" />
+                <Button type="submit" disabled={isAdminLoading} variant="primary" className="w-full bg-[#5b3ce4] hover:bg-[#4c30c9] py-6 shadow-md shadow-indigo-600/10 hover:shadow-indigo-600/25 transition flex items-center justify-center gap-2 border-none text-white font-bold rounded-xl disabled:opacity-50">
+                  {isAdminLoading ? (
+                    <>
+                      <Loader className="h-4 w-4 animate-spin" />
+                      <span>Authenticating Console...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Secure Console Access</span>
+                      <ArrowRight className="h-4 w-4" />
+                    </>
+                  )}
                 </Button>
               </form>
             )}
