@@ -1302,7 +1302,7 @@ export const UsersRoles: React.FC = () => {
 
                       const branchName = (primaryAlloc && branchObj?.name)
                         ? branchObj.name
-                        : (isSuperAdminUser ? 'Primary Branch' : (dbBranches[0]?.name || 'Default HQ'));
+                        : (isSuperAdminUser ? 'HQ' : (dbBranches[0]?.name || 'Default HQ'));
 
                       const branchLocation = (primaryAlloc && branchObj?.location)
                         ? branchObj.location

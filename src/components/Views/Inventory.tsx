@@ -3281,8 +3281,19 @@ export const Inventory: React.FC = () => {
       );
     } else {
       await proceedToSave();
-    }
   };
+
+  useEffect(() => {
+    if (!isEditorOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        handleSaveProduct();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isEditorOpen, handleSaveProduct]);
 
   const openDeleteConfirmation = async (product: Product) => {
     setProductToDelete(product);
@@ -3478,37 +3489,47 @@ export const Inventory: React.FC = () => {
         isOpen={isEditorOpen}
         onClose={() => setIsEditorOpen(false)}
         title={selectedProduct ? `Edit Product: ${pName}` : 'Add New Product'}
-        size="full"
+        size="xl"
         subHeader={
           <div className="inv-editor-tabs flex items-center gap-1 overflow-x-auto border-b-0 bg-transparent">
             {PRODUCT_TABS.map(t => (
               <button key={t.id} className={`inv-editor-tab ${editorTab === t.id ? 'active' : ''}`}
                 onClick={() => setEditorTab(t.id)}>
                 {t.icon} <span>{t.label}</span>
+                {t.id === 'variants' && pHasVariants && localVariants.length > 0 && (
+                  <span className="ml-1 px-1.5 py-0.2 text-[10px] font-extrabold bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 rounded-full">
+                    {localVariants.length}
+                  </span>
+                )}
               </button>
             ))}
           </div>
         }
         footer={
-          <div className="flex items-center justify-end gap-3 w-full">
-            <button
-              type="button"
-              className="px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all"
-              onClick={() => setIsEditorOpen(false)}
-            >
-              Cancel
-            </button>
-            {editorTab !== 'history' && editorTab !== 'batch' && editorTab !== 'serials' && editorTab !== 'reorder' && (
+          <div className="flex items-center justify-between w-full">
+            <span className="text-[11px] text-slate-400 font-medium hidden sm:inline-block">
+              Press <kbd className="px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 bg-slate-100 border border-slate-300 rounded-md dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700">Ctrl+S</kbd> to save
+            </span>
+            <div className="flex items-center gap-2 ml-auto">
               <button
                 type="button"
-                className="px-5 py-2 text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl shadow-md flex items-center gap-1.5 transition-all disabled:opacity-50"
-                onClick={handleSaveProduct}
-                disabled={isSaving}
+                className="px-3.5 py-1.5 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all"
+                onClick={() => setIsEditorOpen(false)}
               >
-                {isSaving ? <RefreshCw size={14} className="spin animate-spin" /> : <Check size={14} />}
-                <span>{selectedProduct ? 'Update Product' : 'Create Product'}</span>
+                Cancel
               </button>
-            )}
+              {editorTab !== 'history' && editorTab !== 'batch' && editorTab !== 'serials' && editorTab !== 'reorder' && (
+                <button
+                  type="button"
+                  className="px-4 py-1.5 text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl shadow-xs flex items-center gap-1.5 transition-all disabled:opacity-50"
+                  onClick={handleSaveProduct}
+                  disabled={isSaving}
+                >
+                  {isSaving ? <RefreshCw size={13} className="spin animate-spin" /> : <Check size={13} />}
+                  <span>{selectedProduct ? 'Update Product' : 'Create Product'}</span>
+                </button>
+              )}
+            </div>
           </div>
         }
       >
@@ -3516,139 +3537,119 @@ export const Inventory: React.FC = () => {
             {/* General Tab */}
             {editorTab === 'general' && (
               <div className="inv-form-grid">
-                <div className="inv-field full pb-2 border-b border-slate-100 dark:border-darkbg-border/40 mb-1">
-                  <div className="flex flex-col md:flex-row gap-3 items-start">
-                    {/* Product Name (Left side) */}
+                {/* Top Row: Product Name + Compact Image Upload Widget */}
+                <div className="inv-field full pb-2 border-b border-slate-100 dark:border-darkbg-border/40">
+                  <div className="flex flex-col sm:flex-row gap-3 items-center">
+                    {/* Product Name Input */}
                     <div className="flex-1 w-full space-y-1">
                       <label className="text-xs font-bold text-slate-700 dark:text-slate-200">Product Name *</label>
                       <input
-                        className="inv-input w-full font-semibold text-sm h-10"
+                        className="inv-input w-full font-semibold text-xs h-9"
                         value={pName}
                         onChange={e => setPName(e.target.value)}
-                        placeholder="e.g. Coca Cola 500ml"
+                        placeholder="e.g. Serengeti Premium Lager 500ml"
                       />
                     </div>
 
-                    {/* Product Image Box (Right side of Product Name) */}
-                    <div className="shrink-0 flex flex-col gap-1">
-                      <label className="text-xs font-bold text-slate-700 dark:text-slate-200">Product Image</label>
-                      <div className="flex items-center gap-2 p-1.5 bg-slate-50 dark:bg-darkbg/90 border border-slate-200 dark:border-darkbg-border rounded-xl shadow-xs">
-                        {/* Image Thumbnail Preview */}
-                        <div
-                          className="relative h-16 w-16 rounded-lg border-2 border-dashed border-indigo-300 dark:border-indigo-700/50 bg-white dark:bg-darkbg overflow-hidden flex flex-col items-center justify-center cursor-pointer hover:border-indigo-500 transition-all group shrink-0"
-                          onClick={() => (document.getElementById('product-image-file-input') as HTMLInputElement)?.click()}
-                          title="Click thumbnail to upload or change image"
-                        >
-                          {pImagePreview ? (
-                            <>
-                              <img src={pImagePreview} alt="Product" className="h-full w-full object-contain" />
-                              <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                                <span className="text-white text-[9px] font-bold">Change</span>
-                              </div>
-                            </>
-                          ) : (
-                            <div className="flex flex-col items-center text-slate-400">
-                              <Upload className="h-5 w-5 text-indigo-500 mb-0.5" />
-                              <span className="text-[8px] font-bold text-slate-500">No Image</span>
+                    {/* Compact Image Widget */}
+                    <div className="shrink-0 flex items-center gap-2 p-1.5 bg-slate-50 dark:bg-darkbg/90 border border-slate-200 dark:border-darkbg-border rounded-xl">
+                      <div
+                        className="relative h-12 w-12 rounded-lg border border-dashed border-indigo-300 dark:border-indigo-700/50 bg-white dark:bg-darkbg overflow-hidden flex items-center justify-center cursor-pointer hover:border-indigo-500 transition-all group shrink-0"
+                        onClick={() => (document.getElementById('product-image-file-input') as HTMLInputElement)?.click()}
+                        title="Click thumbnail to upload image"
+                      >
+                        {pImagePreview ? (
+                          <>
+                            <img src={pImagePreview} alt="Product" className="h-full w-full object-contain" />
+                            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                              <span className="text-white text-[8px] font-bold">Edit</span>
                             </div>
-                          )}
-                        </div>
-
-                        {/* Visible Upload & Camera Buttons */}
-                        <div className="flex flex-col gap-1.5">
-                          <input
-                            id="product-image-file-input"
-                            type="file"
-                            accept="image/*"
-                            className="hidden"
-                            onChange={(e) => {
-                              const file = e.target.files?.[0];
-                              if (!file) return;
-                              if (file.size > 5 * 1024 * 1024) { alert('Image must be under 5 MB.'); return; }
-                              const reader = new FileReader();
-                              reader.onload = (ev) => {
-                                const dataUrl = ev.target?.result as string;
-                                setPImageUrl(dataUrl);
-                                setPImagePreview(dataUrl);
-                              };
-                              reader.readAsDataURL(file);
-                            }}
-                          />
-                          <input
-                            id="product-camera-file-input"
-                            type="file"
-                            accept="image/*"
-                            capture="environment"
-                            className="hidden"
-                            onChange={(e) => {
-                              const file = e.target.files?.[0];
-                              if (!file) return;
-                              const reader = new FileReader();
-                              reader.onload = (ev) => {
-                                const dataUrl = ev.target?.result as string;
-                                setPImageUrl(dataUrl);
-                                setPImagePreview(dataUrl);
-                              };
-                              reader.readAsDataURL(file);
-                            }}
-                          />
-
-                          <div className="flex items-center gap-1.5">
-                            {/* Upload File Button */}
-                            <button
-                              type="button"
-                              className="text-xs px-2.5 py-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-darkbg-border text-slate-700 dark:text-slate-100 rounded-lg font-bold hover:bg-slate-100 hover:border-indigo-400 flex items-center gap-1.5 transition-all shadow-2xs"
-                              onClick={() => (document.getElementById('product-image-file-input') as HTMLInputElement)?.click()}
-                              title="Upload image from your device"
-                            >
-                              <Upload className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
-                              <span>Upload</span>
-                            </button>
-
-                            {/* Camera Snap Button */}
-                            <button
-                              type="button"
-                              className="text-xs px-2.5 py-1 bg-indigo-600 text-white rounded-lg font-bold hover:bg-indigo-700 flex items-center gap-1.5 shadow-xs transition-all"
-                              onClick={startImageCamera}
-                              title="Take photo using webcam / device camera"
-                            >
-                              <Camera className="h-3.5 w-3.5" />
-                              <span>Camera 📸</span>
-                            </button>
+                          </>
+                        ) : (
+                          <div className="flex flex-col items-center text-slate-400">
+                            <Upload className="h-4 w-4 text-indigo-500" />
                           </div>
+                        )}
+                      </div>
 
-                          {pImagePreview ? (
-                            <button
-                              type="button"
-                              className="text-[10px] text-red-500 hover:text-red-700 font-bold text-left flex items-center gap-1"
-                              onClick={() => { setPImageUrl(''); setPImagePreview(''); }}
-                            >
-                              <Trash2 className="h-3 w-3" /> Remove Image
-                            </button>
-                          ) : (
-                            <input
-                              className="inv-input text-[10px] h-5 px-1.5 w-40 rounded"
-                              placeholder="Or paste image URL..."
-                              value={pImageUrl.startsWith('data:') ? '' : pImageUrl}
-                              onChange={(e) => {
-                                const url = e.target.value.trim();
-                                setPImageUrl(url);
-                                setPImagePreview(url);
-                              }}
-                            />
-                          )}
+                      <div className="flex flex-col gap-1">
+                        <input
+                          id="product-image-file-input"
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            if (file.size > 5 * 1024 * 1024) { alert('Image must be under 5 MB.'); return; }
+                            const reader = new FileReader();
+                            reader.onload = (ev) => {
+                              const dataUrl = ev.target?.result as string;
+                              setPImageUrl(dataUrl);
+                              setPImagePreview(dataUrl);
+                            };
+                            reader.readAsDataURL(file);
+                          }}
+                        />
+                        <input
+                          id="product-camera-file-input"
+                          type="file"
+                          accept="image/*"
+                          capture="environment"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            const reader = new FileReader();
+                            reader.onload = (ev) => {
+                              const dataUrl = ev.target?.result as string;
+                              setPImageUrl(dataUrl);
+                              setPImagePreview(dataUrl);
+                            };
+                            reader.readAsDataURL(file);
+                          }}
+                        />
+
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            className="text-[11px] px-2 py-0.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-darkbg-border text-slate-700 dark:text-slate-100 rounded font-bold hover:bg-slate-100 flex items-center gap-1"
+                            onClick={() => (document.getElementById('product-image-file-input') as HTMLInputElement)?.click()}
+                          >
+                            <Upload className="h-3 w-3 text-indigo-600" />
+                            <span>Upload</span>
+                          </button>
+                          <button
+                            type="button"
+                            className="text-[11px] px-2 py-0.5 bg-indigo-600 text-white rounded font-bold hover:bg-indigo-700 flex items-center gap-1"
+                            onClick={startImageCamera}
+                          >
+                            <Camera className="h-3 w-3" />
+                            <span>Camera</span>
+                          </button>
                         </div>
+
+                        {pImagePreview && (
+                          <button
+                            type="button"
+                            className="text-[9px] text-red-500 hover:text-red-700 font-bold flex items-center gap-0.5"
+                            onClick={() => { setPImageUrl(''); setPImagePreview(''); }}
+                          >
+                            <Trash2 className="h-2.5 w-2.5" /> Remove
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
                 </div>
 
+                {/* Row 2: Category & Brand */}
                 <div className="inv-field">
-                  <label className="flex items-center justify-between text-xs font-bold mb-1">
+                  <label className="flex items-center justify-between text-xs font-bold">
                     <span>Category *</span>
                     <button
                       type="button"
-                      className="text-[11px] font-bold text-indigo-600 hover:underline flex items-center gap-1"
+                      className="text-[10px] font-bold text-indigo-600 hover:underline flex items-center gap-0.5"
                       onClick={async () => {
                         const name = prompt('Enter new Category name:');
                         if (name && name.trim()) {
@@ -3658,12 +3659,11 @@ export const Inventory: React.FC = () => {
                         }
                       }}
                     >
-                      <Plus className="h-3 w-3" /> + New Category
+                      <Plus className="h-2.5 w-2.5" /> New Category
                     </button>
                   </label>
-
                   <select
-                    className="inv-input h-10 rounded-lg border border-slate-200 bg-slate-50 text-xs px-2.5 dark:border-darkbg-border dark:bg-darkbg dark:text-white"
+                    className="inv-input h-9 rounded-lg border border-slate-200 bg-slate-50 text-xs px-2.5 dark:border-darkbg-border dark:bg-darkbg dark:text-white"
                     value={pCategory}
                     onChange={e => {
                       if (e.target.value === '__ADD_NEW__') {
@@ -3681,7 +3681,7 @@ export const Inventory: React.FC = () => {
                     <option value="">Select Category...</option>
                     {allCategories.map(c => (
                       <option key={c.name} value={c.name}>
-                        {c.name} {c.count > 0 ? `(${c.count} products)` : ''}
+                        {c.name} {c.count > 0 ? `(${c.count})` : ''}
                       </option>
                     ))}
                     <option value="__ADD_NEW__">➕ Add New Category...</option>
@@ -3689,11 +3689,11 @@ export const Inventory: React.FC = () => {
                 </div>
 
                 <div className="inv-field">
-                  <label className="flex items-center justify-between text-xs font-bold mb-1">
+                  <label className="flex items-center justify-between text-xs font-bold">
                     <span>Brand</span>
                     <button
                       type="button"
-                      className="text-[11px] font-bold text-indigo-600 hover:underline flex items-center gap-1"
+                      className="text-[10px] font-bold text-indigo-600 hover:underline flex items-center gap-0.5"
                       onClick={async () => {
                         const name = prompt('Enter new Brand name:');
                         if (name && name.trim()) {
@@ -3703,12 +3703,11 @@ export const Inventory: React.FC = () => {
                         }
                       }}
                     >
-                      <Plus className="h-3 w-3" /> + New Brand
+                      <Plus className="h-2.5 w-2.5" /> New Brand
                     </button>
                   </label>
-
                   <select
-                    className="inv-input h-10 rounded-lg border border-slate-200 bg-slate-50 text-xs px-2.5 dark:border-darkbg-border dark:bg-darkbg dark:text-white"
+                    className="inv-input h-9 rounded-lg border border-slate-200 bg-slate-50 text-xs px-2.5 dark:border-darkbg-border dark:bg-darkbg dark:text-white"
                     value={pBrand}
                     onChange={async e => {
                       if (e.target.value === '__ADD_NEW__') {
@@ -3726,33 +3725,34 @@ export const Inventory: React.FC = () => {
                     <option value="">Select Brand (Optional)...</option>
                     {allBrands.map(b => (
                       <option key={b.name} value={b.name}>
-                        {b.name} {b.count > 0 ? `(${b.count} products)` : ''}
+                        {b.name} {b.count > 0 ? `(${b.count})` : ''}
                       </option>
                     ))}
                     <option value="__ADD_NEW__">➕ Add New Brand...</option>
                   </select>
                 </div>
 
+                {/* Row 3: SKU & Barcode */}
                 <div className="inv-field">
-                  <label className="text-xs font-bold mb-1 flex items-center justify-between text-slate-700 dark:text-slate-200">
+                  <label className="text-xs font-bold flex items-center justify-between text-slate-700 dark:text-slate-200">
                     <span>SKU</span>
-                    <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-semibold flex items-center gap-1">
-                      <Lock className="h-3 w-3" /> Auto-Generated (Read-Only)
+                    <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-semibold flex items-center gap-0.5">
+                      <Lock className="h-2.5 w-2.5" /> Auto-Generated
                     </span>
                   </label>
                   <input
-                    className="inv-input bg-slate-100 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 font-mono font-bold cursor-not-allowed border border-slate-200 dark:border-slate-700 select-all"
+                    className="inv-input h-9 bg-slate-100 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 font-mono font-bold cursor-not-allowed border border-slate-200 dark:border-slate-700 select-all"
                     value={pSku}
                     readOnly
-                    placeholder="Auto-generated based on product name"
+                    placeholder="Auto-generated SKU"
                   />
                 </div>
 
                 <div className="inv-field">
-                  <label className="text-xs font-bold mb-1 block">Barcode</label>
+                  <label className="text-xs font-bold block">Barcode</label>
                   <div className="flex gap-1.5 items-center">
                     <input
-                      className="inv-input flex-1 h-10 rounded-lg border border-slate-200 bg-slate-50 text-xs px-2.5 font-mono dark:border-darkbg-border dark:bg-darkbg dark:text-white"
+                      className="inv-input flex-1 h-9 rounded-lg border border-slate-200 bg-slate-50 text-xs px-2.5 font-mono dark:border-darkbg-border dark:bg-darkbg dark:text-white"
                       value={pBarcode}
                       onChange={e => setPBarcode(e.target.value)}
                       placeholder="Scan or type barcode"
@@ -3760,31 +3760,32 @@ export const Inventory: React.FC = () => {
                     <Button
                       type="button"
                       variant="primary"
-                      className="h-10 px-3 shrink-0 flex items-center gap-1.5 text-xs font-bold"
+                      className="h-9 px-2.5 shrink-0 flex items-center gap-1 text-xs font-bold"
                       onClick={() => {
                         setScannerTargetField('product');
                         setActiveVariantIndexForScan(null);
                         setScannerError('');
                         setIsCameraScannerOpen(true);
                       }}
-                      title="Launch Real Camera Barcode Scanner"
+                      title="Launch Camera Scanner"
                     >
-                      <Barcode className="h-4 w-4" />
-                      <span>Scan 📷</span>
+                      <Barcode className="h-3.5 w-3.5" />
+                      <span>Scan</span>
                     </Button>
                   </div>
                 </div>
 
+                {/* Row 4: Supplier & Expiry (if Pharmacy) */}
                 <div className="inv-field">
-                  <label className="flex items-center justify-between text-xs font-bold mb-1">
+                  <label className="flex items-center justify-between text-xs font-bold">
                     <span>Supplier</span>
                     {allSuppliers.length === 0 && (
-                      <span className="text-[10px] text-amber-500 font-normal">No suppliers found — add via Purchasing</span>
+                      <span className="text-[10px] text-amber-500 font-normal">Add via Purchasing</span>
                     )}
                   </label>
                   {allSuppliers.length > 0 ? (
                     <select
-                      className="inv-input h-10 rounded-lg border border-slate-200 bg-slate-50 text-xs px-2.5 dark:border-darkbg-border dark:bg-darkbg dark:text-white"
+                      className="inv-input h-9 rounded-lg border border-slate-200 bg-slate-50 text-xs px-2.5 dark:border-darkbg-border dark:bg-darkbg dark:text-white"
                       value={pSupplierId}
                       onChange={e => {
                         const val = e.target.value;
@@ -3801,74 +3802,61 @@ export const Inventory: React.FC = () => {
                       <option value="">— Select Supplier (Optional) —</option>
                       {allSuppliers.map(s => (
                         <option key={s.id} value={s.id}>
-                          {s.name}{s.trading_name ? ` (${s.trading_name})` : ''} · {s.supplier_code}
+                          {s.name}{s.trading_name ? ` (${s.trading_name})` : ''}
                         </option>
                       ))}
                       <option value="__MANUAL__">✏️ Enter manually...</option>
                     </select>
                   ) : (
                     <input
-                      className="inv-input"
+                      className="inv-input h-9"
                       value={pSupplier}
                       onChange={e => setPSupplier(e.target.value)}
-                      placeholder="Supplier name (add suppliers in Purchasing)"
+                      placeholder="Supplier name (Optional)"
                     />
                   )}
-                  {/* Show manual text input when '__MANUAL__' chosen or no supplier selected but text was typed */}
                   {allSuppliers.length > 0 && pSupplierId === '' && (
                     <input
-                      className="inv-input mt-1"
+                      className="inv-input h-8 mt-1 text-xs"
                       value={pSupplier}
                       onChange={e => setPSupplier(e.target.value)}
-                      placeholder="Or type supplier name manually..."
+                      placeholder="Type supplier name..."
                     />
                   )}
                 </div>
 
                 {activeModule === 'Pharmacy' && (
                   <div className="inv-field">
-                    <label>Expiry Date</label>
-                    <input className="inv-input" type="date" value={pExpiry} onChange={e => setPExpiry(e.target.value)}/>
+                    <label className="text-xs font-bold">Expiry Date</label>
+                    <input className="inv-input h-9" type="date" value={pExpiry} onChange={e => setPExpiry(e.target.value)}/>
                   </div>
                 )}
+
+                {/* Row 5: Compact Description */}
                 <div className="inv-field full">
-                  <label>Description</label>
-                  <textarea className="inv-input" rows={3} value={pDescription} onChange={e => setPDescription(e.target.value)} placeholder="Optional product description"/>
+                  <label className="text-xs font-bold">Description</label>
+                  <textarea className="inv-input" rows={2} value={pDescription} onChange={e => setPDescription(e.target.value)} placeholder="Optional product description..."/>
                 </div>
-                <div className="inv-field">
-                  <label className="inv-checkbox-label">
-                    <input type="checkbox" checked={pHasVariants} onChange={e => setPHasVariants(e.target.checked)}/>
-                    Has Variants (Size, Color, etc.)
+
+                {/* Bottom Options Row: Variants Toggle & Backdated Date */}
+                <div className="inv-field full flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-100 dark:border-darkbg-border/30">
+                  <label className="inv-checkbox-label text-xs font-bold text-slate-700 dark:text-slate-200">
+                    <input type="checkbox" className="rounded text-indigo-600 focus:ring-indigo-500 h-4 w-4" checked={pHasVariants} onChange={e => setPHasVariants(e.target.checked)}/>
+                    <span>Has Variants (Size, Color, Flavour, etc.)</span>
                   </label>
+
+                  {!selectedProduct && ((securitySetting?.config || DEFAULT_SECURITY_CONFIG) as SecurityConfig).allowBackdatedProducts && (
+                    <div className="flex items-center gap-2">
+                      <label className="text-[11px] font-bold text-slate-500 shrink-0">Backdated Created Date:</label>
+                      <input
+                        className="inv-input h-7 text-[11px] px-2"
+                        type="datetime-local"
+                        value={productCreatedAtDate}
+                        onChange={(e) => setProductCreatedAtDate(e.target.value)}
+                      />
+                    </div>
+                  )}
                 </div>
-                {!selectedProduct && (
-                  <div className="inv-field full border-t border-slate-100 dark:border-darkbg-border/30 pt-3 mt-1">
-                    {!((securitySetting?.config || DEFAULT_SECURITY_CONFIG) as SecurityConfig).allowBackdatedProducts ? (
-                      <div className="p-2.5 bg-slate-50 dark:bg-darkbg/40 border dark:border-darkbg-border/60 rounded-lg text-xs text-slate-400 flex items-center gap-1.5" style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '10px', background: 'var(--bg-slate-50)', border: '1px solid var(--border-color)', borderRadius: '6px', color: '#64748b' }}>
-                        <Shield size={12} className="text-slate-400" />
-                        <span>Backdated product creation is disabled by policy.</span>
-                      </div>
-                    ) : (
-                      <>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                          <label style={{ fontWeight: 'bold', margin: 0 }}>Created Date (Backdated)</label>
-                          {!['Super Admin', 'Business Owner', 'Tenant Owner', 'Branch Manager'].includes(user?.role || '') && (
-                            <span style={{ fontSize: '9px', background: '#fef3c7', color: '#d97706', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>Requires Approval</span>
-                          )}
-                        </div>
-                        <input
-                          className="inv-input"
-                          type="datetime-local"
-                          value={productCreatedAtDate}
-                          onChange={(e) => setProductCreatedAtDate(e.target.value)}
-                        />
-                        <span style={{ fontSize: '0.7rem', color: '#64748b', marginTop: '2px', display: 'block' }}>
-                          Leave blank for current system time.
-                        </span>
-                      </>
-                    )}
-                  </div>
-                )}
               </div>
             )}
 
