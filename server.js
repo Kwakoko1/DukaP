@@ -1337,7 +1337,12 @@ const server = http.createServer(async (req, res) => {
             role = EXCLUDED.role,
             phone = EXCLUDED.phone,
             password_hash = EXCLUDED.password_hash;
-        `;
+        `.catch(() => {});
+        invalidateTenantBootstrapCache(payload.tenant_id || tenantId);
+        res.writeHead(200);
+        res.end(JSON.stringify({ success: true, user: payload }));
+        return;
+      }
       // 0.1 POST /api/auth/register — Enterprise Atomic Server-Side Tenant Registration
       if (pathname === '/api/auth/register' && req.method === 'POST') {
         const payload = await parseRequestBody(req);
