@@ -848,7 +848,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     clearActiveSession();
     // Dev superuser: preserve module+tab state across logout so last active context
     // is automatically restored on next login (never falls back to Retail).
-    const isDevSuperuser = user?.email === 'yannick@kwakoko.co.tz';
+    const isDevSuperuser = user?.email === 'admin@kwakoko.co.tz' || user?.email === 'yannick@kwakoko.co.tz';
     if (!isDevSuperuser) {
       localStorage.removeItem('dukapos_active_tab');
       localStorage.removeItem('dukapos_active_module');

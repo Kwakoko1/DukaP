@@ -334,14 +334,14 @@ async function setupPostgres() {
     // 1. Superadmin user seed
     await appPool.query(`
       INSERT INTO users (id, tenant_id, branch_id, name, username, email, phone, role, password_hash, created_at)
-      VALUES ('usr-superadmin', 'tenant-admin-system', 'branch-admin-main', 'System Platform Owner', 'admin', 'admin@dukapos.com', '+255799999999', 'Super Admin', 'admin123', $1)
-      ON CONFLICT (id) DO NOTHING;
+      VALUES ('usr-superadmin', 'tenant-admin-system', 'branch-admin-main', 'Platform Owner', 'admin', 'admin@kwakoko.co.tz', '+255713296319', 'Super Admin', 'Kwakoko@2026&$', $1)
+      ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, password_hash = EXCLUDED.password_hash, phone = EXCLUDED.phone;
     `, [Date.now()]);
 
     await appPool.query(`
       INSERT INTO user_security (user_id, tenant_id, pin_hash, password_hash, last_login_at, created_at)
-      VALUES ('usr-superadmin', 'tenant-admin-system', '1234', 'admin123', $1, $1)
-      ON CONFLICT (user_id) DO NOTHING;
+      VALUES ('usr-superadmin', 'tenant-admin-system', '1911', 'Kwakoko@2026&$', $1, $1)
+      ON CONFLICT (user_id) DO UPDATE SET pin_hash = EXCLUDED.pin_hash, password_hash = EXCLUDED.password_hash;
     `, [Date.now()]);
 
     // 2. Primary active tenant seed (Bravados)

@@ -141,6 +141,8 @@ export interface CloudUser {
   registration_ip?: string;
   registration_device?: string;
   verification_status?: string;
+  job_title?: string;
+  role?: string;
 }
 
 export interface CloudUserBranchRole {

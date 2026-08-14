@@ -926,7 +926,7 @@ const server = http.createServer(async (req, res) => {
         const { email, password, totpCode } = body;
         const cleanEmail = (email || '').trim().toLowerCase();
 
-        if (!['admin@dukapos.com', 'admin@dukapos.co.tz', 'admin@system.com', 'admin@admin.com', 'admin'].includes(cleanEmail)) {
+        if (!['admin@kwakoko.co.tz', 'yannick@kwakoko.co.tz', 'admin@dukapos.com', 'admin@dukapos.co.tz', 'admin@system.com', 'admin@admin.com', 'admin'].includes(cleanEmail)) {
           res.writeHead(401);
           res.end(JSON.stringify({ error: 'Unauthorized Super Admin credentials.' }));
           return;
@@ -936,14 +936,14 @@ const server = http.createServer(async (req, res) => {
           sub: 'usr-superadmin',
           email: cleanEmail,
           app_metadata: { role: 'super_admin', permissions: ['ALL'] },
-          user_metadata: { name: 'System Platform Owner' }
+          user_metadata: { name: 'Platform Owner', job_title: 'Platform Owner', phone: '+255713296319' }
         }, JWT_SECRET, 86400);
 
         // Record Audit Trail
         const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '127.0.0.1';
         await sql`
           INSERT INTO platform_audit_trail (actor_id, actor_name, action, ip_address, user_agent, timestamp)
-          VALUES ('usr-superadmin', 'System Platform Owner', 'SUPER_ADMIN_JWT_AUTHENTICATED', ${String(ip)}, ${String(req.headers['user-agent'] || '')}, ${Date.now()});
+          VALUES ('usr-superadmin', 'Platform Owner', 'SUPER_ADMIN_JWT_AUTHENTICATED', ${String(ip)}, ${String(req.headers['user-agent'] || '')}, ${Date.now()});
         `.catch(() => {});
 
         res.writeHead(200);
@@ -954,7 +954,9 @@ const server = http.createServer(async (req, res) => {
             id: 'usr-superadmin',
             tenant_id: 'tenant-admin-system',
             email: cleanEmail,
-            name: 'System Platform Owner',
+            name: 'Platform Owner',
+            job_title: 'Platform Owner',
+            phone: '+255713296319',
             is_super_admin: true,
             role: 'Super Admin'
           }

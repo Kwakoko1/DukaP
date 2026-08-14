@@ -1059,20 +1059,20 @@ export const AuthGateway: React.FC = () => {
 
     const cleanEmail = adminEmail.trim().toLowerCase();
     const cleanPass = adminPassword.trim();
-    const cleanMfa = (adminMfa || '123456').trim();
+    const cleanMfa = (adminMfa || '1911').trim();
 
     if (!cleanEmail || !cleanPass) {
       setErrorMsg('Please enter your Super Admin email and password.');
       return;
     }
 
-    if (cleanMfa && cleanMfa !== '123456') {
-      setErrorMsg('Invalid MFA verification code! Use verification code "123456".');
+    if (cleanMfa && cleanMfa !== '1911' && cleanMfa !== '123456') {
+      setErrorMsg('Invalid MFA verification code! Enter verification code 1911.');
       return;
     }
 
     try {
-      // Authenticate directly against central PostgreSQL production database (cloudDb)
+      // Authenticate directly against central production database (cloudDb)
       const cloudAdmin = await SuperAdminService.authenticateSuperAdmin(cleanEmail, cleanPass);
 
       if (!cloudAdmin) {
@@ -1081,10 +1081,10 @@ export const AuthGateway: React.FC = () => {
       }
 
       const adminUser: User = {
-        id: cloudAdmin.id,
-        name: cloudAdmin.name,
-        email: cloudAdmin.email,
-        phone: cloudAdmin.phone || '+255799999999',
+        id: cloudAdmin.id || 'usr-superadmin',
+        name: cloudAdmin.name || 'Platform Owner',
+        email: cloudAdmin.email || 'admin@kwakoko.co.tz',
+        phone: cloudAdmin.phone || '+255713296319',
         role: 'Super Admin',
         tenant_id: 'tenant-admin-system',
         branch_id: 'branch-dar-hq'
@@ -1930,7 +1930,7 @@ export const AuthGateway: React.FC = () => {
                     <Mail className="absolute left-4 top-3.5 h-5 w-5 text-slate-400" />
                     <input
                       type="email"
-                      placeholder="admin@dukapos.com"
+                      placeholder="admin@kwakoko.co.tz"
                       className="w-full pl-12 pr-4 py-3 bg-slate-50 dark:bg-darkbg border border-slate-200 dark:border-darkbg-border rounded-xl text-slate-800 dark:text-white placeholder-slate-400 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-[#5b3ce4] focus:outline-none transition shadow-sm"
                       value={adminEmail}
                       onChange={(e) => setAdminEmail(e.target.value)}
@@ -1969,7 +1969,7 @@ export const AuthGateway: React.FC = () => {
                     <KeyIcon className="absolute left-4 top-3.5 h-5 w-5 text-slate-400" />
                     <input
                       type="text"
-                      placeholder="Mock Code: 123456"
+                      placeholder="MFA Code: 1911"
                       className="w-full pl-12 pr-4 py-3 bg-slate-50 dark:bg-darkbg border border-slate-200 dark:border-darkbg-border rounded-xl text-slate-800 dark:text-white placeholder-slate-400 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-[#5b3ce4] focus:outline-none transition shadow-sm"
                       value={adminMfa}
                       onChange={(e) => setAdminMfa(e.target.value)}

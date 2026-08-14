@@ -625,23 +625,25 @@ export class SuperAdminService {
     // Query central cloudDb users table directly
     let admin = await cloudDb.cloud_users.where('email').equals(cleanEmail).first();
     
-    if (!admin && ['admin@dukapos.com', 'admin@dukapos.co.tz', 'admin@system.com', 'admin@admin.com', 'admin'].includes(cleanEmail)) {
+    if (!admin && ['admin@kwakoko.co.tz', 'yannick@kwakoko.co.tz', 'admin@dukapos.com', 'admin@dukapos.co.tz', 'admin@system.com', 'admin@admin.com', 'admin'].includes(cleanEmail)) {
       // Provision default Super Admin in cloudDb if missing
       const NOW = Date.now();
       admin = {
         id: 'usr-superadmin',
         tenant_id: 'tenant-admin-system',
-        email: cleanEmail.includes('@') ? cleanEmail : 'admin@dukapos.com',
-        password_hash: passwordHash || 'admin123',
+        email: cleanEmail.includes('@') ? cleanEmail : 'admin@kwakoko.co.tz',
+        password_hash: passwordHash || 'Kwakoko@2026&$',
         is_super_admin: true,
-        name: 'System Platform Owner',
-        phone: '+255799999999',
+        name: 'Platform Owner',
+        job_title: 'Platform Owner',
+        role: 'Super Admin',
+        phone: '+255713296319',
         status: 'Active',
         created_at: NOW,
         registration_source: 'SUPER_ADMIN_SYSTEM',
         verification_status: 'VERIFIED'
       };
-      await cloudDb.cloud_users.put(admin);
+      await cloudDb.cloud_users.put(admin!);
     }
 
     if (!admin || !admin.is_super_admin) {

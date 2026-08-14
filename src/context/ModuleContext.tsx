@@ -8,7 +8,7 @@ import { getActiveSessionRaw } from '../utils/sessionStorage';
  * Dev/testing superuser accounts that get access to ALL industry modules
  * simultaneously, with persistent module+tab state across logout/login.
  */
-const DEV_SUPERUSER_EMAILS = new Set(['yannick@kwakoko.co.tz']);
+const DEV_SUPERUSER_EMAILS = new Set(['admin@kwakoko.co.tz', 'yannick@kwakoko.co.tz']);
 
 /** Returns the currently logged-in user's email from session storage (no React dependency). */
 function getSessionEmail(): string | null {
