@@ -139,11 +139,34 @@ export const tenantHealthMonitor = {
       if (existingBranches.length === 0) {
         console.warn(`[Startup Integrity] No branches found for tenant ${tenantId}. Auto-healing HQ branch...`);
         const cloudB = await cloudDb.cloud_branches.where('tenant_id').equals(tenantId).first();
+
+        let hqName = '';
+        let hqLoc = '';
+        if (tenantId === 'tenant-admin-system') {
+          hqName = 'Primary Branch';
+          hqLoc = 'Platform Central HQ';
+        } else {
+          const districtStr = (tenant?.district || '').trim();
+          const regionStr = (tenant?.region || '').trim();
+          const addressStr = (tenant?.address || '').trim();
+          if (districtStr && regionStr) {
+            hqName = `${districtStr}, ${regionStr} HQ`;
+          } else if (districtStr) {
+            hqName = `${districtStr} HQ`;
+          } else if (regionStr) {
+            hqName = `${regionStr} HQ`;
+          } else {
+            hqName = `${tenant?.name || 'Main'} HQ`;
+          }
+          const locParts = [addressStr, districtStr, regionStr].filter(Boolean);
+          hqLoc = locParts.length > 0 ? locParts.join(', ') : 'Central HQ';
+        }
+
         const branchToInsert = cloudB || {
           id: `branch-${tenantId}-hq`,
           tenant_id: tenantId,
-          name: `${tenant?.name || 'Main'} HQ Branch`,
-          location: 'Headquarters',
+          name: hqName,
+          location: hqLoc,
           is_headquarters: true,
           created_at: Date.now()
         };

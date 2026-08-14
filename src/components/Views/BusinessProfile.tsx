@@ -36,32 +36,56 @@ export const BusinessProfile: React.FC = () => {
       if (!currentTenant?.id) return;
       const existing = await db.branches.where('tenant_id').equals(currentTenant.id).toArray();
       if (existing.length === 0) {
-        await db.branches.bulkPut([
-          {
-            id: `br-${currentTenant.id}-dar-hq`,
-            tenant_id: currentTenant.id,
-            branch_code: 'DAR-HQ',
-            name: 'Dar es Salaam HQ Branch',
-            location: 'Posta, Dar es Salaam',
-            status: 'Active',
-            is_headquarters: true,
-            created_at: Date.now()
-          },
-          {
-            id: `br-${currentTenant.id}-aru-dep`,
-            tenant_id: currentTenant.id,
-            branch_code: 'ARU-DEP',
-            name: 'Arusha Retail Branch',
-            location: 'Njiro, Arusha',
-            status: 'Active',
-            is_headquarters: false,
-            created_at: Date.now() + 1000
+        if (currentTenant.id === 'tenant-admin-system') {
+          await db.branches.bulkPut([
+            {
+              id: 'branch-dar-hq',
+              tenant_id: 'tenant-admin-system',
+              branch_code: 'HQ-01',
+              name: 'Primary Branch',
+              location: 'Platform Central HQ',
+              status: 'Active',
+              is_headquarters: true,
+              created_at: Date.now()
+            }
+          ]);
+        } else {
+          const tAny = currentTenant as any;
+          const districtStr = (tAny.district || '').trim();
+          const regionStr = (tAny.region || '').trim();
+          const addressStr = (tAny.address || '').trim();
+
+          let hqName = '';
+          if (districtStr && regionStr) {
+            hqName = `${districtStr}, ${regionStr} HQ`;
+          } else if (districtStr) {
+            hqName = `${districtStr} HQ`;
+          } else if (regionStr) {
+            hqName = `${regionStr} HQ`;
+          } else {
+            hqName = `${currentTenant.name || 'Main'} HQ`;
           }
-        ]);
+
+          const locParts = [addressStr, districtStr, regionStr].filter(Boolean);
+          const hqLocation = locParts.length > 0 ? locParts.join(', ') : 'Central HQ';
+
+          await db.branches.bulkPut([
+            {
+              id: `br-${currentTenant.id}-hq`,
+              tenant_id: currentTenant.id,
+              branch_code: 'HQ-01',
+              name: hqName,
+              location: hqLocation,
+              status: 'Active',
+              is_headquarters: true,
+              created_at: Date.now()
+            }
+          ]);
+        }
       }
     };
     seedDefaultBranches();
-  }, [currentTenant?.id]);
+  }, [currentTenant?.id, (currentTenant as any)?.region, (currentTenant as any)?.district, (currentTenant as any)?.address, currentTenant?.name]);
 
   // Branch Editor Modal States
   const [isBranchModalOpen, setIsBranchModalOpen] = useState(false);

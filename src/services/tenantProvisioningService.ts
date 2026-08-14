@@ -153,18 +153,45 @@ export const tenantProvisioningService = {
         } catch (_) { /* ignore duplicate */ }
       }
 
-      // 2. Core System: Default HQ Branch (always the primary/headquarters)
+      // 2. Core System: Default HQ Branch (Primary Branch for Super Admin, Region/District HQ for Tenant Businesses)
       const branchExists = await db.branches.get(branchId);
       if (!branchExists) {
+        let hqBranchName = additionalMetadata.branchName;
+        let hqLocation = additionalMetadata.address;
+
+        if (tenantId === 'tenant-admin-system') {
+          hqBranchName = 'Primary Branch';
+          hqLocation = 'Platform Central HQ';
+        } else {
+          const districtStr = (additionalMetadata.district || '').trim();
+          const regionStr = (additionalMetadata.region || '').trim();
+          const addressStr = (additionalMetadata.address || '').trim();
+
+          if (!hqBranchName || hqBranchName === 'Main HQ Branch' || hqBranchName === 'Main Branch' || hqBranchName === 'HQ Office') {
+            if (districtStr && regionStr) {
+              hqBranchName = `${districtStr}, ${regionStr} HQ`;
+            } else if (districtStr) {
+              hqBranchName = `${districtStr} HQ`;
+            } else if (regionStr) {
+              hqBranchName = `${regionStr} HQ`;
+            } else {
+              hqBranchName = `${companyName} HQ`;
+            }
+          }
+
+          const locationParts = [addressStr, districtStr, regionStr].filter(Boolean);
+          hqLocation = locationParts.length > 0 ? locationParts.join(', ') : 'Central HQ';
+        }
+
         await db.branches.put({
           id: branchId,
           tenant_id: tenantId,
-          name: additionalMetadata.branchName || 'Main HQ Branch',
-          location: additionalMetadata.address || 'HQ Office',
+          name: hqBranchName,
+          location: hqLocation,
           is_headquarters: true,
           is_default: true,
           status: 'Active',
-          branch_code: companyName.replace(/[^a-zA-Z]/g, '').slice(0, 5).toUpperCase() + '-HQ-01',
+          branch_code: tenantId === 'tenant-admin-system' ? 'HQ-01' : (companyName.replace(/[^a-zA-Z]/g, '').slice(0, 5).toUpperCase() + '-HQ-01'),
           created_at: NOW
         });
       }
