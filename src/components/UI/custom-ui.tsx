@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
 // Reusable Button component
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
@@ -150,6 +150,7 @@ export interface DialogProps {
   children: React.ReactNode;
   footer?: React.ReactNode;
   size?: 'sm' | 'md' | 'lg' | 'xl' | 'full';
+  draggable?: boolean;
 }
 
 export const Dialog: React.FC<DialogProps> = ({
@@ -161,11 +162,22 @@ export const Dialog: React.FC<DialogProps> = ({
   children,
   footer,
   size = 'md',
+  draggable = true,
 }) => {
   const firstFocusableRef = useRef<HTMLButtonElement>(null);
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartRef = useRef<{ startX: number; startY: number; initialX: number; initialY: number } | null>(null);
 
   const onCloseRef = useRef(onClose);
   useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
+
+  // Reset position when dialog opens
+  useEffect(() => {
+    if (isOpen) {
+      setPosition({ x: 0, y: 0 });
+    }
+  }, [isOpen]);
 
   // Escape key + body scroll lock
   useEffect(() => {
@@ -187,6 +199,40 @@ export const Dialog: React.FC<DialogProps> = ({
 
   if (!isOpen) return null;
 
+  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!draggable) return;
+    const target = e.target as HTMLElement;
+    if (target.closest('button, input, select, textarea, a, kbd')) return;
+
+    setIsDragging(true);
+    dragStartRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      initialX: position.x,
+      initialY: position.y,
+    };
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      if (!dragStartRef.current) return;
+      const deltaX = moveEvent.clientX - dragStartRef.current.startX;
+      const deltaY = moveEvent.clientY - dragStartRef.current.startY;
+      setPosition({
+        x: dragStartRef.current.initialX + deltaX,
+        y: dragStartRef.current.initialY + deltaY,
+      });
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+      dragStartRef.current = null;
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  };
+
   const sizes: Record<string, string> = {
     sm: 'max-w-sm',
     md: 'max-w-lg',
@@ -204,14 +250,34 @@ export const Dialog: React.FC<DialogProps> = ({
         onClick={onClose}
       />
 
-      {/* Modal box — flex column, max height centered */}
+      {/* Modal box — flex column, draggable via transform */}
       <div
-        className={`relative flex flex-col w-full ${sizes[size]} max-h-[calc(100vh-32px)] rounded-2xl bg-white dark:bg-darkbg-card border border-slate-200 dark:border-darkbg-border shadow-2xl z-10 animate-scale-in overflow-hidden`}
+        style={
+          position.x !== 0 || position.y !== 0
+            ? { transform: `translate(${position.x}px, ${position.y}px)` }
+            : undefined
+        }
+        className={`relative flex flex-col w-full ${sizes[size]} max-h-[calc(100vh-32px)] rounded-2xl bg-white dark:bg-darkbg-card border border-slate-200 dark:border-darkbg-border shadow-2xl z-10 animate-scale-in overflow-hidden ${
+          isDragging ? 'opacity-95 shadow-indigo-500/30' : ''
+        }`}
       >
-        {/* ── Sticky Header ── */}
-        <div className="flex-none border-b border-slate-100 dark:border-darkbg-border/40 bg-slate-50/50 dark:bg-darkbg/50">
+        {/* ── Sticky Header (Draggable Handle) ── */}
+        <div
+          className={`flex-none border-b border-slate-100 dark:border-darkbg-border/40 bg-slate-50/50 dark:bg-darkbg/50 ${
+            draggable ? 'cursor-grab active:cursor-grabbing select-none' : ''
+          }`}
+          onMouseDown={handleMouseDown}
+          title={draggable ? 'Click & drag header to move modal' : undefined}
+        >
           <div className="px-5 pt-3 pb-2 flex items-center justify-between">
-            <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">{title}</h3>
+            <div className="flex items-center gap-2">
+              {draggable && (
+                <span className="text-slate-400 dark:text-slate-500 text-xs font-mono select-none opacity-60 hover:opacity-100" title="Drag handle">
+                  ⋮⋮
+                </span>
+              )}
+              <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">{title}</h3>
+            </div>
             <button
               ref={firstFocusableRef}
               onClick={onClose}
