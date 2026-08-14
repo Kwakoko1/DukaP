@@ -42,6 +42,7 @@ export type IndustryModule =
   | 'Security'
   | 'Water'
   | 'Transport'
+  | 'FleetManagement'
   | 'Waste'
   | 'Wholesale'
   | 'Fashion'
@@ -414,6 +415,62 @@ export const MODULE_MANIFESTS: Record<IndustryModule, ModuleManifest> = {
     description: 'Water meter consumption, utility billings, and repair routes.'
   },
   Transport: {
+    name: 'Vehicle & Fleet Management',
+    icon: 'Truck',
+    sidebar: [
+      { 
+        name: 'Dashboard', 
+        subItems: ['Fleet Overview', 'Fleet Health', 'Alerts & Expiring Documents', 'Utilization Overview', 'Fuel & Cost Summary'] 
+      },
+      { 
+        name: 'Vehicles', 
+        subItems: ['All Vehicles', 'Add Vehicle', 'Vehicle Groups', 'Vehicle Types', 'Vehicle Documents', 'Vehicle Inspection', 'Vehicle Status'] 
+      },
+      { 
+        name: 'Fleet Operations', 
+        subItems: ['Trip Management', 'Dispatch', 'Assign Vehicle', 'Assign Driver', 'Trip History', 'Route Management', 'Mileage / Odometer'] 
+      },
+      { 
+        name: 'Drivers', 
+        subItems: ['All Drivers', 'Add Driver', 'Driver Profiles', 'Driver Assignments', 'Driver Licenses', 'Driver Performance', 'Driver Incidents'] 
+      },
+      { 
+        name: 'Fuel Management', 
+        subItems: ['Fuel Dashboard', 'Fuel Transactions', 'Fuel Stations / Suppliers', 'Fuel Consumption', 'Fuel Efficiency', 'Fuel Cost Analysis'] 
+      },
+      { 
+        name: 'Maintenance', 
+        subItems: ['Maintenance Dashboard', 'Maintenance Schedule', 'Service Records', 'Repair Orders', 'Preventive Maintenance', 'Parts & Materials', 'Maintenance Costs', 'Workshop'] 
+      },
+      { 
+        name: 'Expenses', 
+        subItems: ['Fleet Expenses', 'Vehicle Expenses', 'Driver Expenses', 'Tolls & Parking', 'Insurance Costs', 'Registration Costs', 'Other Expenses'] 
+      },
+      { 
+        name: 'Compliance', 
+        subItems: ['Vehicle Registration', 'Insurance', 'Road License', 'Inspection Certificates', 'Driver Licenses', 'Compliance Calendar', 'Expiring Documents'] 
+      },
+      { 
+        name: 'Incidents', 
+        subItems: ['Accidents', 'Traffic Violations', 'Damage Reports', 'Claims', 'Incident History'] 
+      },
+      { 
+        name: 'Tracking', 
+        subItems: ['Live Fleet Tracking', 'Vehicle Location', 'Trip Tracking', 'Geofencing', 'Mileage Tracking', 'GPS History'] 
+      },
+      { 
+        name: 'Reports', 
+        subItems: ['Fleet Report', 'Vehicle Utilization', 'Fuel Consumption', 'Fuel Cost', 'Maintenance', 'Vehicle Profitability', 'Driver Performance', 'Trip Report', 'Expense Report', 'Compliance Report', 'Cost per Kilometer'] 
+      },
+      { 
+        name: 'Settings', 
+        subItems: ['Fleet Settings', 'Vehicle Types', 'Fuel Types', 'Maintenance Categories', 'Expense Categories', 'Document Types', 'Trip Settings', 'Tracking Settings'] 
+      }
+    ],
+    widgets: ['TotalVehicles', 'ActiveTrips', 'FuelEfficiency', 'MaintenanceAlerts', 'FleetProfitability'],
+    description: 'Complete vehicle lifecycle, driver management, dispatch, fuel anomalies, maintenance stock integration, telematics, and profitability analytics.'
+  },
+  FleetManagement: {
     name: 'Vehicle & Fleet Management',
     icon: 'Truck',
     sidebar: [

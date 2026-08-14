@@ -579,6 +579,78 @@ const DukaPosAppContent: React.FC = () => {
       case 'Weekly Planner':
       case 'Technician Assignment':
       case 'Fleet Management':
+      case 'Vehicle & Fleet Management':
+      case 'Transport':
+      case 'Fleet Overview':
+      case 'Fleet Health':
+      case 'Alerts & Expiring Documents':
+      case 'Utilization Overview':
+      case 'Fuel & Cost Summary':
+      case 'All Vehicles':
+      case 'Add Vehicle':
+      case 'Vehicle Groups':
+      case 'Vehicle Types':
+      case 'Vehicle Documents':
+      case 'Vehicle Inspection':
+      case 'Vehicle Status':
+      case 'Fleet Operations':
+      case 'Trip Management':
+      case 'Dispatch':
+      case 'Assign Vehicle':
+      case 'Assign Driver':
+      case 'Trip History':
+      case 'Route Management':
+      case 'Mileage / Odometer':
+      case 'Drivers':
+      case 'All Drivers':
+      case 'Add Driver':
+      case 'Driver Profiles':
+      case 'Driver Assignments':
+      case 'Driver Licenses':
+      case 'Driver Performance':
+      case 'Driver Incidents':
+      case 'Fuel Dashboard':
+      case 'Fuel Transactions':
+      case 'Fuel Stations / Suppliers':
+      case 'Fuel Consumption':
+      case 'Fuel Efficiency':
+      case 'Fuel Cost Analysis':
+      case 'Maintenance Dashboard':
+      case 'Maintenance Schedule':
+      case 'Service Records':
+      case 'Repair Orders':
+      case 'Preventive Maintenance':
+      case 'Parts & Materials':
+      case 'Maintenance Costs':
+      case 'Workshop':
+      case 'Fleet Expenses':
+      case 'Vehicle Expenses':
+      case 'Driver Expenses':
+      case 'Tolls & Parking':
+      case 'Insurance Costs':
+      case 'Registration Costs':
+      case 'Other Expenses':
+      case 'Compliance':
+      case 'Vehicle Registration':
+      case 'Road License':
+      case 'Inspection Certificates':
+      case 'Compliance Calendar':
+      case 'Incidents':
+      case 'Traffic Violations':
+      case 'Damage Reports':
+      case 'Claims':
+      case 'Incident History':
+      case 'Tracking':
+      case 'Live Fleet Tracking':
+      case 'Vehicle Location':
+      case 'Trip Tracking':
+      case 'Geofencing':
+      case 'Mileage Tracking':
+      case 'GPS History':
+      case 'Fleet Report':
+      case 'Vehicle Utilization':
+      case 'Vehicle Profitability':
+      case 'Cost per Kilometer':
       case 'Company Vehicles':
       case 'Driver Assignment':
       case 'Fuel Usage':
