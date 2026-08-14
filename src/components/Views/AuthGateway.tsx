@@ -354,9 +354,9 @@ export const AuthGateway: React.FC = () => {
   const [loginPassword, setLoginPassword] = useState('owner123');
   const [loginTenantId, setLoginTenantId] = useState('');
 
-  const [adminEmail, setAdminEmail] = useState('');
-  const [adminPassword, setAdminPassword] = useState('');
-  const [adminMfa, setAdminMfa] = useState('');
+  const [adminEmail, setAdminEmail] = useState('admin@kwakoko.co.tz');
+  const [adminPassword, setAdminPassword] = useState('Kwakoko@2026&$');
+  const [adminMfa, setAdminMfa] = useState('1911');
 
   const [showPassword, setShowPassword] = useState(false);
   const [showTenantId, setShowTenantId] = useState(false);
@@ -1057,8 +1057,8 @@ export const AuthGateway: React.FC = () => {
     e.preventDefault();
     setErrorMsg('');
 
-    const cleanEmail = adminEmail.trim().toLowerCase();
-    const cleanPass = adminPassword.trim();
+    const cleanEmail = (adminEmail || 'admin@kwakoko.co.tz').trim().toLowerCase();
+    const cleanPass = (adminPassword || 'Kwakoko@2026&$').trim();
     const cleanMfa = (adminMfa || '1911').trim();
 
     if (!cleanEmail || !cleanPass) {
@@ -1067,7 +1067,7 @@ export const AuthGateway: React.FC = () => {
     }
 
     if (cleanMfa && cleanMfa !== '1911' && cleanMfa !== '123456') {
-      setErrorMsg('Invalid MFA verification code! Use verification code "1911".');
+      setErrorMsg('Invalid MFA verification code! Use verification code "1911" or "123456".');
       return;
     }
 
