@@ -1406,19 +1406,23 @@ const server = http.createServer(async (req, res) => {
           const modulesToSeed = Array.from(new Set([payload.businessType || 'Retail', ...(payload.subscribedModules || [])]));
           for (const modKey of modulesToSeed) {
             const tmId = `tm-${tid}-${modKey.toLowerCase()}`;
-            await sql`
-              INSERT INTO tenant_modules (id, tenant_id, module_key, installed, enabled, status, version, installed_at, enabled_at, created_at, updated_at)
-              VALUES (${tmId}, ${tid}, ${modKey}, true, true, 'ENABLED', 1, ${now}, ${now}, ${now}, ${now})
-              ON CONFLICT (id) DO UPDATE SET enabled = true, status = 'ENABLED', updated_at = ${now};
-            `.catch(() => {});
+            try {
+              await sql`
+                INSERT INTO tenant_modules (id, tenant_id, module_key, installed, enabled, status, version, installed_at, enabled_at, created_at, updated_at)
+                VALUES (${tmId}, ${tid}, ${modKey}, true, true, 'ENABLED', 1, ${now}, ${now}, ${now}, ${now})
+                ON CONFLICT (id) DO UPDATE SET enabled = true, status = 'ENABLED', updated_at = ${now};
+              `;
+            } catch (_) {}
           }
 
           // Seed initial active trial subscription
-          await sql`
-            INSERT INTO tenant_subscriptions (id, tenant_id, plan_id, status, start_date, end_date, auto_renew, created_at)
-            VALUES (${`sub-${tid}`}, ${tid}, ${plan.toLowerCase()}, 'active', ${now}, ${trialEnd}, true, ${now})
-            ON CONFLICT DO NOTHING;
-          `.catch(() => {});
+          try {
+            await sql`
+              INSERT INTO tenant_subscriptions (id, tenant_id, plan_id, status, start_date, end_date, auto_renew, created_at)
+              VALUES (${`sub-${tid}`}, ${tid}, ${plan.toLowerCase()}, 'active', ${now}, ${trialEnd}, true, ${now})
+              ON CONFLICT DO NOTHING;
+            `;
+          } catch (_) {}
 
           // Log security audit record
           const auditDetails = JSON.stringify({
@@ -1430,10 +1434,12 @@ const server = http.createServer(async (req, res) => {
             modules: modulesToSeed
           });
 
-          await sql`
-            INSERT INTO security_audit_logs (id, tenant_id, user_id, action, ip_address, status, created_at, details)
-            VALUES (${`audit-${now}`}, ${tid}, ${uid}, 'TENANT_REGISTERED', ${String(ip)}, 'SUCCESS', ${now}, ${auditDetails})
-          `.catch(() => {});
+          try {
+            await sql`
+              INSERT INTO security_audit_logs (id, tenant_id, user_id, action, ip_address, status, created_at, details)
+              VALUES (${`audit-${now}`}, ${tid}, ${uid}, 'TENANT_REGISTERED', ${String(ip)}, 'SUCCESS', ${now}, ${auditDetails});
+            `;
+          } catch (_) {}
 
           invalidateTenantBootstrapCache(tid);
 
@@ -1465,21 +1471,25 @@ const server = http.createServer(async (req, res) => {
         const newPlan = payload.plan || payload.metadata?.plan || 'Professional';
 
         if (targetTenantId) {
-          await sql`
-            UPDATE tenants
-            SET status = 'Active',
-                plan = ${newPlan},
-                updated_at = ${now}
-            WHERE id = ${targetTenantId};
-          `.catch(() => {});
+          try {
+            await sql`
+              UPDATE tenants
+              SET status = 'Active',
+                  plan = ${newPlan},
+                  updated_at = ${now}
+              WHERE id = ${targetTenantId};
+            `;
+          } catch (_) {}
 
-          await sql`
-            UPDATE tenant_subscriptions
-            SET status = 'active',
-                plan_id = ${newPlan.toLowerCase()},
-                end_date = ${now + (30 * 86400000)}
-            WHERE tenant_id = ${targetTenantId};
-          `.catch(() => {});
+          try {
+            await sql`
+              UPDATE tenant_subscriptions
+              SET status = 'active',
+                  plan_id = ${newPlan.toLowerCase()},
+                  end_date = ${now + (30 * 86400000)}
+              WHERE tenant_id = ${targetTenantId};
+            `;
+          } catch (_) {}
         }
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
