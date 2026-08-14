@@ -1067,7 +1067,7 @@ export const AuthGateway: React.FC = () => {
     }
 
     if (cleanMfa && cleanMfa !== '1911' && cleanMfa !== '123456') {
-      setErrorMsg('Invalid MFA verification code! Enter verification code 1911.');
+      setErrorMsg('Invalid MFA verification code! Use verification code "1911".');
       return;
     }
 
