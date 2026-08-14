@@ -2795,6 +2795,24 @@ class DukaPosDatabase extends Dexie {
       maintenanceLogs: 'id, tenant_id, branch_id, vehicleId, title, cost, odometerAtService, serviceDate, status, created_at'
     });
 
+    // Version 39: Complete Production-Grade Enterprise Vehicle & Fleet Operating System
+    this.version(39).stores({
+      fleetVehicles: 'id, tenant_id, branch_id, fleet_number, registration_number, vin, vehicle_type, status, current_odometer, current_driver_id, created_at, [tenant_id+status], [tenant_id+branch_id]',
+      fleetDrivers: 'id, tenant_id, branch_id, employee_number, license_number, license_expiry, status, assigned_vehicle_id, created_at, [tenant_id+status]',
+      fleetAssignments: 'id, tenant_id, branch_id, vehicle_id, driver_id, start_date, end_date, created_at',
+      fleetTrips: 'id, tenant_id, branch_id, trip_number, vehicle_id, driver_id, status, departure_time, return_time, created_at, [tenant_id+status]',
+      fleetOdometer: 'id, tenant_id, branch_id, vehicle_id, reading, source, date, created_at',
+      fleetFuelEntries: 'id, tenant_id, branch_id, vehicle_id, driver_id, station_name, fuel_card_id, date, created_at, [tenant_id+vehicle_id]',
+      fleetFuelCards: 'id, tenant_id, branch_id, card_number, vehicle_id, driver_id, status, created_at',
+      fleetMaintenanceOrders: 'id, tenant_id, branch_id, work_order_number, vehicle_id, status, priority, due_odometer, due_date, created_at, [tenant_id+status]',
+      fleetInspections: 'id, tenant_id, branch_id, vehicle_id, driver_id, inspection_date, overall_status, created_at',
+      fleetDocuments: 'id, tenant_id, branch_id, entity_type, entity_id, doc_type, expiry_date, status, created_at, [entity_id+doc_type]',
+      fleetAccidents: 'id, tenant_id, branch_id, incident_number, vehicle_id, driver_id, incident_date, status, created_at',
+      fleetExpenses: 'id, tenant_id, branch_id, vehicle_id, driver_id, trip_id, category, amount, date, created_at, [tenant_id+category]',
+      fleetGeofences: 'id, tenant_id, branch_id, name, type, created_at',
+      fleetTelematics: 'id, tenant_id, branch_id, vehicle_id, timestamp, created_at'
+    });
+
     const tablesWithOrigin = [
       'products', 'productVariants', 'customers', 'orders',
       'stockLedger', 'invoices', 'payments', 'suppliers',

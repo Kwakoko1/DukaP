@@ -576,6 +576,84 @@ async function initDatabaseSchema() {
       CREATE INDEX IF NOT EXISTS idx_fleet_maintenance_vehicle ON fleet_maintenance_logs(vehicle_id, service_date);
     `.catch(() => {});
 
+    await sql`
+      CREATE TABLE IF NOT EXISTS fleet_drivers (
+        id VARCHAR(64) PRIMARY KEY,
+        tenant_id VARCHAR(64) NOT NULL,
+        branch_id VARCHAR(64),
+        employee_number VARCHAR(64),
+        full_name VARCHAR(255) NOT NULL,
+        phone VARCHAR(64),
+        license_number VARCHAR(64) NOT NULL,
+        license_category VARCHAR(32),
+        license_expiry BIGINT NOT NULL,
+        status VARCHAR(32) NOT NULL DEFAULT 'AVAILABLE',
+        assigned_vehicle_id VARCHAR(64),
+        created_at BIGINT NOT NULL,
+        updated_at BIGINT NOT NULL,
+        deleted_at BIGINT DEFAULT 0
+      );
+      CREATE INDEX IF NOT EXISTS idx_fleet_drivers_tenant ON fleet_drivers(tenant_id, status);
+
+      CREATE TABLE IF NOT EXISTS fleet_trips (
+        id VARCHAR(64) PRIMARY KEY,
+        tenant_id VARCHAR(64) NOT NULL,
+        branch_id VARCHAR(64),
+        trip_number VARCHAR(64) NOT NULL,
+        vehicle_id VARCHAR(64) NOT NULL,
+        driver_id VARCHAR(64) NOT NULL,
+        customer VARCHAR(255),
+        trip_type VARCHAR(64),
+        origin VARCHAR(255),
+        destination VARCHAR(255),
+        route TEXT,
+        departure_time BIGINT NOT NULL,
+        expected_return BIGINT,
+        actual_return BIGINT,
+        starting_odometer NUMERIC NOT NULL,
+        ending_odometer NUMERIC,
+        distance NUMERIC DEFAULT 0,
+        fuel_used NUMERIC DEFAULT 0,
+        trip_revenue NUMERIC DEFAULT 0,
+        trip_expenses NUMERIC DEFAULT 0,
+        status VARCHAR(32) NOT NULL DEFAULT 'DRAFT',
+        created_at BIGINT NOT NULL,
+        updated_at BIGINT NOT NULL,
+        deleted_at BIGINT DEFAULT 0
+      );
+      CREATE INDEX IF NOT EXISTS idx_fleet_trips_tenant ON fleet_trips(tenant_id, status);
+
+      CREATE TABLE IF NOT EXISTS fleet_inspections (
+        id VARCHAR(64) PRIMARY KEY,
+        tenant_id VARCHAR(64) NOT NULL,
+        branch_id VARCHAR(64),
+        vehicle_id VARCHAR(64) NOT NULL,
+        driver_id VARCHAR(64) NOT NULL,
+        inspection_date BIGINT NOT NULL,
+        template_name VARCHAR(128) DEFAULT 'Pre-Trip Safety Inspection',
+        items JSONB NOT NULL DEFAULT '[]',
+        overall_status VARCHAR(32) NOT NULL DEFAULT 'PASS',
+        notes TEXT,
+        created_at BIGINT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS fleet_documents (
+        id VARCHAR(64) PRIMARY KEY,
+        tenant_id VARCHAR(64) NOT NULL,
+        branch_id VARCHAR(64),
+        entity_type VARCHAR(32) NOT NULL,
+        entity_id VARCHAR(64) NOT NULL,
+        doc_type VARCHAR(64) NOT NULL,
+        doc_number VARCHAR(128),
+        issue_date BIGINT,
+        expiry_date BIGINT NOT NULL,
+        status VARCHAR(32) NOT NULL DEFAULT 'ACTIVE',
+        attachment_url TEXT,
+        created_at BIGINT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_fleet_documents_expiry ON fleet_documents(expiry_date, status);
+    `.catch(() => {});
+
     // ─── SAFE NON-BLOCKING HISTORICAL DATA MIGRATION ────────────────────────
     const tablesToMigrate = ['tenants', 'products', 'product_variants', 'categories', 'brands'];
     for (const table of tablesToMigrate) {
@@ -2117,6 +2195,34 @@ const server = http.createServer(async (req, res) => {
           ON CONFLICT (id) DO NOTHING;
         `.catch(() => {});
         res.writeHead(201, { 'Content-Type': 'application/json', 'X-Bypass-Replica': 'true' });
+        res.end(JSON.stringify({ success: true, data: body }));
+        return;
+      }
+
+      // 18.8 POST /api/fleet/drivers
+      if (pathname === '/api/fleet/drivers' && req.method === 'POST') {
+        const body = await parseRequestBody(req);
+        const now = Date.now();
+        await sql`
+          INSERT INTO fleet_drivers (id, tenant_id, branch_id, employee_number, full_name, phone, license_number, license_category, license_expiry, status, assigned_vehicle_id, created_at, updated_at, deleted_at)
+          VALUES (${body.id}, ${tenantId}, ${body.branch_id || ''}, ${body.employee_number || ''}, ${body.full_name}, ${body.phone || ''}, ${body.license_number}, ${body.license_category || 'C'}, ${body.license_expiry}, ${body.status || 'AVAILABLE'}, ${body.assigned_vehicle_id || null}, ${now}, ${now}, 0)
+          ON CONFLICT (id) DO UPDATE SET full_name = EXCLUDED.full_name, license_number = EXCLUDED.license_number, license_expiry = EXCLUDED.license_expiry, status = EXCLUDED.status, updated_at = ${now};
+        `.catch(() => {});
+        res.writeHead(200, { 'Content-Type': 'application/json', 'X-Bypass-Replica': 'true' });
+        res.end(JSON.stringify({ success: true, data: body }));
+        return;
+      }
+
+      // 18.9 POST /api/fleet/trips
+      if (pathname === '/api/fleet/trips' && req.method === 'POST') {
+        const body = await parseRequestBody(req);
+        const now = Date.now();
+        await sql`
+          INSERT INTO fleet_trips (id, tenant_id, branch_id, trip_number, vehicle_id, driver_id, customer, trip_type, origin, destination, route, departure_time, expected_return, starting_odometer, ending_odometer, distance, fuel_used, trip_revenue, trip_expenses, status, created_at, updated_at, deleted_at)
+          VALUES (${body.id}, ${tenantId}, ${body.branch_id || ''}, ${body.trip_number}, ${body.vehicle_id}, ${body.driver_id}, ${body.customer || ''}, ${body.trip_type || 'CARGO'}, ${body.origin || ''}, ${body.destination || ''}, ${body.route || ''}, ${body.departure_time || now}, ${body.expected_return || null}, ${body.starting_odometer || 0}, ${body.ending_odometer || null}, ${body.distance || 0}, ${body.fuel_used || 0}, ${body.trip_revenue || 0}, ${body.trip_expenses || 0}, ${body.status || 'DRAFT'}, ${now}, ${now}, 0)
+          ON CONFLICT (id) DO UPDATE SET status = EXCLUDED.status, ending_odometer = EXCLUDED.ending_odometer, distance = EXCLUDED.distance, actual_return = ${now}, updated_at = ${now};
+        `.catch(() => {});
+        res.writeHead(200, { 'Content-Type': 'application/json', 'X-Bypass-Replica': 'true' });
         res.end(JSON.stringify({ success: true, data: body }));
         return;
       }
