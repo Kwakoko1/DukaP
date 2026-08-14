@@ -460,7 +460,7 @@ export const AuthGateway: React.FC = () => {
                 supabase.from('tenants').select().eq('id', tenantId).catch(() => ({ data: [] })),
                 supabase.from('branches').select().eq('tenant_id', tenantId).catch(() => ({ data: [] })),
                 supabase.from('userBranchRoles').select().eq('tenant_id', tenantId).catch(() => ({ data: [] })),
-                supabase.from('tenantModules').select().eq('tenant_id', tenantId).catch(() => ({ data: [] })),
+                fetch(`/api/tenantModules`, { headers: { 'x-tenant-id': tenantId } }).then(r => r.json()).catch(() => []),
                 supabase.from('tenantSettings').select().eq('tenant_id', tenantId).catch(() => ({ data: [] })),
                 supabase.from('featureFlags').select().eq('tenant_id', tenantId).catch(() => ({ data: [] })),
                 supabase.from('userSecurity').select().eq('user_id', dbUser.id).catch(() => ({ data: [] }))
@@ -476,7 +476,8 @@ export const AuthGateway: React.FC = () => {
               if (tRes.data && tRes.data.length > 0) await db.tenants.put(tRes.data[0]);
               if (bRes.data && bRes.data.length > 0) await db.branches.bulkPut(bRes.data);
               if (ubrRes.data && ubrRes.data.length > 0) await db.userBranchRoles.bulkPut(ubrRes.data);
-              if (mRes.data && mRes.data.length > 0) await db.tenantModules.bulkPut(mRes.data);
+              const mList = Array.isArray(mRes) ? mRes : (mRes?.data || []);
+              if (mList.length > 0) await db.tenantModules.bulkPut(mList);
               if (sRes.data && sRes.data.length > 0) await db.tenantSettings.bulkPut(sRes.data);
               if (fRes.data && fRes.data.length > 0) await db.featureFlags.bulkPut(fRes.data);
               if (secRes.data && secRes.data.length > 0) await db.userSecurity.put(secRes.data[0]);

@@ -301,9 +301,15 @@ export interface TenantModule {
   id: string;
   tenant_id: string;
   module_key: string; // matches IndustryModule keys
+  installed?: boolean;
   enabled: boolean;
-  configuration: Record<string, any>;
-  installed_at: number;
+  status?: string;
+  version?: number;
+  configuration?: Record<string, any>;
+  installed_at?: number;
+  enabled_at?: number;
+  disabled_at?: number;
+  updated_at?: number;
 }
 
 export interface TenantSetting {
@@ -2811,6 +2817,11 @@ class DukaPosDatabase extends Dexie {
       fleetExpenses: 'id, tenant_id, branch_id, vehicle_id, driver_id, trip_id, category, amount, date, created_at, [tenant_id+category]',
       fleetGeofences: 'id, tenant_id, branch_id, name, type, created_at',
       fleetTelematics: 'id, tenant_id, branch_id, vehicle_id, timestamp, created_at'
+    });
+
+    // Version 40: Persistent Tenant Module Lifecycle & State Machine Guards
+    this.version(40).stores({
+      tenantModules: 'id, tenant_id, module_key, installed, enabled, status, version, updated_at, [tenant_id+module_key]'
     });
 
     const tablesWithOrigin = [

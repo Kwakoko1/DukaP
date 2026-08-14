@@ -72,6 +72,27 @@ export const Sidebar: React.FC<SidebarProps> = () => {
     if (nameLower === 'subscriptions' || nameLower === 'plans & pricing') {
       return hasPermission('settings.manage') || role === 'Business Owner' || role === 'Tenant Owner';
     }
+
+    // Vehicle & Fleet Management RBAC & Feature Flag Evaluation
+    if (nameLower === 'fleet operations' || nameLower === 'trip management' || nameLower === 'dispatch') {
+      return hasPermission('trips.view') || hasPermission('fleet.view') || ['Super Admin', 'Business Owner', 'Tenant Owner', 'Fleet Manager', 'Dispatcher', 'Fleet Officer'].includes(role);
+    }
+    if (nameLower === 'drivers' || nameLower === 'driver roster') {
+      return hasPermission('drivers.view') || hasPermission('fleet.view') || ['Super Admin', 'Business Owner', 'Tenant Owner', 'Fleet Manager', 'Fleet Officer'].includes(role);
+    }
+    if (nameLower === 'fuel management' || nameLower === 'fuel dashboard') {
+      return hasPermission('fuel.view') || hasPermission('fleet.view') || ['Super Admin', 'Business Owner', 'Tenant Owner', 'Fleet Manager', 'Fuel Officer', 'Accountant'].includes(role);
+    }
+    if (nameLower === 'maintenance' || nameLower === 'preventive maintenance') {
+      return hasPermission('maintenance.view') || hasPermission('fleet.view') || ['Super Admin', 'Business Owner', 'Tenant Owner', 'Fleet Manager', 'Mechanic', 'Workshop Manager'].includes(role);
+    }
+    if (nameLower === 'tracking' || nameLower === 'live fleet tracking' || nameLower === 'gps') {
+      return hasPermission('fleet.gps') || hasPermission('fleet.view') || ['Super Admin', 'Business Owner', 'Tenant Owner', 'Fleet Manager', 'Dispatcher'].includes(role);
+    }
+    if (nameLower === 'incidents' || nameLower === 'accidents') {
+      return hasPermission('accidents.view') || hasPermission('fleet.view') || ['Super Admin', 'Business Owner', 'Tenant Owner', 'Fleet Manager', 'Safety Officer'].includes(role);
+    }
+
     return true;
   };
 

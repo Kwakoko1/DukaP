@@ -283,12 +283,20 @@ async function initDatabaseSchema() {
     `;
     await sql`
       CREATE TABLE IF NOT EXISTS tenant_modules (
-        id TEXT PRIMARY KEY,
-        tenant_id TEXT,
-        module_name TEXT,
-        is_enabled BOOLEAN DEFAULT true,
+        id VARCHAR(128) PRIMARY KEY,
+        tenant_id VARCHAR(64) NOT NULL,
+        module_key VARCHAR(64) NOT NULL,
+        installed BOOLEAN DEFAULT false,
+        enabled BOOLEAN DEFAULT false,
+        status VARCHAR(32) DEFAULT 'NOT_INSTALLED',
+        version INT DEFAULT 1,
+        installed_at BIGINT,
+        enabled_at BIGINT,
+        disabled_at BIGINT,
+        created_at BIGINT,
         updated_at BIGINT
       );
+      CREATE INDEX IF NOT EXISTS idx_tenant_modules_lookup ON tenant_modules(tenant_id, module_key);
     `;
     await sql`
       CREATE TABLE IF NOT EXISTS tenant_settings (
@@ -1497,7 +1505,7 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
-      // 5. GET /api/tenantModules
+      // 5. GET & POST /api/tenantModules
       if (pathname === '/api/tenantModules' && req.method === 'GET') {
         let modules = [];
         if (tenantId && tenantId !== 'tenant-admin-system') {
@@ -1507,6 +1515,104 @@ const server = http.createServer(async (req, res) => {
         }
         res.writeHead(200);
         res.end(JSON.stringify(modules));
+        return;
+      }
+
+      if (pathname === '/api/tenantModules' && req.method === 'POST') {
+        const body = await parseRequestBody(req);
+        const now = Date.now();
+        const tid = body.tenant_id || tenantId;
+        const key = body.module_key || body.module_name || '';
+        const isEnabled = body.enabled !== undefined ? !!body.enabled : (body.is_enabled !== undefined ? !!body.is_enabled : false);
+        const isInstalled = body.installed !== undefined ? !!body.installed : true;
+        const status = body.status || (isEnabled ? 'ENABLED' : (isInstalled ? 'DISABLED' : 'NOT_INSTALLED'));
+        const recId = body.id || `tm-${tid}-${key.toLowerCase()}`;
+
+        await sql`
+          INSERT INTO tenant_modules (id, tenant_id, module_key, installed, enabled, status, version, installed_at, enabled_at, disabled_at, created_at, updated_at)
+          VALUES (${recId}, ${tid}, ${key}, ${isInstalled}, ${isEnabled}, ${status}, 1, ${now}, ${isEnabled ? now : null}, ${!isEnabled ? now : null}, ${now}, ${now})
+          ON CONFLICT (id) DO UPDATE SET installed = EXCLUDED.installed, enabled = EXCLUDED.enabled, status = EXCLUDED.status, version = tenant_modules.version + 1, updated_at = ${now};
+        `.catch(() => {});
+
+        invalidateTenantBootstrapCache(tid);
+        res.writeHead(200, { 'Content-Type': 'application/json', 'X-Bypass-Replica': 'true' });
+        res.end(JSON.stringify({ success: true, id: recId, enabled: isEnabled, status }));
+        return;
+      }
+
+      // 5.B PATCH /api/tenant/modules/:moduleKey (Explicit Server Transaction for Module Lifecycle)
+      if (pathname.startsWith('/api/tenant/modules/') && req.method === 'PATCH') {
+        const moduleKey = pathname.replace('/api/tenant/modules/', '');
+        const body = await parseRequestBody(req);
+        const now = Date.now();
+        const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '0.0.0.0';
+
+        const targetEnabled = !!body.enabled;
+        const targetInstalled = body.installed !== undefined ? !!body.installed : true;
+        const targetStatus = body.status || (targetEnabled ? 'ENABLED' : (targetInstalled ? 'DISABLED' : 'NOT_INSTALLED'));
+
+        const recId = `tm-${tenantId}-${moduleKey.toLowerCase()}`;
+
+        const existing = await sql`
+          SELECT * FROM tenant_modules WHERE tenant_id = ${tenantId} AND module_key = ${moduleKey}
+        `;
+
+        let newVersion = 1;
+        let prevEnabled = false;
+
+        if (existing && existing.length > 0) {
+          prevEnabled = existing[0].enabled;
+          newVersion = (existing[0].version || 1) + 1;
+          await sql`
+            UPDATE tenant_modules
+            SET installed = ${targetInstalled},
+                enabled = ${targetEnabled},
+                status = ${targetStatus},
+                version = ${newVersion},
+                enabled_at = ${targetEnabled ? now : existing[0].enabled_at},
+                disabled_at = ${!targetEnabled ? now : existing[0].disabled_at},
+                updated_at = ${now}
+            WHERE tenant_id = ${tenantId} AND module_key = ${moduleKey}
+          `;
+        } else {
+          await sql`
+            INSERT INTO tenant_modules (id, tenant_id, module_key, installed, enabled, status, version, installed_at, enabled_at, disabled_at, created_at, updated_at)
+            VALUES (${recId}, ${tenantId}, ${moduleKey}, ${targetInstalled}, ${targetEnabled}, ${targetStatus}, 1, ${now}, ${targetEnabled ? now : null}, ${!targetEnabled ? now : null}, ${now}, ${now})
+            ON CONFLICT (id) DO UPDATE SET installed = EXCLUDED.installed, enabled = EXCLUDED.enabled, status = EXCLUDED.status, version = tenant_modules.version + 1, updated_at = ${now};
+          `;
+        }
+
+        // Audit Trail Event
+        const actionType = targetEnabled ? 'MODULE_ENABLED' : (targetInstalled ? 'MODULE_DISABLED' : 'MODULE_UNINSTALLED');
+        const auditDetails = JSON.stringify({
+          event: actionType,
+          module_key: moduleKey,
+          previous_enabled: prevEnabled,
+          new_enabled: targetEnabled,
+          status: targetStatus,
+          version: newVersion,
+          user_id: body.userId || 'usr-admin'
+        });
+
+        await sql`
+          INSERT INTO security_audit_logs (id, tenant_id, user_id, action, ip_address, status, created_at, details)
+          VALUES (${`audit-${now}-${Math.random().toString(36).substring(2, 5)}`}, ${tenantId}, ${body.userId || 'usr-admin'}, ${actionType}, ${String(ip)}, 'SUCCESS', ${now}, ${auditDetails})
+        `.catch(() => {});
+
+        invalidateTenantBootstrapCache(tenantId);
+        res.writeHead(200, { 'Content-Type': 'application/json', 'X-Bypass-Replica': 'true' });
+        res.end(JSON.stringify({
+          success: true,
+          data: {
+            tenantId,
+            moduleKey,
+            installed: targetInstalled,
+            enabled: targetEnabled,
+            status: targetStatus,
+            version: newVersion,
+            updatedAt: now
+          }
+        }));
         return;
       }
 

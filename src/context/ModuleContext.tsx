@@ -1,7 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { db } from '../db/dexie';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { supabase } from '../db/supabaseClient';
 
 import { getActiveSessionRaw } from '../utils/sessionStorage';
 
@@ -415,23 +414,60 @@ export const MODULE_MANIFESTS: Record<IndustryModule, ModuleManifest> = {
     description: 'Water meter consumption, utility billings, and repair routes.'
   },
   Transport: {
-    name: 'Transport / Bus Operators',
-    icon: 'Bus',
+    name: 'Vehicle & Fleet Management',
+    icon: 'Truck',
     sidebar: [
-      'Dashboard',
-      'Vehicles',
-      'Routes',
-      'Drivers',
-      'Passengers',
-      'Bookings',
-      'Tickets',
-      'Fuel',
-      'Maintenance',
-      'Reports',
-      'Settings'
+      { 
+        name: 'Dashboard', 
+        subItems: ['Fleet Overview', 'Fleet Health', 'Alerts & Expiring Documents', 'Utilization Overview', 'Fuel & Cost Summary'] 
+      },
+      { 
+        name: 'Vehicles', 
+        subItems: ['All Vehicles', 'Add Vehicle', 'Vehicle Groups', 'Vehicle Types', 'Vehicle Documents', 'Vehicle Inspection', 'Vehicle Status'] 
+      },
+      { 
+        name: 'Fleet Operations', 
+        subItems: ['Trip Management', 'Dispatch', 'Assign Vehicle', 'Assign Driver', 'Trip History', 'Route Management', 'Mileage / Odometer'] 
+      },
+      { 
+        name: 'Drivers', 
+        subItems: ['All Drivers', 'Add Driver', 'Driver Profiles', 'Driver Assignments', 'Driver Licenses', 'Driver Performance', 'Driver Incidents'] 
+      },
+      { 
+        name: 'Fuel Management', 
+        subItems: ['Fuel Dashboard', 'Fuel Transactions', 'Fuel Stations / Suppliers', 'Fuel Consumption', 'Fuel Efficiency', 'Fuel Cost Analysis'] 
+      },
+      { 
+        name: 'Maintenance', 
+        subItems: ['Maintenance Dashboard', 'Maintenance Schedule', 'Service Records', 'Repair Orders', 'Preventive Maintenance', 'Parts & Materials', 'Maintenance Costs', 'Workshop'] 
+      },
+      { 
+        name: 'Expenses', 
+        subItems: ['Fleet Expenses', 'Vehicle Expenses', 'Driver Expenses', 'Tolls & Parking', 'Insurance Costs', 'Registration Costs', 'Other Expenses'] 
+      },
+      { 
+        name: 'Compliance', 
+        subItems: ['Vehicle Registration', 'Insurance', 'Road License', 'Inspection Certificates', 'Driver Licenses', 'Compliance Calendar', 'Expiring Documents'] 
+      },
+      { 
+        name: 'Incidents', 
+        subItems: ['Accidents', 'Traffic Violations', 'Damage Reports', 'Claims', 'Incident History'] 
+      },
+      { 
+        name: 'Tracking', 
+        subItems: ['Live Fleet Tracking', 'Vehicle Location', 'Trip Tracking', 'Geofencing', 'Mileage Tracking', 'GPS History'] 
+      },
+      { 
+        name: 'Reports', 
+        subItems: ['Fleet Report', 'Vehicle Utilization', 'Fuel Consumption', 'Fuel Cost', 'Maintenance', 'Vehicle Profitability', 'Driver Performance', 'Trip Report', 'Expense Report', 'Compliance Report', 'Cost per Kilometer'] 
+      },
+      { 
+        name: 'Settings', 
+        subItems: ['Fleet Settings', 'Vehicle Types', 'Fuel Types', 'Maintenance Categories', 'Expense Categories', 'Document Types', 'Trip Settings', 'Tracking Settings'] 
+      }
     ],
-    widgets: ['ActiveTrips', 'PassengerBookings', 'TicketSales', 'FuelConsumption'],
-    description: 'Bus schedule routes, ticket bookings, and fuel mileage audits.'
+    widgets: ['TotalVehicles', 'ActiveTrips', 'FuelEfficiency', 'MaintenanceAlerts', 'FleetProfitability'],
+    description: 'Complete vehicle lifecycle, driver management, dispatch, fuel anomalies, maintenance stock integration, telematics, and profitability analytics.'
   },
   Waste: {
     name: 'Waste Management',
@@ -745,7 +781,8 @@ export const ModuleProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
     const initial: Record<string, ModuleState> = {};
     (Object.keys(MODULE_MANIFESTS) as IndustryModule[]).forEach((key, index) => {
-      initial[key] = { enabled: true, version: `v2.4.${index + 1}` };
+      // Default Retail to enabled, all other industry modules to disabled until explicitly installed/enabled
+      initial[key] = { enabled: key === 'Retail', version: `v2.4.${index + 1}` };
     });
     return initial;
   });
@@ -778,7 +815,7 @@ export const ModuleProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           if (tm.module_key && (!updated[tm.module_key] || updated[tm.module_key].enabled !== tm.enabled)) {
             updated[tm.module_key] = {
               ...(updated[tm.module_key] || { version: 'v2.4.1' }),
-              enabled: tm.enabled
+              enabled: !!tm.enabled
             };
             changed = true;
           }
@@ -795,7 +832,7 @@ export const ModuleProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   }, [liveTenantModules]);
 
   const toggleModuleState = async (moduleKey: string) => {
-    const currentEnabled = moduleStates[moduleKey]?.enabled ?? true;
+    const currentEnabled = moduleStates[moduleKey]?.enabled ?? (moduleKey === 'Retail');
     const newEnabled = !currentEnabled;
 
     setModuleStates(prev => {
@@ -814,7 +851,7 @@ export const ModuleProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       return updated;
     });
 
-    // Persist changes to IndexedDB and Cloud database (Supabase)
+    // Persist changes to IndexedDB and authoritative PostgreSQL server
     try {
       const sessionStr = getActiveSessionRaw();
       let activeTenantId: string | null = null;
@@ -832,30 +869,26 @@ export const ModuleProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
       for (const tid of targetTenantIds) {
         const existing = await db.tenantModules.where('tenant_id').equals(tid).filter(m => m.module_key === moduleKey).first();
-        if (existing) {
-          const updatedRecord = { ...existing, enabled: newEnabled };
-          await db.tenantModules.put(updatedRecord);
-          try {
-            await supabase.from('tenantModules').update({ enabled: newEnabled }).eq('id', existing.id);
-          } catch (err) {
-            console.warn('[ModuleContext] Failed to update cloud tenantModules:', err);
-          }
-        } else {
-          const newRecord = {
-            id: `tm-${tid}-${moduleKey.toLowerCase()}`,
-            tenant_id: tid,
-            module_key: moduleKey,
-            enabled: newEnabled,
-            configuration: {},
-            installed_at: Date.now()
-          };
-          await db.tenantModules.put(newRecord);
-          try {
-            await supabase.from('tenantModules').insert(newRecord);
-          } catch (err) {
-            console.warn('[ModuleContext] Failed to insert cloud tenantModules:', err);
-          }
-        }
+        const now = Date.now();
+        const updatedRecord = {
+          id: existing?.id || `tm-${tid}-${moduleKey.toLowerCase()}`,
+          tenant_id: tid,
+          module_key: moduleKey,
+          installed: true,
+          enabled: newEnabled,
+          status: newEnabled ? 'ENABLED' : 'DISABLED',
+          version: (existing?.version || 1) + 1,
+          updated_at: now
+        };
+
+        await db.tenantModules.put(updatedRecord);
+
+        // Execute explicit server transaction
+        fetch(`/api/tenant/modules/${moduleKey}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', 'x-tenant-id': tid },
+          body: JSON.stringify({ enabled: newEnabled, installed: true, status: newEnabled ? 'ENABLED' : 'DISABLED' })
+        }).catch(() => {});
       }
     } catch (err) {
       console.error('[ModuleContext] Error persisting module toggle:', err);
@@ -868,7 +901,10 @@ export const ModuleProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const isModuleEnabled = (moduleKey: string) => {
     if (isDevSuperuser) return true; // dev superuser always has all modules
-    return moduleStates[moduleKey]?.enabled ?? true;
+    if (moduleStates[moduleKey] !== undefined) {
+      return !!moduleStates[moduleKey].enabled;
+    }
+    return moduleKey === 'Retail';
   };
 
   const enabledModules = isDevSuperuser
