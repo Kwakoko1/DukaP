@@ -512,6 +512,35 @@ export const tenantProvisioningService = {
       });
     });
 
+    // Invoke Enterprise Atomic Server-Side Registration API
+    try {
+      fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tenantId,
+          branchId,
+          companyName,
+          businessType,
+          email: superAdminUser.email,
+          fullName: superAdminUser.fullName,
+          password: superAdminUser.password,
+          phone: superAdminUser.phone,
+          regNumber: additionalMetadata.regNumber,
+          taxNumber: additionalMetadata.taxNumber,
+          country: additionalMetadata.country,
+          region: additionalMetadata.region,
+          district: additionalMetadata.district,
+          address: additionalMetadata.address,
+          currency: additionalMetadata.currency,
+          vatRate: additionalMetadata.vatRate,
+          plan: additionalMetadata.plan || 'Professional',
+          status: additionalMetadata.status || 'Trial',
+          subscribedModules: additionalMetadata.subscribedModules || [businessType]
+        })
+      }).catch(() => {});
+    } catch (_) {}
+
     // 11. Synchronize to the authoritative Cloud Database with strict 3.5s timeout fallback
     const tenantRecord = await db.tenants.get(tenantId);
     const branchRecord = await db.branches.get(branchId);

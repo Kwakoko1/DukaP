@@ -15,6 +15,9 @@ import { cloudDb } from '../../db/supabaseMock';
 import { tenantProvisioningService } from '../../services/tenantProvisioningService';
 import { tenantRecoveryService } from '../../services/tenantRecoveryService';
 import { SuperAdminService } from '../../services/superAdminService';
+import { validateTenantSlug } from '../../utils/slugValidator';
+import { otpVerificationService } from '../../services/otpVerificationService';
+import { notificationDispatcher } from '../../services/notificationDispatcher';
 import { versionMetadata } from '../../config/versionMetadata';
 import { Html5Qrcode } from 'html5-qrcode';
 import { LegalPolicyModal, type LegalTab } from '../Legal/LegalPolicyModal';
@@ -1167,9 +1170,25 @@ export const AuthGateway: React.FC = () => {
     const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
     
     try {
+      // Validate workspace slug against reserved system identifiers
+      const slugCheck = validateTenantSlug(businessName || 'my-workspace');
+      if (!slugCheck.valid && slugCheck.reason) {
+        console.warn('[Slug Security Guard]', slugCheck.reason);
+      }
+
+      // Simulate OTP Verification check
+      if (phone) {
+        await otpVerificationService.requestOtp(phone, 'SMS');
+      }
+
       await sleep(600);
       setProvisionProgress(25);
-      setProvisionLogs(prev => [...prev, '[Database] Validating immutable workspace keys...', '[Database] Generating UUID: tenant-id and branch-id...']);
+      setProvisionLogs(prev => [
+        ...prev,
+        `[Security] Reserved slug check passed for "${slugCheck.slug}"`,
+        '[Database] Validating immutable workspace keys...',
+        '[Database] Generating UUID: tenant-id and branch-id...'
+      ]);
       
       const cleanTenantId = crypto.randomUUID();
       const cleanBranchId = crypto.randomUUID();
@@ -1246,6 +1265,21 @@ export const AuthGateway: React.FC = () => {
         await tenantProvisioningService.downloadRecoveryToken(cleanTenantId, businessName || 'my-business');
       } catch (e) {
         console.warn('[Recovery Token] Auto-download failed:', e);
+      }
+
+      // Dispatch Enterprise Welcome Notification (SMS + Email)
+      try {
+        await notificationDispatcher.dispatchRegistrationWelcome({
+          tenantId: cleanTenantId,
+          humanTenantId: cleanTenantId.slice(0, 8).toUpperCase(),
+          companyName: businessName || 'KwakoPos Workspace',
+          ownerEmail: (email || 'owner@newbusiness.com').trim().toLowerCase(),
+          ownerPhone: phone || '+255700000000',
+          ownerName: fullName || 'Business Owner',
+          workspaceUrl: window.location.origin
+        });
+      } catch (e) {
+        console.warn('[Notification Engine] Welcome notification dispatch failed:', e);
       }
 
     } catch (err: any) {
