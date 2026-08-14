@@ -3281,6 +3281,7 @@ export const Inventory: React.FC = () => {
       );
     } else {
       await proceedToSave();
+    }
   };
 
   useEffect(() => {
