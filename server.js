@@ -2900,14 +2900,29 @@ const server = http.createServer(async (req, res) => {
         }
 
         try {
-          const totalCountRes = await pool.query(`SELECT COUNT(*) as count FROM "${tableName}"`);
-          const totalCount = parseInt(totalCountRes.rows[0]?.count || '0', 10);
-
-          let dataQuery = `SELECT * FROM "${tableName}"`;
+          let whereClause = '';
           const queryParams = [];
 
+          if (search.trim()) {
+            const textColsRes = await pool.query(
+              `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = $1 AND data_type IN ('text', 'character varying', 'varchar', 'character', 'char')`,
+              [tableName]
+            );
+            if (textColsRes.rows.length > 0) {
+              queryParams.push(`%${search.trim()}%`);
+              const searchIdx = queryParams.length;
+              const searchConds = textColsRes.rows.map(r => `"${r.column_name}"::text ILIKE $${searchIdx}`);
+              whereClause = ` WHERE (${searchConds.join(' OR ')})`;
+            }
+          }
+
+          const countQuery = `SELECT COUNT(*) as count FROM "${tableName}"${whereClause}`;
+          const totalCountRes = await pool.query(countQuery, queryParams);
+          const totalCount = parseInt(totalCountRes.rows[0]?.count || '0', 10);
+
+          let dataQuery = `SELECT * FROM "${tableName}"${whereClause}`;
+
           if (sortCol) {
-            // Validate sort column
             const colCheck = await pool.query(
               `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = $1 AND column_name = $2`,
               [tableName, sortCol]

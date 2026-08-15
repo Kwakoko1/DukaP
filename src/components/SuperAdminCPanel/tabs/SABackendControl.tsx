@@ -3,7 +3,7 @@ import {
   Database, Terminal, Server, ShieldAlert, Cpu, Activity,
   RefreshCw, Play, Download, Trash2, CheckCircle2,
   AlertTriangle, Clock, Layers, Search,
-  HardDrive, Zap, ArrowUpDown
+  HardDrive, Zap, ArrowUpDown, Copy, FileCode, ArrowUp, ArrowDown
 } from 'lucide-react';
 import {
   SuperAdminBackendService,
@@ -105,6 +105,9 @@ export const SABackendControl: React.FC = () => {
   const [tableFields, setTableFields] = useState<string[]>([]);
   const [tableTotalRows, setTableTotalRows] = useState<number>(0);
   const [tablePage, setTablePage] = useState<number>(0);
+  const [tableRecordSearch, setTableRecordSearch] = useState<string>('');
+  const [tableSortCol, setTableSortCol] = useState<string>('');
+  const [tableSortOrder, setTableSortOrder] = useState<'asc' | 'desc'>('asc');
   const [loadingTableData, setLoadingTableData] = useState<boolean>(false);
 
   // ── Logs State ──
@@ -138,12 +141,18 @@ export const SABackendControl: React.FC = () => {
     setLoadingTables(false);
   };
 
-  const fetchTableRecords = async (tableName: string, page: number = 0) => {
+  const fetchTableRecords = async (
+    tableName: string,
+    page: number = 0,
+    sortCol: string = tableSortCol,
+    sortOrder: 'asc' | 'desc' = tableSortOrder,
+    search: string = tableRecordSearch
+  ) => {
     if (!tableName) return;
     setLoadingTableData(true);
     const limit = 30;
     const offset = page * limit;
-    const res = await SuperAdminBackendService.getTableData(tableName, limit, offset);
+    const res = await SuperAdminBackendService.getTableData(tableName, limit, offset, sortCol || undefined, sortOrder, search || undefined);
     if (res.success) {
       setTableData(res.rows || []);
       setTableFields(res.fields || []);
@@ -182,7 +191,10 @@ export const SABackendControl: React.FC = () => {
   // Load table data when selected table changes
   useEffect(() => {
     if (selectedTable) {
-      fetchTableRecords(selectedTable, 0);
+      setTablePage(0);
+      setTableRecordSearch('');
+      setTableSortCol('');
+      fetchTableRecords(selectedTable, 0, '', 'asc', '');
     }
   }, [selectedTable]);
 
@@ -227,6 +239,46 @@ export const SABackendControl: React.FC = () => {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    toast.success('Exported', 'Query results downloaded as CSV.');
+  };
+
+  // ── Export Query Result to JSON ──
+  const exportQueryResultJson = () => {
+    if (!queryResult?.rows || queryResult.rows.length === 0) return;
+    const blob = new Blob([JSON.stringify(queryResult.rows, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `kwakopos_query_export_${Date.now()}.json`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success('Exported', 'Query results downloaded as JSON.');
+  };
+
+  // ── Copy Query Result as JSON ──
+  const copyQueryResultJson = async () => {
+    if (!queryResult?.rows || queryResult.rows.length === 0) return;
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(queryResult.rows, null, 2));
+      toast.success('Copied', 'Query results copied to clipboard as JSON.');
+    } catch {
+      toast.error('Copy Failed', 'Clipboard access denied.');
+    }
+  };
+
+  // ── Export Logs as JSON ──
+  const exportLogsJson = () => {
+    if (logs.length === 0) return;
+    const blob = new Blob([JSON.stringify(logs, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `kwakopos_logs_${Date.now()}.json`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success('Logs Exported', 'System logs downloaded.');
   };
 
   // ── Maintenance Actions ──
@@ -242,6 +294,24 @@ export const SABackendControl: React.FC = () => {
     } else {
       toast.error('Operation Failed', res.error || 'Maintenance task failed');
     }
+  };
+
+  // ── Handle Table Column Header Click for Sorting ──
+  const handleSortCol = (colName: string) => {
+    let newOrder: 'asc' | 'desc' = 'asc';
+    if (tableSortCol === colName) {
+      newOrder = tableSortOrder === 'asc' ? 'desc' : 'asc';
+    }
+    setTableSortCol(colName);
+    setTableSortOrder(newOrder);
+    fetchTableRecords(selectedTable, 0, colName, newOrder, tableRecordSearch);
+  };
+
+  // ── Handle Quick Query in Studio ──
+  const handleQueryTableInStudio = (tableName: string) => {
+    setSqlQuery(`SELECT * FROM "${tableName}" LIMIT 50;`);
+    setActiveSubTab('sql-studio');
+    toast.info('Table Loaded', `Loaded query for '${tableName}' in SQL Studio.`);
   };
 
   // Filtered table list
@@ -440,12 +510,26 @@ export const SABackendControl: React.FC = () => {
                 </div>
 
                 {queryResult.rows && queryResult.rows.length > 0 && (
-                  <button
-                    onClick={exportQueryResultCsv}
-                    className="flex items-center gap-1 text-indigo-400 hover:text-indigo-300 font-bold transition"
-                  >
-                    <Download className="h-3 w-3" /> Export CSV
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={copyQueryResultJson}
+                      className="flex items-center gap-1 px-2 py-1 rounded bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition font-medium text-[10px]"
+                    >
+                      <Copy className="h-3 w-3" /> Copy JSON
+                    </button>
+                    <button
+                      onClick={exportQueryResultJson}
+                      className="flex items-center gap-1 px-2 py-1 rounded bg-white/5 hover:bg-white/10 text-indigo-300 hover:text-indigo-200 transition font-medium text-[10px]"
+                    >
+                      <FileCode className="h-3 w-3" /> JSON
+                    </button>
+                    <button
+                      onClick={exportQueryResultCsv}
+                      className="flex items-center gap-1 px-2.5 py-1 rounded bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-500/30 text-indigo-200 font-bold transition text-[10px]"
+                    >
+                      <Download className="h-3 w-3" /> CSV
+                    </button>
+                  </div>
                 )}
               </div>
             )}
@@ -582,34 +666,61 @@ export const SABackendControl: React.FC = () => {
           <div className="lg:col-span-3 space-y-4">
             {selectedTableMeta && (
               <div className="p-4 rounded-2xl bg-slate-900 border border-white/8 flex items-center justify-between flex-wrap gap-3">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-base font-black text-white font-mono">{selectedTableMeta.name}</h2>
-                    <span className="px-2 py-0.5 rounded-md bg-indigo-500/20 text-indigo-300 text-[10px] font-bold">
-                      {selectedTableMeta.columnCount} columns
-                    </span>
-                    <span className="px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 text-[10px] font-bold">
-                      ~{selectedTableMeta.estimatedRows} rows
-                    </span>
-                    <span className="px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 text-[10px] font-bold">
-                      Size: {selectedTableMeta.totalSize}
-                    </span>
+                <div className="flex items-center gap-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-base font-black text-white font-mono">{selectedTableMeta.name}</h2>
+                      <span className="px-2 py-0.5 rounded-md bg-indigo-500/20 text-indigo-300 text-[10px] font-bold">
+                        {selectedTableMeta.columnCount} cols
+                      </span>
+                      <span className="px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 text-[10px] font-bold">
+                        ~{selectedTableMeta.estimatedRows} rows
+                      </span>
+                      <span className="px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 text-[10px] font-bold">
+                        {selectedTableMeta.totalSize}
+                      </span>
+                    </div>
                   </div>
+
+                  <button
+                    onClick={() => handleQueryTableInStudio(selectedTableMeta.name)}
+                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/30 text-xs font-bold transition"
+                  >
+                    <Terminal className="h-3 w-3" /> Query in Studio
+                  </button>
                 </div>
 
-                <div className="flex items-center gap-1 p-1 bg-slate-950 rounded-xl border border-white/10 text-xs">
-                  <button
-                    onClick={() => setTableTab('data')}
-                    className={`px-3 py-1 rounded-lg font-bold transition ${tableTab === 'data' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}
-                  >
-                    Data Records ({tableTotalRows})
-                  </button>
-                  <button
-                    onClick={() => setTableTab('schema')}
-                    className={`px-3 py-1 rounded-lg font-bold transition ${tableTab === 'schema' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}
-                  >
-                    Schema ({selectedTableMeta.columns.length})
-                  </button>
+                <div className="flex items-center gap-3">
+                  {tableTab === 'data' && (
+                    <div className="relative">
+                      <Search className="absolute left-2.5 top-2 h-3 w-3 text-slate-500" />
+                      <input
+                        type="text"
+                        value={tableRecordSearch}
+                        onChange={(e) => {
+                          setTableRecordSearch(e.target.value);
+                          fetchTableRecords(selectedTable, 0, tableSortCol, tableSortOrder, e.target.value);
+                        }}
+                        placeholder="Search rows..."
+                        className="pl-8 pr-2.5 py-1 bg-slate-950 border border-white/10 rounded-lg text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 w-36"
+                      />
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-1 p-1 bg-slate-950 rounded-xl border border-white/10 text-xs">
+                    <button
+                      onClick={() => setTableTab('data')}
+                      className={`px-3 py-1 rounded-lg font-bold transition ${tableTab === 'data' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                    >
+                      Data Records ({tableTotalRows})
+                    </button>
+                    <button
+                      onClick={() => setTableTab('schema')}
+                      className={`px-3 py-1 rounded-lg font-bold transition ${tableTab === 'schema' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                    >
+                      Schema ({selectedTableMeta.columns.length})
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -665,8 +776,19 @@ export const SABackendControl: React.FC = () => {
                         <tr>
                           <th className="px-3 py-2 text-slate-600">#</th>
                           {tableFields.map(field => (
-                            <th key={field} className="px-3 py-2 text-slate-300 font-mono">
-                              {field}
+                            <th
+                              key={field}
+                              onClick={() => handleSortCol(field)}
+                              className="px-3 py-2 text-slate-300 font-mono cursor-pointer hover:bg-white/5 transition"
+                            >
+                              <div className="flex items-center gap-1.5">
+                                <span>{field}</span>
+                                {tableSortCol === field ? (
+                                  tableSortOrder === 'asc' ? <ArrowUp className="h-3 w-3 text-indigo-400" /> : <ArrowDown className="h-3 w-3 text-indigo-400" />
+                                ) : (
+                                  <ArrowUpDown className="h-2.5 w-2.5 opacity-40" />
+                                )}
+                              </div>
                             </th>
                           ))}
                         </tr>
@@ -701,14 +823,14 @@ export const SABackendControl: React.FC = () => {
                   <div className="flex items-center gap-2">
                     <button
                       disabled={tablePage === 0 || loadingTableData}
-                      onClick={() => fetchTableRecords(selectedTable, tablePage - 1)}
+                      onClick={() => fetchTableRecords(selectedTable, tablePage - 1, tableSortCol, tableSortOrder, tableRecordSearch)}
                       className="px-3 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 font-bold disabled:opacity-40 transition"
                     >
                       Previous
                     </button>
                     <button
                       disabled={(tablePage + 1) * 30 >= tableTotalRows || loadingTableData}
-                      onClick={() => fetchTableRecords(selectedTable, tablePage + 1)}
+                      onClick={() => fetchTableRecords(selectedTable, tablePage + 1, tableSortCol, tableSortOrder, tableRecordSearch)}
                       className="px-3 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 font-bold disabled:opacity-40 transition"
                     >
                       Next
@@ -852,6 +974,14 @@ export const SABackendControl: React.FC = () => {
                 }`}
               >
                 {autoRefreshLogs ? '● Auto-Streaming' : 'Paused'}
+              </button>
+
+              <button
+                onClick={exportLogsJson}
+                disabled={logs.length === 0}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 text-xs font-bold transition disabled:opacity-40"
+              >
+                <Download className="h-3.5 w-3.5" /> Export
               </button>
             </div>
           </div>

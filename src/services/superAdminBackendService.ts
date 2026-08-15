@@ -138,7 +138,8 @@ export const SuperAdminBackendService = {
     limit: number = 50,
     offset: number = 0,
     sortCol?: string,
-    sortOrder: 'asc' | 'desc' = 'asc'
+    sortOrder: 'asc' | 'desc' = 'asc',
+    search?: string
   ): Promise<{
     success: boolean;
     table?: string;
@@ -154,7 +155,8 @@ export const SuperAdminBackendService = {
         table,
         limit: String(limit),
         offset: String(offset),
-        ...(sortCol ? { sort: sortCol, order: sortOrder } : {})
+        ...(sortCol ? { sort: sortCol, order: sortOrder } : {}),
+        ...(search ? { search } : {})
       });
       const response = await fetch(`/api/admin/db/table-data?${params.toString()}`);
       return await response.json();
