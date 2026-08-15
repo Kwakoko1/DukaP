@@ -274,6 +274,7 @@ async function initDatabaseSchema() {
     await sql`ALTER TABLE categories ADD COLUMN IF NOT EXISTS industry_type TEXT DEFAULT 'retail';`.catch(() => {});
     await sql`ALTER TABLE brands ADD COLUMN IF NOT EXISTS description_corporate_line TEXT;`.catch(() => {});
     await sql`ALTER TABLE products ADD COLUMN IF NOT EXISTS category_id TEXT;`.catch(() => {});
+    await sql`ALTER TABLE products ADD COLUMN IF NOT EXISTS brand TEXT;`.catch(() => {});
     await sql`ALTER TABLE products ADD COLUMN IF NOT EXISTS brand_id TEXT;`.catch(() => {});
     await sql`CREATE INDEX IF NOT EXISTS idx_categories_tenant_industry ON categories(tenant_id, industry_type);`.catch(() => {});
     await sql`CREATE INDEX IF NOT EXISTS idx_brands_tenant ON brands(tenant_id);`.catch(() => {});
@@ -2422,7 +2423,7 @@ const server = http.createServer(async (req, res) => {
               await sql`UPDATE categories SET deleted_at = ${now}, updated_at = ${now}, sync_version = sync_version + 1 WHERE id = ${recordId}`;
             } else {
               await sql`
-                INSERT INTO categories (id, tenant_id, branch_id, name, code, description, color, icon, status, created_by, updated_by, created_at, updated_at, sync_version, sync_status, parent_id)
+                INSERT INTO categories (id, tenant_id, branch_id, name, code, description, industry_type, color, icon, status, created_by, updated_by, created_at, updated_at, sync_version, sync_status, parent_id)
                 VALUES (
                   ${recordId},
                   ${opTenant},
@@ -2430,6 +2431,7 @@ const server = http.createServer(async (req, res) => {
                   ${payload.name || ''},
                   ${payload.code || ''},
                   ${payload.description || ''},
+                  ${payload.industry_type || 'retail'},
                   ${payload.color || '#4f46e5'},
                   ${payload.icon || 'Folder'},
                   ${payload.status || 'Active'},
@@ -2444,6 +2446,7 @@ const server = http.createServer(async (req, res) => {
                 ON CONFLICT (id) DO UPDATE SET
                   name = EXCLUDED.name,
                   description = EXCLUDED.description,
+                  industry_type = EXCLUDED.industry_type,
                   status = EXCLUDED.status,
                   updated_at = ${now},
                   sync_version = categories.sync_version + 1;
@@ -2455,7 +2458,7 @@ const server = http.createServer(async (req, res) => {
               await sql`UPDATE brands SET deleted_at = ${now}, updated_at = ${now}, sync_version = sync_version + 1 WHERE id = ${recordId}`;
             } else {
               await sql`
-                INSERT INTO brands (id, tenant_id, branch_id, name, code, description, color, icon, status, created_by, updated_by, created_at, updated_at, sync_version, sync_status)
+                INSERT INTO brands (id, tenant_id, branch_id, name, code, description, description_corporate_line, color, icon, status, created_by, updated_by, created_at, updated_at, sync_version, sync_status)
                 VALUES (
                   ${recordId},
                   ${opTenant},
@@ -2463,6 +2466,7 @@ const server = http.createServer(async (req, res) => {
                   ${payload.name || ''},
                   ${payload.code || ''},
                   ${payload.description || ''},
+                  ${payload.description_corporate_line || payload.description || ''},
                   ${payload.color || '#9333ea'},
                   ${payload.icon || 'Tag'},
                   ${payload.status || 'Active'},
@@ -2476,6 +2480,7 @@ const server = http.createServer(async (req, res) => {
                 ON CONFLICT (id) DO UPDATE SET
                   name = EXCLUDED.name,
                   description = EXCLUDED.description,
+                  description_corporate_line = EXCLUDED.description_corporate_line,
                   status = EXCLUDED.status,
                   updated_at = ${now},
                   sync_version = brands.sync_version + 1;

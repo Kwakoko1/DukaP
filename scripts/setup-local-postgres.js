@@ -308,6 +308,7 @@ async function setupPostgres() {
       // Ensure sync_version and taxonomy columns exist on existing pre-created tables
       `ALTER TABLE products ADD COLUMN IF NOT EXISTS sync_version INT DEFAULT 1;`,
       `ALTER TABLE products ADD COLUMN IF NOT EXISTS category_id TEXT;`,
+      `ALTER TABLE products ADD COLUMN IF NOT EXISTS brand TEXT;`,
       `ALTER TABLE products ADD COLUMN IF NOT EXISTS brand_id TEXT;`,
       `ALTER TABLE product_variants ADD COLUMN IF NOT EXISTS sync_version INT DEFAULT 1;`,
       `ALTER TABLE categories ADD COLUMN IF NOT EXISTS sync_version INT DEFAULT 1;`,

@@ -104,6 +104,8 @@ export function mapProductToCloud(prod: Product): any {
     name: prod.name,
     categoryId: prod.categoryId || prod.category || '',
     category: prod.categoryId || prod.category || '',
+    category_id: (prod as any).category_id || (prod as any).categoryId || null,
+    brand_id: (prod as any).brand_id || (prod as any).brandId || null,
     costPrice: resolvedBuyingPrice,
     buyingPrice: resolvedBuyingPrice,
     cost_price: resolvedBuyingPrice,

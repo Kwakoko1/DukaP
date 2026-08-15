@@ -337,6 +337,26 @@ class ProductionSyncEngine {
             }
           }
         }
+        if (Array.isArray(changes.categories) && changes.categories.length > 0) {
+          for (const c of changes.categories) {
+            if (c.deleted_at || c.deleted) {
+              await db.categories.delete(c.id);
+            } else {
+              await db.categories.put({ ...c, syncStatus: 'SYNCED' } as any);
+              totalPulled++;
+            }
+          }
+        }
+        if (Array.isArray(changes.brands) && changes.brands.length > 0) {
+          for (const b of changes.brands) {
+            if (b.deleted_at || b.deleted) {
+              await db.brands.delete(b.id);
+            } else {
+              await db.brands.put({ ...b, syncStatus: 'SYNCED' } as any);
+              totalPulled++;
+            }
+          }
+        }
         if (Array.isArray(changes.stockLedger) && changes.stockLedger.length > 0) {
           for (const s of changes.stockLedger) {
             await db.stockLedger.put({ ...s, synced: true, sync_status: 'SYNCED' });
