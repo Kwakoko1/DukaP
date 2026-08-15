@@ -59,7 +59,7 @@ export const BottomNav: React.FC = () => {
   ].includes(activeTab);
 
   const isInventoryActive = [
-    'Inventory', 'Products', 'Categories', 'Categories & Brands', 'Categories & brands',
+    'Inventory', 'Products',
     'Medicines', 'Stock Sync Engine', 'Stock Sync', 'Stock Ledger Sync',
     'Product Bundles & Kits', 'Product Bundles', 'Bundles & Kits',
     'Stock Adjustment', 'Stock Transfer', 'Stock Alerts', 'Beverage Inventory',

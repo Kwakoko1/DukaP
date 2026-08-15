@@ -229,9 +229,6 @@ const DukaPosAppContent: React.FC = () => {
       case 'Stock Overview':
       case 'Beverage Inventory':
       case 'Products':
-      case 'Categories':
-      case 'Categories & Brands':
-      case 'Categories & brands':
       case 'Stock Sync Engine':
       case 'Stock Sync':
       case 'Stock Ledger Sync':

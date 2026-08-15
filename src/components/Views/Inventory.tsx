@@ -11,9 +11,7 @@ import {
 } from '../../db/dexie';
 import {
   ProductService, cleanDuplicateVariants, getVariantAttrSig,
-  createCategory, updateCategory, deleteCategory,
-  createBrand, updateBrand, deleteBrand,
-  mergeDuplicateCategories, mergeDuplicateBrands, deleteAllCategoriesAndBrands
+  createCategory, deleteCategory, createBrand
 } from '../../services/productService';
 import { Html5Qrcode } from 'html5-qrcode';
 import {
@@ -35,7 +33,7 @@ import {
   AlertTriangle, Package, Layers, BarChart3, Tag, Clock,
   X, CheckCircle2, ArrowLeftRight, ClipboardList, FileText,
   RefreshCw, TrendingUp, TrendingDown, Archive, AlertCircle, Zap,
-  ChevronRight, ChevronDown, Download, Barcode, Hash, Calendar, Target,
+  ChevronRight, Barcode, Hash, Calendar, Target,
   Send, Check, Eye,
   ShoppingCart, Activity, DollarSign, Shield, Camera, Upload, Truck,
 } from 'lucide-react';
@@ -49,7 +47,7 @@ export function generateAutoSku(name?: string, category?: string, idOrSeed?: str
 }
 
 // ─── Types ─────────────────────────────────────────────────────────────────
-type InventoryTab = 'dashboard' | 'products' | 'categories' | 'stockSync' | 'ledger' | 'adjustments' | 'transfers' | 'alerts' | 'count' | 'reports' | 'recipes' | 'wastage';
+type InventoryTab = 'dashboard' | 'products' | 'stockSync' | 'ledger' | 'adjustments' | 'transfers' | 'alerts' | 'count' | 'reports' | 'recipes' | 'wastage';
 export type ProductTab = 'general' | 'pricing' | 'inventory' | 'variants' | 'images' | 'suppliers' | 'batch' | 'serials' | 'reorder' | 'history';
 type ReportType = 'balance' | 'movements' | 'valuation' | 'batch' | 'expiry' | 'reorder' | 'slow' | 'negative';
 
@@ -128,10 +126,8 @@ export const Inventory: React.FC = () => {
   useEffect(() => {
     if (!activeTab) return;
     const norm = activeTab.toLowerCase().trim();
-    if (norm === 'products' || norm === 'medicines' || norm === 'stock register') {
+    if (norm === 'products' || norm === 'medicines' || norm === 'stock register' || norm.includes('categor') || norm.includes('brand')) {
       setInvTab('products');
-    } else if (norm.includes('categor') || norm.includes('brand')) {
-      setInvTab('categories');
     } else if (norm.includes('bundle') || norm.includes('kit') || norm.includes('recipe')) {
       setInvTab('recipes' as any);
     } else if (norm.includes('adjustment')) {
@@ -173,13 +169,6 @@ export const Inventory: React.FC = () => {
   const [isCategoryManagerOpen, setIsCategoryManagerOpen] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
   const [categorySearch, setCategorySearch] = useState('');
-  const [brandSearch, setBrandSearch] = useState('');
-  const [catFilter, setCatFilter] = useState<'all' | 'active' | 'empty'>('all');
-  const [catSort, setCatSort] = useState<'count' | 'name'>('count');
-  const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
-  const [brandFilter, setBrandFilter] = useState<'all' | 'active' | 'empty'>('all');
-  const [brandSort, setBrandSort] = useState<'count' | 'name'>('count');
-  const [expandedBrand, setExpandedBrand] = useState<string | null>(null);
 
   // ── Camera Barcode Scanner States ──────────────────────────────────────────
   const [isCameraScannerOpen, setIsCameraScannerOpen] = useState(false);
@@ -372,54 +361,6 @@ export const Inventory: React.FC = () => {
     () => db.suppliers.where('tenant_id').equals(currentTenant.id).filter(s => s.status === 'Active').toArray(),
     [currentTenant.id]
   ) || [];
-
-
-
-  const handleDeleteCategory = async (name: string) => {
-    const prods = await db.products.where('tenant_id').equals(currentTenant.id).toArray();
-    const categoryProds = prods.filter(p => p.category === name || p.category?.toLowerCase() === name.toLowerCase());
-
-    let targetCat = 'General';
-    if (categoryProds.length > 0) {
-      const otherCats = allCategories.map(c => c.name).filter(cName => cName.toLowerCase() !== name.toLowerCase());
-      const promptText = `⚠️ Category "${name}" has ${categoryProds.length} assigned product(s).\n\nSpecify the target category to reassign products to (or press OK to reassign to "General"):\n\nAvailable: ${otherCats.join(', ') || 'General'}`;
-      const inputVal = prompt(promptText, 'General');
-      if (inputVal === null) return;
-      targetCat = inputVal.trim() || 'General';
-    } else {
-      if (!confirm(`Are you sure you want to delete category "${name}"?`)) return;
-    }
-
-    try {
-      await deleteCategory(name, currentTenant.id, targetCat);
-      alert(`✅ Category "${name}" successfully deleted.${categoryProds.length > 0 ? ` ${categoryProds.length} product(s) reassigned to "${targetCat}".` : ''}`);
-    } catch (err: any) {
-      alert(`❌ Failed to delete category: ${err?.message || err}`);
-    }
-  };
-
-  const handleDeleteBrand = async (name: string) => {
-    const prods = await db.products.where('tenant_id').equals(currentTenant.id).toArray();
-    const brandProds = prods.filter(p => p.brand === name || p.brand?.toLowerCase() === name.toLowerCase());
-
-    let targetBrand = '';
-    if (brandProds.length > 0) {
-      const otherBrands = allBrands.map(b => b.name).filter(bName => bName.toLowerCase() !== name.toLowerCase());
-      const promptText = `⚠️ Brand "${name}" has ${brandProds.length} assigned product(s).\n\nSpecify the target brand to reassign products to (or leave blank to unassign):\n\nAvailable: ${otherBrands.join(', ') || 'Unbranded'}`;
-      const inputVal = prompt(promptText, '');
-      if (inputVal === null) return;
-      targetBrand = inputVal.trim();
-    } else {
-      if (!confirm(`Are you sure you want to delete brand "${name}"?`)) return;
-    }
-
-    try {
-      await deleteBrand(name, currentTenant.id, targetBrand);
-      alert(`✅ Brand "${name}" successfully deleted.${brandProds.length > 0 ? ` ${brandProds.length} product(s) updated.` : ''}`);
-    } catch (err: any) {
-      alert(`❌ Failed to delete brand: ${err?.message || err}`);
-    }
-  };
 
   // Recipe sub-tab states
   const [selectedRecipeProduct, setSelectedRecipeProduct] = useState('');
@@ -896,14 +837,6 @@ export const Inventory: React.FC = () => {
   const [selectedLedgerProductId, setSelectedLedgerProductId] = useState<string>('');
   const [ledgerSearchQuery, setLedgerSearchQuery] = useState<string>('');
   const [ledgerTypeFilter, setLedgerTypeFilter] = useState<string>('ALL');
-
-  // Categories & Brands Form State (Project-1 design)
-  const [catName, setCatName] = useState('');
-  const [catDesc, setCatDesc] = useState('');
-  const [editingCategory, setEditingCategory] = useState<{ id: string; name: string } | null>(null);
-  const [brandName, setBrandName] = useState('');
-  const [brandDesc, setBrandDesc] = useState('');
-  const [editingBrand, setEditingBrand] = useState<{ id: string; name: string } | null>(null);
 
   // Historical Valuation Filter States
   const [historicalSnapshot, setHistoricalSnapshot] = useState<HistoricalValuationSnapshot | null>(null);
@@ -1871,688 +1804,6 @@ export const Inventory: React.FC = () => {
             </div>
           </div>
         )}
-      </div>
-    );
-  };
-  const handleExportTaxonomyCSV = () => {
-    let csv = 'Type,Name,Product_Count\n';
-    allCategories.forEach(c => {
-      csv += `Category,"${c.name.replace(/"/g, '""')}",${c.count}\n`;
-    });
-    allBrands.forEach(b => {
-      csv += `Brand,"${b.name.replace(/"/g, '""')}",${b.count}\n`;
-    });
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `dukapos_taxonomy_${Date.now()}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  const handleDeleteAllCategoriesAndBrands = async () => {
-    if (!currentTenant?.id) return;
-    if (!confirm('⚠️ Are you sure you want to delete ALL Categories and Brands for this workspace? Products will remain intact with General taxonomy.')) {
-      return;
-    }
-    const res = await deleteAllCategoriesAndBrands(currentTenant.id);
-    alert(`🗑️ Successfully deleted ${res.categoriesDeleted} categories and ${res.brandsDeleted} brands.`);
-  };
-
-  const handleMergeDuplicates = async () => {
-    if (!currentTenant?.id) return;
-    if (!confirm('🧹 Scan catalog and automatically merge case-insensitive duplicate Categories and Brands (e.g. "LOCAL BEER" ➔ "Local Beer")? Associated product records will be updated automatically.')) {
-      return;
-    }
-    const catRes = await mergeDuplicateCategories(currentTenant.id);
-    const brandRes = await mergeDuplicateBrands(currentTenant.id);
-    const totalMerged = catRes.mergedCount + brandRes.mergedCount;
-    const totalProductsUpdated = catRes.updatedProductsCount + brandRes.updatedProductsCount;
-
-    if (totalMerged > 0) {
-      alert(`✅ Merged ${totalMerged} duplicate category/brand entries and updated ${totalProductsUpdated} product record(s).`);
-    } else {
-      alert('✨ Catalog hygiene check complete! No duplicate categories or brands found.');
-    }
-  };
-
-  const renderCategoriesTab = () => {
-    const taxPlaceholders = (() => {
-      const m = (activeModule || 'Retail').toLowerCase();
-      if (m.includes('pharm') || m.includes('med')) {
-        return {
-          catPlaceholder: 'e.g. Antibiotics, Pain Relievers, First Aid, Supplements',
-          catDescPlaceholder: 'Prescription medicines, OTC drugs, health supplies',
-          brandPlaceholder: 'e.g. Pfizer, GSK, Bayer, Sanofi, Novartis',
-          brandDescPlaceholder: 'Pharmaceutical manufacturer, lab, or distributor origin'
-        };
-      }
-      if (m.includes('bar') || m.includes('rest') || m.includes('hotel') || m.includes('bev')) {
-        return {
-          catPlaceholder: 'e.g. Beers, Wines & Spirits, Cocktails, Soft Drinks',
-          catDescPlaceholder: 'Beverages, bar mixers, wine cellar stock, spirits',
-          brandPlaceholder: 'e.g. Heineken, Serengeti, Diageo, AB InBev, Castle',
-          brandDescPlaceholder: 'Brewery, distillery, or beverage distributor'
-        };
-      }
-      if (m.includes('hard') || m.includes('build') || m.includes('const')) {
-        return {
-          catPlaceholder: 'e.g. Power Tools, Fasteners, Electrical, Plumbing, Paint',
-          catDescPlaceholder: 'Construction materials, workshop tools, fixings',
-          brandPlaceholder: 'e.g. Bosch, Makita, Stanley, DeWalt, Total, Simba Cement',
-          brandDescPlaceholder: 'Hardware brand or certified tool manufacturer'
-        };
-      }
-      if (m.includes('poultry') || m.includes('farm') || m.includes('agri')) {
-        return {
-          catPlaceholder: 'e.g. Feeds, Vaccines, Supplements, Farm Equipment',
-          catDescPlaceholder: 'Livestock nutrition, veterinary supplies, farm gear',
-          brandPlaceholder: 'e.g. Kibo Feeds, Twiga Chemical, Farmchem, Tanfeed',
-          brandDescPlaceholder: 'Agricultural feed mill or veterinary supplier'
-        };
-      }
-      return {
-        catPlaceholder: 'e.g. Smart Phones, Local Beer, Electronics, Apparel',
-        catDescPlaceholder: 'Electronics, mobile devices, fashion, and accessories',
-        brandPlaceholder: 'e.g. Apple, Samsung, Nike, Heineken, Safari, Sony',
-        brandDescPlaceholder: 'Manufacturer, corporate line, or brand origin details'
-      };
-    })();
-
-    const totalCatalogProducts = products.length;
-    const uncategorizedCount = products.filter(p => !p.category || p.category === 'General').length;
-    const topCategory = allCategories.length > 0 ? [...allCategories].sort((a, b) => b.count - a.count)[0] : null;
-    const topBrand = allBrands.length > 0 ? [...allBrands].sort((a, b) => b.count - a.count)[0] : null;
-
-    const filteredCategories = allCategories
-      .filter(c => {
-        const matchQ = c.name.toLowerCase().includes(categorySearch.toLowerCase());
-        const matchF = catFilter === 'all' || (catFilter === 'active' && c.count > 0) || (catFilter === 'empty' && c.count === 0);
-        return matchQ && matchF;
-      })
-      .sort((a, b) => (catSort === 'count' ? b.count - a.count : a.name.localeCompare(b.name)));
-
-    const filteredBrands = allBrands
-      .filter(b => {
-        const matchQ = b.name.toLowerCase().includes(brandSearch.toLowerCase());
-        const matchF = brandFilter === 'all' || (brandFilter === 'active' && b.count > 0) || (brandFilter === 'empty' && b.count === 0);
-        return matchQ && matchF;
-      })
-      .sort((a, b) => (brandSort === 'count' ? b.count - a.count : a.name.localeCompare(b.name)));
-
-    return (
-      <div className="space-y-6">
-        {/* Page Header */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white dark:bg-darkbg-card p-4 rounded-2xl border dark:border-darkbg-border shadow-xs">
-          <div>
-            <h2 className="text-lg font-extrabold text-slate-900 dark:text-white m-0 flex items-center gap-2">
-              <Layers className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
-              Categories &amp; Brands Management Hub
-            </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400 m-0 mt-0.5">
-              Organize catalog taxonomy, manage brand relationships, and inspect item distribution
-            </p>
-          </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs font-semibold px-3 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800">
-              📁 {allCategories.length} Categories
-            </span>
-            <span className="text-xs font-semibold px-3 py-1.5 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 border border-purple-200 dark:border-purple-800">
-              🏷️ {allBrands.length} Brands
-            </span>
-            <button
-              onClick={handleDeleteAllCategoriesAndBrands}
-              className="px-3 py-1.5 text-xs font-bold rounded-xl bg-red-50 hover:bg-red-100 dark:bg-red-950/50 dark:hover:bg-red-900/50 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800 transition flex items-center gap-1.5 cursor-pointer"
-              title="Delete all categories and brands for current workspace"
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Clear All Categories &amp; Brands
-            </button>
-            <button
-              onClick={handleMergeDuplicates}
-              className="px-3 py-1.5 text-xs font-bold rounded-xl bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/50 dark:hover:bg-amber-900/50 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 transition flex items-center gap-1.5 cursor-pointer"
-              title="Merge case-insensitive duplicate categories and brands"
-            >
-              🧹 Clean &amp; Merge Duplicates
-            </button>
-            <button
-              onClick={handleExportTaxonomyCSV}
-              className="px-3 py-1.5 text-xs font-bold rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-darkbg-border transition flex items-center gap-1.5 cursor-pointer"
-            >
-              <Download size={13} /> Export CSV
-            </button>
-          </div>
-        </div>
-
-        {/* Catalog Insights KPI Banner Cards */}
-        <div className="grid gap-4 sm:grid-cols-3">
-          <div className="bg-white dark:bg-darkbg-card p-4 rounded-2xl border dark:border-darkbg-border shadow-xs flex items-center gap-3.5">
-            <div className="p-3 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 shrink-0">
-              <Layers size={22} />
-            </div>
-            <div className="min-w-0 flex-1">
-              <span className="text-[10px] uppercase font-extrabold text-slate-400 tracking-wider">Top Category</span>
-              <div className="font-black text-slate-800 dark:text-white text-sm truncate">
-                {topCategory ? topCategory.name : 'None'}
-              </div>
-              <span className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400">
-                {topCategory ? `${topCategory.count} products (${totalCatalogProducts > 0 ? Math.round((topCategory.count / totalCatalogProducts) * 100) : 0}% share)` : '0 products'}
-              </span>
-            </div>
-          </div>
-
-          <div className="bg-white dark:bg-darkbg-card p-4 rounded-2xl border dark:border-darkbg-border shadow-xs flex items-center gap-3.5">
-            <div className="p-3 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 shrink-0">
-              <Tag size={22} />
-            </div>
-            <div className="min-w-0 flex-1">
-              <span className="text-[10px] uppercase font-extrabold text-slate-400 tracking-wider">Top Brand</span>
-              <div className="font-black text-slate-800 dark:text-white text-sm truncate">
-                {topBrand ? topBrand.name : 'None'}
-              </div>
-              <span className="text-[11px] font-semibold text-purple-600 dark:text-purple-400">
-                {topBrand ? `${topBrand.count} products (${totalCatalogProducts > 0 ? Math.round((topBrand.count / totalCatalogProducts) * 100) : 0}% share)` : '0 products'}
-              </span>
-            </div>
-          </div>
-
-          <div className="bg-white dark:bg-darkbg-card p-4 rounded-2xl border dark:border-darkbg-border shadow-xs flex items-center gap-3.5">
-            <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 shrink-0">
-              <Package size={22} />
-            </div>
-            <div className="min-w-0 flex-1">
-              <span className="text-[10px] uppercase font-extrabold text-slate-400 tracking-wider">Catalog Coverage</span>
-              <div className="font-black text-slate-800 dark:text-white text-sm">
-                {totalCatalogProducts} Total Items
-              </div>
-              <span className={`text-[11px] font-semibold ${uncategorizedCount > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
-                {uncategorizedCount > 0 ? `⚠️ ${uncategorizedCount} Uncategorized` : '✓ 100% Categorized'}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* 2-Column Side-by-Side Grid Layout */}
-        <div className="grid gap-6 md:grid-cols-2">
-          
-          {/* LEFT COLUMN: Categories Manager Card */}
-          <div className="p-5 bg-white dark:bg-darkbg-card border dark:border-darkbg-border rounded-2xl shadow-xs space-y-4">
-            <div className="flex items-center justify-between border-b dark:border-darkbg-border pb-3">
-              <h3 className="text-sm font-extrabold text-slate-900 dark:text-white m-0 flex items-center gap-2">
-                <Layers className="h-4.5 w-4.5 text-indigo-600 dark:text-indigo-400" />
-                Categories Manager
-              </h3>
-              <span className="text-xs text-slate-400 font-medium">{filteredCategories.length} Categories</span>
-            </div>
-
-            {/* Create / Edit Category Inline Form */}
-            <form onSubmit={async (e) => {
-              e.preventDefault();
-              if (!catName.trim()) return;
-              const trimmed = catName.trim();
-              if (editingCategory) {
-                const oldName = editingCategory.name;
-                try {
-                  const catRec = await db.categories.where('tenant_id').equals(currentTenant.id).filter(c => c.name === oldName).first();
-                  if (catRec) {
-                    await updateCategory(catRec.id, { name: trimmed, description: catDesc.trim() });
-                  }
-                } catch {}
-
-                if (oldName !== trimmed) {
-                  const prods = await db.products.where('tenant_id').equals(currentTenant.id).toArray();
-                  const categoryProds = prods.filter(p => p.category === oldName);
-                  await db.transaction('rw', db.products, async () => {
-                    for (const p of categoryProds) {
-                      p.category = trimmed;
-                      p.syncStatus = 'PENDING';
-                      await db.products.put(p);
-                    }
-                  });
-                }
-                setEditingCategory(null);
-              } else {
-                await createCategory({ name: trimmed, description: catDesc.trim(), tenant_id: currentTenant.id });
-              }
-              setCatName('');
-              setCatDesc('');
-            }} className="space-y-3 bg-slate-50 dark:bg-darkbg/50 p-3.5 rounded-xl border dark:border-darkbg-border">
-              <div>
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                  {editingCategory ? `Edit Category Name (currently "${editingCategory.name}")` : 'Category Name *'}
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder={taxPlaceholders.catPlaceholder}
-                  value={catName}
-                  onChange={e => setCatName(e.target.value)}
-                  className="mt-1 h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-xs dark:border-darkbg-border dark:bg-darkbg dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Description / Scope</label>
-                <input
-                  type="text"
-                  placeholder={taxPlaceholders.catDescPlaceholder}
-                  value={catDesc}
-                  onChange={e => setCatDesc(e.target.value)}
-                  className="mt-1 h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-xs dark:border-darkbg-border dark:bg-darkbg dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
-              <div className="flex gap-2 pt-1">
-                <button
-                  type="submit"
-                  className="flex-1 h-9 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
-                >
-                  <Plus size={14} /> {editingCategory ? 'Update Category' : 'Save Category'}
-                </button>
-                {editingCategory && (
-                  <button
-                    type="button"
-                    onClick={() => { setEditingCategory(null); setCatName(''); setCatDesc(''); }}
-                    className="h-9 px-3 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold text-xs rounded-lg transition cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                )}
-              </div>
-            </form>
-
-            {/* Categories Controls (Search, Filters, Sort) */}
-            <div className="space-y-3">
-              <div className="flex flex-col sm:flex-row gap-2 items-center justify-between">
-                <div className="relative flex-1 w-full">
-                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input
-                    type="text"
-                    placeholder="Search categories…"
-                    value={categorySearch}
-                    onChange={e => setCategorySearch(e.target.value)}
-                    className="h-8 w-full pl-9 pr-3 text-xs rounded-lg border border-slate-200 bg-slate-50 dark:border-darkbg-border dark:bg-darkbg dark:text-white focus:outline-none"
-                  />
-                </div>
-                <select
-                  value={catSort}
-                  onChange={e => setCatSort(e.target.value as any)}
-                  className="h-8 text-xs font-semibold rounded-lg border border-slate-200 bg-white px-2 dark:border-darkbg-border dark:bg-darkbg dark:text-white focus:outline-none shrink-0"
-                >
-                  <option value="count">Sort: Most Items</option>
-                  <option value="name">Sort: A - Z</option>
-                </select>
-              </div>
-
-              {/* Filter Pills */}
-              <div className="flex items-center gap-1 bg-slate-100 dark:bg-darkbg/70 p-1 rounded-xl">
-                <button
-                  type="button"
-                  onClick={() => setCatFilter('all')}
-                  className={`flex-1 py-1 text-[11px] font-bold rounded-lg transition cursor-pointer ${catFilter === 'all' ? 'bg-white dark:bg-darkbg-card text-indigo-600 shadow-xs' : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'}`}
-                >
-                  All ({allCategories.length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCatFilter('active')}
-                  className={`flex-1 py-1 text-[11px] font-bold rounded-lg transition cursor-pointer ${catFilter === 'active' ? 'bg-white dark:bg-darkbg-card text-indigo-600 shadow-xs' : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'}`}
-                >
-                  With Items ({allCategories.filter(c => c.count > 0).length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCatFilter('empty')}
-                  className={`flex-1 py-1 text-[11px] font-bold rounded-lg transition cursor-pointer ${catFilter === 'empty' ? 'bg-white dark:bg-darkbg-card text-indigo-600 shadow-xs' : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'}`}
-                >
-                  Empty ({allCategories.filter(c => c.count === 0).length})
-                </button>
-              </div>
-
-              {/* Categories List with Accordion Inspector */}
-              <div className="space-y-2 max-h-[440px] overflow-y-auto pr-1">
-                {filteredCategories.map(c => {
-                  const isEditing = editingCategory?.name === c.name;
-                  const isExpanded = expandedCategory === c.name;
-                  const categoryProducts = products.filter(p => p.category === c.name);
-                  return (
-                    <div key={c.name} className="space-y-1">
-                      <div
-                        className={`flex items-center justify-between p-3 rounded-xl border transition ${
-                          isEditing
-                            ? 'bg-indigo-50 dark:bg-indigo-950/60 border-indigo-300 dark:border-indigo-800'
-                            : 'bg-slate-50/70 dark:bg-darkbg/40 border-slate-200/80 dark:border-darkbg-border hover:bg-slate-100 dark:hover:bg-darkbg/70'
-                        }`}
-                      >
-                        <div
-                          onClick={() => setExpandedCategory(isExpanded ? null : c.name)}
-                          className="flex items-center gap-2.5 min-w-0 flex-1 pr-2 cursor-pointer"
-                        >
-                          <button className="text-slate-400 hover:text-indigo-600 transition">
-                            {isExpanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
-                          </button>
-                          <div
-                            className="h-8 w-8 rounded-lg shrink-0 flex items-center justify-center text-white font-bold text-xs shadow-xs"
-                            style={{ background: `hsl(${(c.name.charCodeAt(0) * 37) % 360}, 65%, 50%)` }}
-                          >
-                            {c.name.slice(0, 2).toUpperCase()}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="font-bold text-xs text-slate-800 dark:text-slate-100 truncate">{c.name}</div>
-                            <div className="text-[11px] text-slate-400 font-medium">{c.count} product{c.count !== 1 ? 's' : ''}</div>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <button
-                            title="Edit Category"
-                            onClick={() => { setEditingCategory({ id: c.name, name: c.name }); setCatName(c.name); setCatDesc(''); }}
-                            className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg transition cursor-pointer"
-                          >
-                            <Edit size={14} />
-                          </button>
-                          <button
-                            title={`Delete Category "${c.name}"${c.count > 0 ? ` (${c.count} assigned items will be reassigned)` : ''}`}
-                            onClick={() => handleDeleteCategory(c.name)}
-                            className="p-1.5 text-slate-500 hover:text-red-600 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg transition cursor-pointer"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                          <button
-                            onClick={() => openEditor(null, { category: c.name })}
-                            className="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 transition cursor-pointer"
-                          >
-                            + Add Product
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Expandable Product Inspector Drawer */}
-                      {isExpanded && (
-                        <div className="p-3 bg-white dark:bg-darkbg rounded-xl border border-indigo-100 dark:border-indigo-900/40 space-y-2 text-xs">
-                          <div className="flex items-center justify-between text-[11px] font-bold text-slate-500 pb-1 border-b border-slate-100 dark:border-darkbg-border">
-                            <span>Products in "{c.name}"</span>
-                            <span>{categoryProducts.length} Item(s)</span>
-                          </div>
-                          <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                            {categoryProducts.map(p => (
-                              <div key={p.id} className="flex items-center justify-between py-1 border-b border-slate-50 dark:border-darkbg-border/30 last:border-0">
-                                <div className="flex items-center gap-2 min-w-0 flex-1">
-                                  <div className="h-6 w-6 rounded bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 shrink-0 flex items-center justify-center font-bold text-[10px]">
-                                    {p.name.slice(0, 1).toUpperCase()}
-                                  </div>
-                                  <span className="font-semibold text-slate-800 dark:text-slate-200 truncate">{p.name}</span>
-                                </div>
-                                <div className="flex items-center gap-3 shrink-0 text-slate-500 font-mono text-[11px]">
-                                  <span>Stock: <strong className={p.stock > 0 ? 'text-emerald-600' : 'text-red-500'}>{p.stock}</strong></span>
-                                  <span>{fmtCcy(p.sellingPrice || p.price)}</span>
-                                  <button
-                                    onClick={() => openEditor(p)}
-                                    className="text-indigo-600 hover:underline font-bold text-[11px] cursor-pointer"
-                                  >
-                                    Edit
-                                  </button>
-                                </div>
-                              </div>
-                            ))}
-                            {categoryProducts.length === 0 && (
-                              <div className="text-center py-2 text-slate-400 italic text-[11px]">
-                                No products in this category yet. Click + Add Product above to create one.
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-                {filteredCategories.length === 0 && (
-                  <div className="text-center py-10 text-slate-400 italic text-xs">
-                    No categories found.
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* RIGHT COLUMN: Brands Manager Card */}
-          <div className="p-5 bg-white dark:bg-darkbg-card border dark:border-darkbg-border rounded-2xl shadow-xs space-y-4">
-            <div className="flex items-center justify-between border-b dark:border-darkbg-border pb-3">
-              <h3 className="text-sm font-extrabold text-slate-900 dark:text-white m-0 flex items-center gap-2">
-                <Tag className="h-4.5 w-4.5 text-purple-600 dark:text-purple-400" />
-                Brands Manager
-              </h3>
-              <span className="text-xs text-slate-400 font-medium">{filteredBrands.length} Brands</span>
-            </div>
-
-            {/* Create / Edit Brand Inline Form */}
-            <form onSubmit={async (e) => {
-              e.preventDefault();
-              if (!brandName.trim()) return;
-              const trimmed = brandName.trim();
-              if (editingBrand) {
-                const oldName = editingBrand.name;
-                try {
-                  const brandRec = await db.brands.where('tenant_id').equals(currentTenant.id).filter(b => b.name === oldName).first();
-                  if (brandRec) {
-                    await updateBrand(brandRec.id, { name: trimmed, description: brandDesc.trim() });
-                  }
-                } catch {}
-
-                if (oldName !== trimmed) {
-                  const prods = await db.products.where('tenant_id').equals(currentTenant.id).toArray();
-                  const brandProds = prods.filter(p => p.brand === oldName);
-                  await db.transaction('rw', db.products, async () => {
-                    for (const p of brandProds) {
-                      p.brand = trimmed;
-                      p.syncStatus = 'PENDING';
-                      await db.products.put(p);
-                    }
-                  });
-                }
-                setEditingBrand(null);
-              } else {
-                await createBrand({ name: trimmed, description: brandDesc.trim(), tenant_id: currentTenant.id });
-              }
-              setBrandName('');
-              setBrandDesc('');
-            }} className="space-y-3 bg-slate-50 dark:bg-darkbg/50 p-3.5 rounded-xl border dark:border-darkbg-border">
-              <div>
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                  {editingBrand ? `Edit Brand Name (currently "${editingBrand.name}")` : 'Brand Name *'}
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder={taxPlaceholders.brandPlaceholder}
-                  value={brandName}
-                  onChange={e => setBrandName(e.target.value)}
-                  className="mt-1 h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-xs dark:border-darkbg-border dark:bg-darkbg dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Description / Corporate Line</label>
-                <input
-                  type="text"
-                  placeholder={taxPlaceholders.brandDescPlaceholder}
-                  value={brandDesc}
-                  onChange={e => setBrandDesc(e.target.value)}
-                  className="mt-1 h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-xs dark:border-darkbg-border dark:bg-darkbg dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-                />
-              </div>
-              <div className="flex gap-2 pt-1">
-                <button
-                  type="submit"
-                  className="flex-1 h-9 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-lg transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
-                >
-                  <Plus size={14} /> {editingBrand ? 'Update Brand' : 'Save Brand'}
-                </button>
-                {editingBrand && (
-                  <button
-                    type="button"
-                    onClick={() => { setEditingBrand(null); setBrandName(''); setBrandDesc(''); }}
-                    className="h-9 px-3 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold text-xs rounded-lg transition cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                )}
-              </div>
-            </form>
-
-            {/* Brands Controls (Search, Filters, Sort) */}
-            <div className="space-y-3">
-              <div className="flex flex-col sm:flex-row gap-2 items-center justify-between">
-                <div className="relative flex-1 w-full">
-                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input
-                    type="text"
-                    placeholder="Search brands…"
-                    value={brandSearch}
-                    onChange={e => setBrandSearch(e.target.value)}
-                    className="h-8 w-full pl-9 pr-3 text-xs rounded-lg border border-slate-200 bg-slate-50 dark:border-darkbg-border dark:bg-darkbg dark:text-white focus:outline-none"
-                  />
-                </div>
-                <select
-                  value={brandSort}
-                  onChange={e => setBrandSort(e.target.value as any)}
-                  className="h-8 text-xs font-semibold rounded-lg border border-slate-200 bg-white px-2 dark:border-darkbg-border dark:bg-darkbg dark:text-white focus:outline-none shrink-0"
-                >
-                  <option value="count">Sort: Most Items</option>
-                  <option value="name">Sort: A - Z</option>
-                </select>
-              </div>
-
-              {/* Filter Pills */}
-              <div className="flex items-center gap-1 bg-slate-100 dark:bg-darkbg/70 p-1 rounded-xl">
-                <button
-                  type="button"
-                  onClick={() => setBrandFilter('all')}
-                  className={`flex-1 py-1 text-[11px] font-bold rounded-lg transition cursor-pointer ${brandFilter === 'all' ? 'bg-white dark:bg-darkbg-card text-purple-600 shadow-xs' : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'}`}
-                >
-                  All ({allBrands.length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setBrandFilter('active')}
-                  className={`flex-1 py-1 text-[11px] font-bold rounded-lg transition cursor-pointer ${brandFilter === 'active' ? 'bg-white dark:bg-darkbg-card text-purple-600 shadow-xs' : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'}`}
-                >
-                  With Items ({allBrands.filter(b => b.count > 0).length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setBrandFilter('empty')}
-                  className={`flex-1 py-1 text-[11px] font-bold rounded-lg transition cursor-pointer ${brandFilter === 'empty' ? 'bg-white dark:bg-darkbg-card text-purple-600 shadow-xs' : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'}`}
-                >
-                  Empty ({allBrands.filter(b => b.count === 0).length})
-                </button>
-              </div>
-
-              {/* Brands List with Accordion Inspector */}
-              <div className="space-y-2 max-h-[440px] overflow-y-auto pr-1">
-                {filteredBrands.map(b => {
-                  const isEditing = editingBrand?.name === b.name;
-                  const isExpanded = expandedBrand === b.name;
-                  const brandProducts = products.filter(p => p.brand === b.name);
-                  return (
-                    <div key={b.name} className="space-y-1">
-                      <div
-                        className={`flex items-center justify-between p-3 rounded-xl border transition ${
-                          isEditing
-                            ? 'bg-purple-50 dark:bg-purple-950/60 border-purple-300 dark:border-purple-800'
-                            : 'bg-slate-50/70 dark:bg-darkbg/40 border-slate-200/80 dark:border-darkbg-border hover:bg-slate-100 dark:hover:bg-darkbg/70'
-                        }`}
-                      >
-                        <div
-                          onClick={() => setExpandedBrand(isExpanded ? null : b.name)}
-                          className="flex items-center gap-2.5 min-w-0 flex-1 pr-2 cursor-pointer"
-                        >
-                          <button className="text-slate-400 hover:text-purple-600 transition">
-                            {isExpanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
-                          </button>
-                          <div
-                            className="h-8 w-8 rounded-lg shrink-0 flex items-center justify-center text-white font-bold text-xs shadow-xs"
-                            style={{ background: `hsl(${(b.name.charCodeAt(0) * 83) % 360}, 60%, 48%)` }}
-                          >
-                            {b.name.slice(0, 2).toUpperCase()}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="font-bold text-xs text-slate-800 dark:text-slate-100 truncate">{b.name}</div>
-                            <div className="text-[11px] text-slate-400 font-medium">{b.count} product{b.count !== 1 ? 's' : ''}</div>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <button
-                            title="Edit Brand"
-                            onClick={() => { setEditingBrand({ id: b.name, name: b.name }); setBrandName(b.name); setBrandDesc(''); }}
-                            className="p-1.5 text-slate-500 hover:text-purple-600 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg transition cursor-pointer"
-                          >
-                            <Edit size={14} />
-                          </button>
-                          <button
-                            title={`Delete Brand "${b.name}"${b.count > 0 ? ` (${b.count} assigned items will be unassigned)` : ''}`}
-                            onClick={() => handleDeleteBrand(b.name)}
-                            className="p-1.5 text-slate-500 hover:text-red-600 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg transition cursor-pointer"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                          <button
-                            onClick={() => openEditor(null, { brand: b.name })}
-                            className="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 border border-purple-200 dark:border-purple-800 transition cursor-pointer"
-                          >
-                            + Add Product
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Expandable Product Inspector Drawer */}
-                      {isExpanded && (
-                        <div className="p-3 bg-white dark:bg-darkbg rounded-xl border border-purple-100 dark:border-purple-900/40 space-y-2 text-xs">
-                          <div className="flex items-center justify-between text-[11px] font-bold text-slate-500 pb-1 border-b border-slate-100 dark:border-darkbg-border">
-                            <span>Products under "{b.name}"</span>
-                            <span>{brandProducts.length} Item(s)</span>
-                          </div>
-                          <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                            {brandProducts.map(p => (
-                              <div key={p.id} className="flex items-center justify-between py-1 border-b border-slate-50 dark:border-darkbg-border/30 last:border-0">
-                                <div className="flex items-center gap-2 min-w-0 flex-1">
-                                  <div className="h-6 w-6 rounded bg-purple-50 dark:bg-purple-950/50 text-purple-600 shrink-0 flex items-center justify-center font-bold text-[10px]">
-                                    {p.name.slice(0, 1).toUpperCase()}
-                                  </div>
-                                  <span className="font-semibold text-slate-800 dark:text-slate-200 truncate">{p.name}</span>
-                                </div>
-                                <div className="flex items-center gap-3 shrink-0 text-slate-500 font-mono text-[11px]">
-                                  <span>Stock: <strong className={p.stock > 0 ? 'text-emerald-600' : 'text-red-500'}>{p.stock}</strong></span>
-                                  <span>{fmtCcy(p.sellingPrice || p.price)}</span>
-                                  <button
-                                    onClick={() => openEditor(p)}
-                                    className="text-purple-600 hover:underline font-bold text-[11px] cursor-pointer"
-                                  >
-                                    Edit
-                                  </button>
-                                </div>
-                              </div>
-                            ))}
-                            {brandProducts.length === 0 && (
-                              <div className="text-center py-2 text-slate-400 italic text-[11px]">
-                                No products under this brand yet. Click + Add Product above to create one.
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-                {filteredBrands.length === 0 && (
-                  <div className="text-center py-10 text-slate-400 italic text-xs">
-                    No brands found.
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-        </div>
       </div>
     );
   };
@@ -6162,7 +5413,6 @@ export const Inventory: React.FC = () => {
   const TOP_TABS: { id: InventoryTab; label: string; icon: React.ReactNode; badge?: number }[] = [
     { id: 'dashboard',   label: 'Inventory Overview',  icon: <BarChart3 size={15}/> },
     { id: 'products',    label: 'Products',            icon: <Package size={15}/>, badge: stats.total },
-    { id: 'categories',  label: 'Categories & Brands', icon: <Tag size={15}/> },
     { id: 'adjustments', label: 'Adjustments',         icon: <Sliders size={15}/> },
     { id: 'transfers',   label: 'Transfers',           icon: <ArrowLeftRight size={15}/>, badge: kpis?.pendingTransfers },
     { id: 'alerts',      label: 'Stock Alerts',        icon: <AlertTriangle size={15}/>, badge: kpis?.lowStockCount },
@@ -6195,7 +5445,6 @@ export const Inventory: React.FC = () => {
       <div className="inv-tab-body">
         {invTab === 'dashboard'   && renderDashboardTab()}
         {invTab === 'products'    && renderProductsTab()}
-        {invTab === 'categories'  && renderCategoriesTab()}
         {invTab === 'stockSync'   && renderStockSyncTab()}
         {invTab === 'ledger'      && renderLedgerTab()}
         {invTab === 'adjustments' && renderAdjustmentsTab()}
@@ -6766,9 +6015,9 @@ export const Inventory: React.FC = () => {
                   </div>
                   <div className="flex items-center space-x-1">
                     <button
-                      title="Edit Category"
+                      title="Filter Products by Category"
                       className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded text-slate-500 hover:text-indigo-600 transition cursor-pointer"
-                      onClick={() => { setEditingCategory({ id: c.name, name: c.name }); setCatName(c.name); setCatDesc(''); setIsCategoryManagerOpen(false); setInvTab('categories'); }}
+                      onClick={() => { setSearchQuery(c.name); setIsCategoryManagerOpen(false); setInvTab('products'); }}
                     >
                       <Edit size={12} />
                     </button>
@@ -6778,7 +6027,11 @@ export const Inventory: React.FC = () => {
                       className={`p-1 rounded transition ${
                         c.count > 0 ? 'text-slate-300 dark:text-slate-700 cursor-not-allowed opacity-40' : 'text-slate-500 hover:text-red-600 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer'
                       }`}
-                      onClick={() => handleDeleteCategory(c.name)}
+                      onClick={async () => {
+                        if (confirm(`Delete category "${c.name}"?`)) {
+                          await deleteCategory(c.name, currentTenant.id, 'General');
+                        }
+                      }}
                     >
                       <Trash2 size={12} />
                     </button>
