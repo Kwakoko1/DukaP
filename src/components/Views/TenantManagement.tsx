@@ -1784,7 +1784,9 @@ function TenantNodeItem({
             <Store className="h-4 w-4" />
           </div>
 
-          <span className="font-bold text-slate-800 dark:text-slate-100">{tenant.name}</span>
+          <span className="font-bold text-slate-800 dark:text-slate-100">
+            {tenant.business_name || tenant.trade_name || tenant.company_name || tenant.name || 'Business'}
+          </span>
 
           {/* Status Badge */}
           {isTrial && (

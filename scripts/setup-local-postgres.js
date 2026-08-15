@@ -22,7 +22,7 @@ if (fs.existsSync(envPath)) {
   });
 }
 
-const rawUrl = process.env.DATABASE_URL || process.env.VITE_POSTGRES_URL || 'postgresql://postgres:postgres@localhost:5432/dukapos';
+const rawUrl = process.env.DATABASE_URL || process.env.VITE_POSTGRES_URL || 'postgresql://postgres:postgres@localhost:5432/kwakopos';
 
 // Parse database connection parameters
 let parsedUrl;
@@ -33,7 +33,7 @@ try {
   process.exit(1);
 }
 
-const dbName = parsedUrl.pathname.replace(/^\//, '') || 'dukapos';
+const dbName = parsedUrl.pathname.replace(/^\//, '') || 'kwakopos';
 const dbUser = parsedUrl.username || 'postgres';
 const dbPassword = parsedUrl.password || 'postgres';
 const dbHost = parsedUrl.hostname || 'localhost';
@@ -116,7 +116,7 @@ async function setupPostgres() {
 
       `CREATE TABLE IF NOT EXISTS users (
         id TEXT PRIMARY KEY,
-        tenant_id TEXT,
+        tenant_id TEXT REFERENCES tenants(id) ON DELETE CASCADE,
         branch_id TEXT,
         name TEXT,
         username TEXT,
@@ -130,17 +130,18 @@ async function setupPostgres() {
 
       `CREATE TABLE IF NOT EXISTS branches (
         id TEXT PRIMARY KEY,
-        tenant_id TEXT,
+        tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
         name TEXT,
         location TEXT,
         is_headquarters BOOLEAN DEFAULT false,
         created_at BIGINT,
-        deleted_at BIGINT
+        deleted_at BIGINT,
+        CONSTRAINT chk_branches_tenant_nonempty CHECK (tenant_id IS NOT NULL AND length(trim(tenant_id)) > 0)
       );`,
 
       `CREATE TABLE IF NOT EXISTS products (
         id TEXT PRIMARY KEY,
-        tenant_id TEXT,
+        tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
         branch_id TEXT,
         name TEXT,
         category TEXT,
@@ -160,13 +161,14 @@ async function setupPostgres() {
         sync_version INT DEFAULT 1,
         created_at BIGINT,
         updated_at BIGINT,
-        deleted_at BIGINT
+        deleted_at BIGINT,
+        CONSTRAINT chk_products_tenant_nonempty CHECK (tenant_id IS NOT NULL AND length(trim(tenant_id)) > 0)
       );`,
 
       `CREATE TABLE IF NOT EXISTS product_variants (
         id TEXT PRIMARY KEY,
         product_id TEXT,
-        tenant_id TEXT,
+        tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
         branch_id TEXT,
         sku TEXT,
         barcode TEXT,
@@ -180,12 +182,13 @@ async function setupPostgres() {
         sync_version INT DEFAULT 1,
         created_at BIGINT,
         updated_at BIGINT,
-        deleted_at BIGINT
+        deleted_at BIGINT,
+        CONSTRAINT chk_variants_tenant_nonempty CHECK (tenant_id IS NOT NULL AND length(trim(tenant_id)) > 0)
       );`,
 
       `CREATE TABLE IF NOT EXISTS categories (
         id TEXT PRIMARY KEY,
-        tenant_id TEXT,
+        tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
         branch_id TEXT,
         name TEXT,
         code TEXT,
@@ -201,12 +204,13 @@ async function setupPostgres() {
         sync_version INT DEFAULT 1,
         sync_status TEXT DEFAULT 'SYNCED',
         last_synced_at BIGINT,
-        parent_id TEXT
+        parent_id TEXT,
+        CONSTRAINT chk_categories_tenant_nonempty CHECK (tenant_id IS NOT NULL AND length(trim(tenant_id)) > 0)
       );`,
 
       `CREATE TABLE IF NOT EXISTS brands (
         id TEXT PRIMARY KEY,
-        tenant_id TEXT,
+        tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
         branch_id TEXT,
         name TEXT,
         code TEXT,
@@ -221,12 +225,13 @@ async function setupPostgres() {
         deleted_at BIGINT,
         sync_version INT DEFAULT 1,
         sync_status TEXT DEFAULT 'SYNCED',
-        last_synced_at BIGINT
+        last_synced_at BIGINT,
+        CONSTRAINT chk_brands_tenant_nonempty CHECK (tenant_id IS NOT NULL AND length(trim(tenant_id)) > 0)
       );`,
 
       `CREATE TABLE IF NOT EXISTS stock_ledger (
         id TEXT PRIMARY KEY,
-        tenant_id TEXT,
+        tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
         branch_id TEXT,
         product_id TEXT,
         variant_id TEXT,
@@ -236,7 +241,8 @@ async function setupPostgres() {
         quantity_after NUMERIC DEFAULT 0,
         reference_id TEXT,
         sync_version INT DEFAULT 1,
-        created_at BIGINT
+        created_at BIGINT,
+        CONSTRAINT chk_stock_ledger_tenant_nonempty CHECK (tenant_id IS NOT NULL AND length(trim(tenant_id)) > 0)
       );`,
 
       `CREATE TABLE IF NOT EXISTS orders (
@@ -299,11 +305,15 @@ async function setupPostgres() {
         is_active BOOLEAN DEFAULT true
       );`,
 
-      // Ensure sync_version column exists on existing pre-created tables
+      // Ensure sync_version and taxonomy columns exist on existing pre-created tables
       `ALTER TABLE products ADD COLUMN IF NOT EXISTS sync_version INT DEFAULT 1;`,
+      `ALTER TABLE products ADD COLUMN IF NOT EXISTS category_id TEXT;`,
+      `ALTER TABLE products ADD COLUMN IF NOT EXISTS brand_id TEXT;`,
       `ALTER TABLE product_variants ADD COLUMN IF NOT EXISTS sync_version INT DEFAULT 1;`,
       `ALTER TABLE categories ADD COLUMN IF NOT EXISTS sync_version INT DEFAULT 1;`,
+      `ALTER TABLE categories ADD COLUMN IF NOT EXISTS industry_type TEXT DEFAULT 'retail';`,
       `ALTER TABLE brands ADD COLUMN IF NOT EXISTS sync_version INT DEFAULT 1;`,
+      `ALTER TABLE brands ADD COLUMN IF NOT EXISTS description_corporate_line TEXT;`,
       `ALTER TABLE stock_ledger ADD COLUMN IF NOT EXISTS sync_version INT DEFAULT 1;`,
       `ALTER TABLE orders ADD COLUMN IF NOT EXISTS sync_version INT DEFAULT 1;`,
       `ALTER TABLE customers ADD COLUMN IF NOT EXISTS sync_version INT DEFAULT 1;`,
@@ -311,6 +321,8 @@ async function setupPostgres() {
       // Indexes
       `CREATE UNIQUE INDEX IF NOT EXISTS idx_categories_tenant_name ON categories(tenant_id, LOWER(name)) WHERE deleted_at IS NULL;`,
       `CREATE UNIQUE INDEX IF NOT EXISTS idx_brands_tenant_name ON brands(tenant_id, LOWER(name)) WHERE deleted_at IS NULL;`,
+      `CREATE INDEX IF NOT EXISTS idx_categories_tenant_industry ON categories(tenant_id, industry_type);`,
+      `CREATE INDEX IF NOT EXISTS idx_brands_tenant ON brands(tenant_id);`,
       `CREATE INDEX IF NOT EXISTS idx_products_tenant_branch ON products(tenant_id, branch_id);`,
       `CREATE INDEX IF NOT EXISTS idx_products_tenant_sync ON products(tenant_id, sync_version);`,
       `CREATE INDEX IF NOT EXISTS idx_products_tenant_updated ON products(tenant_id, updated_at);`,
@@ -328,10 +340,111 @@ async function setupPostgres() {
     }
     console.log(`✅ Schema DDL & indexes initialized.`);
 
+    // Enforce constraints on existing tables
+    await appPool.query(`
+      DO $$
+      BEGIN
+        -- 1. Ensure system admin tenant exists
+        INSERT INTO tenants (id, name, plan, status, business_code, tenant_code, created_at)
+        VALUES ('tenant-admin-system', 'System Platform Administration', 'Enterprise', 'Active', 'SYS-ADMIN-0000', 'SYS-ADMIN-0000', EXTRACT(EPOCH FROM NOW())*1000)
+        ON CONFLICT (id) DO NOTHING;
+
+        -- 2. Clean any orphaned product records
+        DELETE FROM product_variants WHERE tenant_id IS NULL OR length(trim(tenant_id)) = 0 OR tenant_id NOT IN (SELECT id FROM tenants);
+        DELETE FROM products WHERE tenant_id IS NULL OR length(trim(tenant_id)) = 0 OR tenant_id NOT IN (SELECT id FROM tenants);
+        DELETE FROM categories WHERE tenant_id IS NULL OR length(trim(tenant_id)) = 0 OR tenant_id NOT IN (SELECT id FROM tenants);
+        DELETE FROM brands WHERE tenant_id IS NULL OR length(trim(tenant_id)) = 0 OR tenant_id NOT IN (SELECT id FROM tenants);
+        DELETE FROM branches WHERE tenant_id IS NULL OR length(trim(tenant_id)) = 0 OR tenant_id NOT IN (SELECT id FROM tenants);
+        DELETE FROM stock_ledger WHERE tenant_id IS NULL OR length(trim(tenant_id)) = 0 OR tenant_id NOT IN (SELECT id FROM tenants);
+
+        -- 3. Add Foreign Key constraints
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_products_tenant') THEN
+          ALTER TABLE products ADD CONSTRAINT fk_products_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_product_variants_tenant') THEN
+          ALTER TABLE product_variants ADD CONSTRAINT fk_product_variants_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_categories_tenant') THEN
+          ALTER TABLE categories ADD CONSTRAINT fk_categories_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_brands_tenant') THEN
+          ALTER TABLE brands ADD CONSTRAINT fk_brands_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_branches_tenant') THEN
+          ALTER TABLE branches ADD CONSTRAINT fk_branches_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_stock_ledger_tenant') THEN
+          ALTER TABLE stock_ledger ADD CONSTRAINT fk_stock_ledger_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
+        END IF;
+
+        -- 4. Add Check constraints
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_products_tenant_nonempty') THEN
+          ALTER TABLE products ADD CONSTRAINT chk_products_tenant_nonempty CHECK (tenant_id IS NOT NULL AND length(trim(tenant_id)) > 0);
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_variants_tenant_nonempty') THEN
+          ALTER TABLE product_variants ADD CONSTRAINT chk_variants_tenant_nonempty CHECK (tenant_id IS NOT NULL AND length(trim(tenant_id)) > 0);
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_categories_tenant_nonempty') THEN
+          ALTER TABLE categories ADD CONSTRAINT chk_categories_tenant_nonempty CHECK (tenant_id IS NOT NULL AND length(trim(tenant_id)) > 0);
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_branches_tenant_nonempty') THEN
+          ALTER TABLE branches ADD CONSTRAINT chk_branches_tenant_nonempty CHECK (tenant_id IS NOT NULL AND length(trim(tenant_id)) > 0);
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_stock_ledger_tenant_nonempty') THEN
+          ALTER TABLE stock_ledger ADD CONSTRAINT chk_stock_ledger_tenant_nonempty CHECK (tenant_id IS NOT NULL AND length(trim(tenant_id)) > 0);
+        END IF;
+      END $$;
+    `);
+    console.log(`✅ Foreign key & non-empty check constraints enforced.`);
+
+    // Register stored procedure for atomic tenant cascade purge
+    await appPool.query(`
+      CREATE OR REPLACE FUNCTION fn_purge_tenant_cascade(
+        p_tenant_id TEXT,
+        p_soft_delete BOOLEAN DEFAULT FALSE,
+        p_actor_id TEXT DEFAULT 'SUPER_ADMIN'
+      ) RETURNS VOID AS $$
+      DECLARE
+        v_now BIGINT := EXTRACT(EPOCH FROM NOW()) * 1000;
+      BEGIN
+        IF p_soft_delete THEN
+          UPDATE tenants SET status = 'Archived', deleted_at = v_now WHERE id = p_tenant_id;
+          UPDATE users SET deleted_at = v_now WHERE tenant_id = p_tenant_id;
+          UPDATE branches SET deleted_at = v_now WHERE tenant_id = p_tenant_id;
+          UPDATE products SET deleted_at = v_now WHERE tenant_id = p_tenant_id;
+        ELSE
+          DELETE FROM stock_ledger WHERE tenant_id = p_tenant_id;
+          DELETE FROM product_variants WHERE tenant_id = p_tenant_id;
+          DELETE FROM products WHERE tenant_id = p_tenant_id;
+          DELETE FROM categories WHERE tenant_id = p_tenant_id;
+          DELETE FROM brands WHERE tenant_id = p_tenant_id;
+          DELETE FROM user_branch_roles WHERE tenant_id = p_tenant_id;
+          DELETE FROM tenant_modules WHERE tenant_id = p_tenant_id;
+          DELETE FROM tenant_settings WHERE tenant_id = p_tenant_id;
+          DELETE FROM feature_flags WHERE tenant_id = p_tenant_id;
+          DELETE FROM tenant_subscriptions WHERE tenant_id = p_tenant_id;
+          DELETE FROM user_security WHERE tenant_id = p_tenant_id OR user_id IN (SELECT id FROM users WHERE tenant_id = p_tenant_id);
+          DELETE FROM user_devices WHERE tenant_id = p_tenant_id;
+          DELETE FROM business_profiles WHERE tenant_id = p_tenant_id;
+          DELETE FROM branches WHERE tenant_id = p_tenant_id;
+          DELETE FROM users WHERE tenant_id = p_tenant_id;
+          DELETE FROM tenants WHERE id = p_tenant_id;
+        END IF;
+      END;
+      $$ LANGUAGE plpgsql;
+    `);
+    console.log(`✅ Atomic stored procedure 'fn_purge_tenant_cascade' registered.`);
+
     // Step 3: Seed initial platform reference data
     console.log(`\n[3/3] Seeding platform reference data...`);
 
-    // 1. Superadmin user seed
+    // 1. System Admin Tenant & Superadmin User seed
+    await appPool.query(`
+      INSERT INTO tenants (id, name, plan, status, business_code, tenant_code, created_at)
+      VALUES ('tenant-admin-system', 'System Platform Administration', 'Enterprise', 'Active', 'SYS-ADMIN-0000', 'SYS-ADMIN-0000', $1)
+      ON CONFLICT (id) DO NOTHING;
+    `, [Date.now()]);
+
     await appPool.query(`
       INSERT INTO users (id, tenant_id, branch_id, name, username, email, phone, role, password_hash, created_at)
       VALUES ('usr-superadmin', 'tenant-admin-system', 'branch-admin-main', 'Platform Owner', 'admin', 'admin@kwakoko.co.tz', '+255713296319', 'Super Admin', 'Kwakoko@2026&$', $1)
@@ -396,7 +509,7 @@ async function setupPostgres() {
     console.log(`\n======================================================`);
     console.log(`🎉 [PostgreSQL Local Engine] Setup Completed Successfully!`);
     console.log(`======================================================`);
-    console.log(` You can now run DukaPos locally with real PostgreSQL:`);
+    console.log(` You can now run KwakoPOS locally with real PostgreSQL:`);
     console.log(`   npm start   (Backend Server)`);
     console.log(`   npm run dev (Vite Frontend)`);
     console.log(`======================================================\n`);

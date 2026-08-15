@@ -446,8 +446,13 @@ export default defineConfig({
                     const payload = op.payload || {};
                     const recordId = payload.id || op.entity_id;
                     const action = op.operation || op.actionType || 'UPDATE';
+                    const opTenant = payload.tenant_id || payload.tenantId || op.tenant_id || tenantId;
 
                     if (!recordId) continue;
+                    if (!opTenant || typeof opTenant !== 'string' || !opTenant.trim()) {
+                      continue;
+                    }
+
                     if (!db[entityName]) db[entityName] = [];
 
                     const table = db[entityName];

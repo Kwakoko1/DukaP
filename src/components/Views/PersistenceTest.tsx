@@ -144,11 +144,17 @@ export const PersistenceTest: React.FC = () => {
     setIsRunningAll(true);
     setTestCases(prev => prev.map(tc => ({ ...tc, status: 'PENDING', log: [] })));
 
-    // Dynamically resolve tenant ID for audit verification
-    const firstTenantId = (await db.tenants.toCollection().first())?.id || 'tenant-prod-main';
-    const testTenantId = currentTenant?.id && currentTenant.id !== 'tenant-admin-system' && currentTenant.id !== ''
+    // Dynamically resolve tenant ID for audit verification — strictly require a valid registered tenant
+    const availableTenant = currentTenant?.id && currentTenant.id !== 'tenant-admin-system' && currentTenant.id !== ''
       ? currentTenant.id
-      : firstTenantId;
+      : ((await db.tenants.where('status').equals('Active').first())?.id || (await db.tenants.toCollection().first())?.id);
+
+    if (!availableTenant) {
+      alert('Cannot run verification suite: No active tenant workspace found in database.');
+      setIsRunningAll(false);
+      return;
+    }
+    const testTenantId = availableTenant;
 
     const defaultUserContext = {
       id: authUser?.id && authUser.id !== 'usr-superadmin' ? authUser.id : `usr-${testTenantId}-owner`,
@@ -164,12 +170,16 @@ export const PersistenceTest: React.FC = () => {
       user_name: defaultUserContext.name
     });
 
+    const createdTestProductIds: string[] = [];
+    const createdTestLedgerProductIds: string[] = [];
+
     try {
       // TEST 1: Permanent Persistence
       const id1 = 'test-1';
       updateStatus(id1, 'RUNNING');
       addLog(id1, 'Starting Permanent Persistence Test...');
       const testProdId = `prod-persist-${Date.now()}`;
+      createdTestProductIds.push(testProdId);
       const savedProd = await ProductService.createProduct({
         id: testProdId,
         name: 'Enterprise Persistence Wheat',
@@ -238,6 +248,7 @@ export const PersistenceTest: React.FC = () => {
       if (isOnline) toggleOfflineSimulation();
 
       const offlineId = `offline-prod-${Date.now()}`;
+      createdTestProductIds.push(offlineId);
       await ProductService.createProduct({
         id: offlineId,
         name: 'Offline Tanzanian Coffee',
@@ -328,6 +339,7 @@ export const PersistenceTest: React.FC = () => {
       updateStatus(id8, 'RUNNING');
       addLog(id8, 'Recording stock movement event to immutable Stock Ledger...');
       const ledId = `prod-ledger-${Date.now()}`;
+      createdTestLedgerProductIds.push(ledId);
       await stockLedgerSyncEngine.recordEventIdempotent({
         tenant_id: testTenantId,
         branch_id: defaultUserContext.branch_id,
@@ -388,6 +400,23 @@ export const PersistenceTest: React.FC = () => {
         return tc;
       }));
     } finally {
+      // Clean up test items from local and remote databases to prevent test artifacts in production
+      try {
+        if (createdTestProductIds.length > 0) {
+          for (const pid of createdTestProductIds) {
+            await db.products.delete(pid).catch(() => {});
+            await supabase.from('products').delete().eq('id', pid).catch(() => {});
+          }
+        }
+        if (createdTestLedgerProductIds.length > 0) {
+          for (const lid of createdTestLedgerProductIds) {
+            await db.stockLedger.where('product_id').equals(lid).delete().catch(() => {});
+            await supabase.from('stock_ledger').delete().eq('product_id', lid).catch(() => {});
+          }
+        }
+      } catch (cleanErr) {
+        console.warn('[PersistenceTest] Cleanup error:', cleanErr);
+      }
       setMockAuthOverride(null);
       setIsRunningAll(false);
     }

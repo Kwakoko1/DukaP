@@ -1919,6 +1919,48 @@ export const Inventory: React.FC = () => {
   };
 
   const renderCategoriesTab = () => {
+    const taxPlaceholders = (() => {
+      const m = (activeModule || 'Retail').toLowerCase();
+      if (m.includes('pharm') || m.includes('med')) {
+        return {
+          catPlaceholder: 'e.g. Antibiotics, Pain Relievers, First Aid, Supplements',
+          catDescPlaceholder: 'Prescription medicines, OTC drugs, health supplies',
+          brandPlaceholder: 'e.g. Pfizer, GSK, Bayer, Sanofi, Novartis',
+          brandDescPlaceholder: 'Pharmaceutical manufacturer, lab, or distributor origin'
+        };
+      }
+      if (m.includes('bar') || m.includes('rest') || m.includes('hotel') || m.includes('bev')) {
+        return {
+          catPlaceholder: 'e.g. Beers, Wines & Spirits, Cocktails, Soft Drinks',
+          catDescPlaceholder: 'Beverages, bar mixers, wine cellar stock, spirits',
+          brandPlaceholder: 'e.g. Heineken, Serengeti, Diageo, AB InBev, Castle',
+          brandDescPlaceholder: 'Brewery, distillery, or beverage distributor'
+        };
+      }
+      if (m.includes('hard') || m.includes('build') || m.includes('const')) {
+        return {
+          catPlaceholder: 'e.g. Power Tools, Fasteners, Electrical, Plumbing, Paint',
+          catDescPlaceholder: 'Construction materials, workshop tools, fixings',
+          brandPlaceholder: 'e.g. Bosch, Makita, Stanley, DeWalt, Total, Simba Cement',
+          brandDescPlaceholder: 'Hardware brand or certified tool manufacturer'
+        };
+      }
+      if (m.includes('poultry') || m.includes('farm') || m.includes('agri')) {
+        return {
+          catPlaceholder: 'e.g. Feeds, Vaccines, Supplements, Farm Equipment',
+          catDescPlaceholder: 'Livestock nutrition, veterinary supplies, farm gear',
+          brandPlaceholder: 'e.g. Kibo Feeds, Twiga Chemical, Farmchem, Tanfeed',
+          brandDescPlaceholder: 'Agricultural feed mill or veterinary supplier'
+        };
+      }
+      return {
+        catPlaceholder: 'e.g. Smart Phones, Local Beer, Electronics, Apparel',
+        catDescPlaceholder: 'Electronics, mobile devices, fashion, and accessories',
+        brandPlaceholder: 'e.g. Apple, Samsung, Nike, Heineken, Safari, Sony',
+        brandDescPlaceholder: 'Manufacturer, corporate line, or brand origin details'
+      };
+    })();
+
     const totalCatalogProducts = products.length;
     const uncategorizedCount = products.filter(p => !p.category || p.category === 'General').length;
     const topCategory = allCategories.length > 0 ? [...allCategories].sort((a, b) => b.count - a.count)[0] : null;
@@ -2083,7 +2125,7 @@ export const Inventory: React.FC = () => {
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Smart Phones, Local Beer, Cigarettes"
+                  placeholder={taxPlaceholders.catPlaceholder}
                   value={catName}
                   onChange={e => setCatName(e.target.value)}
                   className="mt-1 h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-xs dark:border-darkbg-border dark:bg-darkbg dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -2093,7 +2135,7 @@ export const Inventory: React.FC = () => {
                 <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Description / Scope</label>
                 <input
                   type="text"
-                  placeholder="Electronics, mobile devices, and accessories"
+                  placeholder={taxPlaceholders.catDescPlaceholder}
                   value={catDesc}
                   onChange={e => setCatDesc(e.target.value)}
                   className="mt-1 h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-xs dark:border-darkbg-border dark:bg-darkbg dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -2321,7 +2363,7 @@ export const Inventory: React.FC = () => {
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Apple, Samsung, Heineken, Safari"
+                  placeholder={taxPlaceholders.brandPlaceholder}
                   value={brandName}
                   onChange={e => setBrandName(e.target.value)}
                   className="mt-1 h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-xs dark:border-darkbg-border dark:bg-darkbg dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
@@ -2331,7 +2373,7 @@ export const Inventory: React.FC = () => {
                 <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Description / Corporate Line</label>
                 <input
                   type="text"
-                  placeholder="Manufacturer or brand origin details"
+                  placeholder={taxPlaceholders.brandDescPlaceholder}
                   value={brandDesc}
                   onChange={e => setBrandDesc(e.target.value)}
                   className="mt-1 h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-xs dark:border-darkbg-border dark:bg-darkbg dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500"

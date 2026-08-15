@@ -22,7 +22,7 @@ if (fs.existsSync(envPath)) {
   });
 }
 
-const connectionString = process.env.DATABASE_URL || process.env.VITE_POSTGRES_URL || 'postgresql://postgres:postgres@localhost:5432/dukapos';
+const connectionString = process.env.DATABASE_URL || process.env.VITE_POSTGRES_URL || 'postgresql://postgres:postgres@localhost:5432/kwakopos';
 
 console.log(`[DB Health Check] Probing PostgreSQL database connection...`);
 

@@ -10,7 +10,7 @@
 
 import pg from 'pg';
 
-const DEFAULT_LOCAL_PG_URL = 'postgresql://postgres:postgres@localhost:5432/dukapos';
+const DEFAULT_LOCAL_PG_URL = 'postgresql://postgres:postgres@localhost:5432/kwakopos';
 const DATABASE_URL = process.env.DATABASE_URL || process.env.VITE_POSTGRES_URL || DEFAULT_LOCAL_PG_URL;
 const isSSLRequired = DATABASE_URL.includes('sslmode=require') || DATABASE_URL.includes('neon.tech');
 

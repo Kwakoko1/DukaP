@@ -45,7 +45,7 @@ export const envConfig: ProductionConfig = {
   isProduction: true,
   isOfflineFirst: true,
   apiUrl: getEnv('VITE_API_URL', 'http://localhost:8080'),
-  postgresUrl: getEnv('VITE_POSTGRES_URL', 'postgresql://postgres:postgres@localhost:5432/dukapos'),
+  postgresUrl: getEnv('VITE_POSTGRES_URL', 'postgresql://postgres:postgres@localhost:5432/kwakopos'),
   jwtSecret: getEnv('VITE_JWT_SECRET', 'dukapos_saas_prod_jwt_super_secret_key_2026_x89f'),
   jwtAccessExpirySec: 900, // 15 minutes
   jwtRefreshExpiryDays: 30, // 30 days

@@ -27,7 +27,7 @@ if (fs.existsSync(envPath)) {
 const PORT = process.env.PORT || 8080;
 const DIST_DIR = path.join(__dirname, 'dist');
 
-const DEFAULT_LOCAL_PG_URL = 'postgresql://postgres:postgres@localhost:5432/dukapos';
+const DEFAULT_LOCAL_PG_URL = 'postgresql://postgres:postgres@localhost:5432/kwakopos';
 const DATABASE_URL = process.env.DATABASE_URL || process.env.VITE_POSTGRES_URL || DEFAULT_LOCAL_PG_URL;
 const isSSLRequired = DATABASE_URL.includes('sslmode=require') || DATABASE_URL.includes('neon.tech');
 
@@ -104,7 +104,7 @@ async function initDatabaseSchema() {
     await sql`
       CREATE TABLE IF NOT EXISTS branches (
         id TEXT PRIMARY KEY,
-        tenant_id TEXT,
+        tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
         name TEXT,
         location TEXT,
         is_headquarters BOOLEAN DEFAULT false,
@@ -115,7 +115,7 @@ async function initDatabaseSchema() {
     await sql`
       CREATE TABLE IF NOT EXISTS products (
         id TEXT PRIMARY KEY,
-        tenant_id TEXT,
+        tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
         branch_id TEXT,
         name TEXT,
         category TEXT,
@@ -141,7 +141,7 @@ async function initDatabaseSchema() {
       CREATE TABLE IF NOT EXISTS product_variants (
         id TEXT PRIMARY KEY,
         product_id TEXT,
-        tenant_id TEXT,
+        tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
         branch_id TEXT,
         sku TEXT,
         barcode TEXT,
@@ -160,7 +160,7 @@ async function initDatabaseSchema() {
     await sql`
       CREATE TABLE IF NOT EXISTS categories (
         id TEXT PRIMARY KEY,
-        tenant_id TEXT,
+        tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
         branch_id TEXT,
         name TEXT,
         code TEXT,
@@ -269,6 +269,75 @@ async function initDatabaseSchema() {
     await sql`CREATE INDEX IF NOT EXISTS idx_tenants_kpi_lookup ON tenants (status) WHERE deleted_at IS NULL;`.catch(() => {});
     await sql`CREATE INDEX IF NOT EXISTS idx_orders_revenue_lookup ON orders (tenant_id, total, status) WHERE created_at > 0;`.catch(() => {});
     await sql`CREATE INDEX IF NOT EXISTS idx_tenant_subs_kpi ON tenant_subscriptions (tenant_id, status) WHERE updated_at > 0;`.catch(() => {});
+
+    // 3.1 Taxonomy Schema Columns & Indexes
+    await sql`ALTER TABLE categories ADD COLUMN IF NOT EXISTS industry_type TEXT DEFAULT 'retail';`.catch(() => {});
+    await sql`ALTER TABLE brands ADD COLUMN IF NOT EXISTS description_corporate_line TEXT;`.catch(() => {});
+    await sql`ALTER TABLE products ADD COLUMN IF NOT EXISTS category_id TEXT;`.catch(() => {});
+    await sql`ALTER TABLE products ADD COLUMN IF NOT EXISTS brand_id TEXT;`.catch(() => {});
+    await sql`CREATE INDEX IF NOT EXISTS idx_categories_tenant_industry ON categories(tenant_id, industry_type);`.catch(() => {});
+    await sql`CREATE INDEX IF NOT EXISTS idx_brands_tenant ON brands(tenant_id);`.catch(() => {});
+
+    // ─── 4. RELATIONAL TENANT INTEGRITY & ORPHAN PREVENTION MIGRATION ────────
+    try {
+      // A. Ensure system administration platform tenant is guaranteed in tenants table
+      await sql`
+        INSERT INTO tenants (id, name, plan, status, business_code, tenant_code, created_at)
+        VALUES ('tenant-admin-system', 'System Platform Administration', 'Enterprise', 'Active', 'SYS-ADMIN-0000', 'SYS-ADMIN-0000', ${Date.now()})
+        ON CONFLICT (id) DO NOTHING;
+      `;
+
+      // B. Purge any orphan records from products, variants, categories, branches with invalid/empty tenant_id
+      await sql`DELETE FROM product_variants WHERE tenant_id IS NULL OR length(trim(tenant_id)) = 0 OR tenant_id NOT IN (SELECT id FROM tenants);`.catch(() => {});
+      await sql`DELETE FROM products WHERE tenant_id IS NULL OR length(trim(tenant_id)) = 0 OR tenant_id NOT IN (SELECT id FROM tenants);`.catch(() => {});
+      await sql`DELETE FROM categories WHERE tenant_id IS NULL OR length(trim(tenant_id)) = 0 OR tenant_id NOT IN (SELECT id FROM tenants);`.catch(() => {});
+      await sql`DELETE FROM brands WHERE tenant_id IS NULL OR length(trim(tenant_id)) = 0 OR tenant_id NOT IN (SELECT id FROM tenants);`.catch(() => {});
+      await sql`DELETE FROM branches WHERE tenant_id IS NULL OR length(trim(tenant_id)) = 0 OR tenant_id NOT IN (SELECT id FROM tenants);`.catch(() => {});
+      await sql`DELETE FROM stock_ledger WHERE tenant_id IS NULL OR length(trim(tenant_id)) = 0 OR tenant_id NOT IN (SELECT id FROM tenants);`.catch(() => {});
+
+      // C. Apply Foreign Key constraints dynamically if not already registered
+      await sql`
+        DO $$
+        BEGIN
+          IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_products_tenant') THEN
+            ALTER TABLE products ADD CONSTRAINT fk_products_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_product_variants_tenant') THEN
+            ALTER TABLE product_variants ADD CONSTRAINT fk_product_variants_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_categories_tenant') THEN
+            ALTER TABLE categories ADD CONSTRAINT fk_categories_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_brands_tenant') THEN
+            ALTER TABLE brands ADD CONSTRAINT fk_brands_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_branches_tenant') THEN
+            ALTER TABLE branches ADD CONSTRAINT fk_branches_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_stock_ledger_tenant') THEN
+            ALTER TABLE stock_ledger ADD CONSTRAINT fk_stock_ledger_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
+          END IF;
+
+          -- Non-empty Check Constraints
+          IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_products_tenant_nonempty') THEN
+            ALTER TABLE products ADD CONSTRAINT chk_products_tenant_nonempty CHECK (tenant_id IS NOT NULL AND length(trim(tenant_id)) > 0);
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_variants_tenant_nonempty') THEN
+            ALTER TABLE product_variants ADD CONSTRAINT chk_variants_tenant_nonempty CHECK (tenant_id IS NOT NULL AND length(trim(tenant_id)) > 0);
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_categories_tenant_nonempty') THEN
+            ALTER TABLE categories ADD CONSTRAINT chk_categories_tenant_nonempty CHECK (tenant_id IS NOT NULL AND length(trim(tenant_id)) > 0);
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_branches_tenant_nonempty') THEN
+            ALTER TABLE branches ADD CONSTRAINT chk_branches_tenant_nonempty CHECK (tenant_id IS NOT NULL AND length(trim(tenant_id)) > 0);
+          END IF;
+        END $$;
+      `.catch((migErr) => {
+        console.warn('[server.js] Foreign key migration notice:', migErr.message);
+      });
+    } catch (migErr) {
+      console.warn('[server.js] Relational constraint check warning:', migErr);
+    }
 
     await sql`
       CREATE TABLE IF NOT EXISTS user_branch_roles (
@@ -1010,11 +1079,27 @@ const server = http.createServer(async (req, res) => {
 
           // Fallback direct SQL deletions in case stored procedure is unavailable
           if (!isSoftDelete) {
-            await sql`DELETE FROM tenants WHERE id = ${targetTenantId}`.catch(() => {});
-            await sql`DELETE FROM users WHERE tenant_id = ${targetTenantId}`.catch(() => {});
+            await sql`DELETE FROM stock_ledger WHERE tenant_id = ${targetTenantId}`.catch(() => {});
+            await sql`DELETE FROM product_variants WHERE tenant_id = ${targetTenantId}`.catch(() => {});
+            await sql`DELETE FROM products WHERE tenant_id = ${targetTenantId}`.catch(() => {});
+            await sql`DELETE FROM categories WHERE tenant_id = ${targetTenantId}`.catch(() => {});
+            await sql`DELETE FROM brands WHERE tenant_id = ${targetTenantId}`.catch(() => {});
+            await sql`DELETE FROM user_branch_roles WHERE tenant_id = ${targetTenantId}`.catch(() => {});
+            await sql`DELETE FROM tenant_modules WHERE tenant_id = ${targetTenantId}`.catch(() => {});
+            await sql`DELETE FROM tenant_settings WHERE tenant_id = ${targetTenantId}`.catch(() => {});
+            await sql`DELETE FROM feature_flags WHERE tenant_id = ${targetTenantId}`.catch(() => {});
+            await sql`DELETE FROM tenant_subscriptions WHERE tenant_id = ${targetTenantId}`.catch(() => {});
+            await sql`DELETE FROM user_security WHERE tenant_id = ${targetTenantId} OR user_id IN (SELECT id FROM users WHERE tenant_id = ${targetTenantId})`.catch(() => {});
+            await sql`DELETE FROM user_devices WHERE tenant_id = ${targetTenantId}`.catch(() => {});
+            await sql`DELETE FROM business_profiles WHERE tenant_id = ${targetTenantId}`.catch(() => {});
             await sql`DELETE FROM branches WHERE tenant_id = ${targetTenantId}`.catch(() => {});
+            await sql`DELETE FROM users WHERE tenant_id = ${targetTenantId}`.catch(() => {});
+            await sql`DELETE FROM tenants WHERE id = ${targetTenantId}`.catch(() => {});
           } else {
             await sql`UPDATE tenants SET status = 'Archived', deleted_at = ${Date.now()} WHERE id = ${targetTenantId}`.catch(() => {});
+            await sql`UPDATE users SET deleted_at = ${Date.now()} WHERE tenant_id = ${targetTenantId}`.catch(() => {});
+            await sql`UPDATE branches SET deleted_at = ${Date.now()} WHERE tenant_id = ${targetTenantId}`.catch(() => {});
+            await sql`UPDATE products SET deleted_at = ${Date.now()} WHERE tenant_id = ${targetTenantId}`.catch(() => {});
           }
 
           // Invalidate in-memory bootstrap cache
@@ -1660,6 +1745,148 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
+      // 3.1 GET, POST, PUT, DELETE /api/categories
+      if (pathname === '/api/categories' && req.method === 'GET') {
+        const tid = req.headers['x-tenant-id'] || tenantId || fullUrl.searchParams.get('tenantId');
+        const industry = req.headers['x-industry-type'] || fullUrl.searchParams.get('industryType');
+        let cats = [];
+        if (tid && tid !== 'tenant-admin-system') {
+          if (industry) {
+            cats = await sql`SELECT * FROM categories WHERE tenant_id = ${tid} AND industry_type = ${industry} AND (deleted_at IS NULL) ORDER BY name ASC`;
+          } else {
+            cats = await sql`SELECT * FROM categories WHERE tenant_id = ${tid} AND (deleted_at IS NULL) ORDER BY name ASC`;
+          }
+        } else {
+          cats = await sql`SELECT * FROM categories WHERE (deleted_at IS NULL) ORDER BY name ASC`;
+        }
+        res.writeHead(200);
+        res.end(JSON.stringify(cats));
+        return;
+      }
+
+      if (pathname === '/api/categories' && req.method === 'POST') {
+        const payload = await parseRequestBody(req);
+        const tid = payload.tenant_id || req.headers['x-tenant-id'] || tenantId;
+        const bid = payload.branch_id || req.headers['x-branch-id'] || null;
+        const industry = payload.industry_type || req.headers['x-industry-type'] || 'retail';
+        const cid = payload.id || `cat-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+        const now = Date.now();
+
+        if (!tid) {
+          res.writeHead(400);
+          res.end(JSON.stringify({ error: 'tenant_id required' }));
+          return;
+        }
+
+        const inserted = await sql`
+          INSERT INTO categories (id, tenant_id, branch_id, name, description, industry_type, created_at, updated_at, sync_version)
+          VALUES (${cid}, ${tid}, ${bid}, ${payload.name || 'Category'}, ${payload.description || ''}, ${industry}, ${now}, ${now}, 1)
+          ON CONFLICT (id) DO UPDATE SET
+            name = EXCLUDED.name,
+            description = EXCLUDED.description,
+            industry_type = EXCLUDED.industry_type,
+            updated_at = ${now}
+          RETURNING *;
+        `;
+        res.writeHead(201);
+        res.end(JSON.stringify(inserted[0] || { id: cid }));
+        return;
+      }
+
+      if (pathname.startsWith('/api/categories/') && req.method === 'PUT') {
+        const cid = pathname.replace('/api/categories/', '');
+        const payload = await parseRequestBody(req);
+        const now = Date.now();
+        await sql`
+          UPDATE categories SET
+            name = COALESCE(${payload.name || null}, name),
+            description = COALESCE(${payload.description || null}, description),
+            industry_type = COALESCE(${payload.industry_type || null}, industry_type),
+            updated_at = ${now}
+          WHERE id = ${cid}
+        `;
+        res.writeHead(200);
+        res.end(JSON.stringify({ success: true, id: cid }));
+        return;
+      }
+
+      if (pathname.startsWith('/api/categories/') && req.method === 'DELETE') {
+        const cid = pathname.replace('/api/categories/', '');
+        const now = Date.now();
+        await sql`UPDATE categories SET deleted_at = ${now}, updated_at = ${now} WHERE id = ${cid}`;
+        res.writeHead(200);
+        res.end(JSON.stringify({ success: true, id: cid }));
+        return;
+      }
+
+      // 3.2 GET, POST, PUT, DELETE /api/brands
+      if (pathname === '/api/brands' && req.method === 'GET') {
+        const tid = req.headers['x-tenant-id'] || tenantId || fullUrl.searchParams.get('tenantId');
+        let brds = [];
+        if (tid && tid !== 'tenant-admin-system') {
+          brds = await sql`SELECT * FROM brands WHERE tenant_id = ${tid} AND (deleted_at IS NULL) ORDER BY name ASC`;
+        } else {
+          brds = await sql`SELECT * FROM brands WHERE (deleted_at IS NULL) ORDER BY name ASC`;
+        }
+        res.writeHead(200);
+        res.end(JSON.stringify(brds));
+        return;
+      }
+
+      if (pathname === '/api/brands' && req.method === 'POST') {
+        const payload = await parseRequestBody(req);
+        const tid = payload.tenant_id || req.headers['x-tenant-id'] || tenantId;
+        const bid = payload.branch_id || req.headers['x-branch-id'] || null;
+        const bid_str = payload.id || `brand-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+        const now = Date.now();
+
+        if (!tid) {
+          res.writeHead(400);
+          res.end(JSON.stringify({ error: 'tenant_id required' }));
+          return;
+        }
+
+        const inserted = await sql`
+          INSERT INTO brands (id, tenant_id, branch_id, name, description, description_corporate_line, created_at, updated_at, sync_version)
+          VALUES (${bid_str}, ${tid}, ${bid}, ${payload.name || 'Brand'}, ${payload.description || ''}, ${payload.description_corporate_line || payload.description || ''}, ${now}, ${now}, 1)
+          ON CONFLICT (id) DO UPDATE SET
+            name = EXCLUDED.name,
+            description = EXCLUDED.description,
+            description_corporate_line = EXCLUDED.description_corporate_line,
+            updated_at = ${now}
+          RETURNING *;
+        `;
+        res.writeHead(201);
+        res.end(JSON.stringify(inserted[0] || { id: bid_str }));
+        return;
+      }
+
+      if (pathname.startsWith('/api/brands/') && req.method === 'PUT') {
+        const bid_str = pathname.replace('/api/brands/', '');
+        const payload = await parseRequestBody(req);
+        const now = Date.now();
+        await sql`
+          UPDATE brands SET
+            name = COALESCE(${payload.name || null}, name),
+            description = COALESCE(${payload.description || null}, description),
+            description_corporate_line = COALESCE(${payload.description_corporate_line || payload.description || null}, description_corporate_line),
+            updated_at = ${now}
+          WHERE id = ${bid_str}
+        `;
+        res.writeHead(200);
+        res.end(JSON.stringify({ success: true, id: bid_str }));
+        return;
+      }
+
+      if (pathname.startsWith('/api/brands/') && req.method === 'DELETE') {
+        const bid_str = pathname.replace('/api/brands/', '');
+        const now = Date.now();
+        await sql`UPDATE brands SET deleted_at = ${now}, updated_at = ${now} WHERE id = ${bid_str}`;
+        res.writeHead(200);
+        res.end(JSON.stringify({ success: true, id: bid_str }));
+        return;
+      }
+
       // 4. GET /api/userBranchRoles
       if (pathname === '/api/userBranchRoles' && req.method === 'GET') {
         let roles = [];
@@ -2129,14 +2356,34 @@ const server = http.createServer(async (req, res) => {
         const now = Date.now();
         const processedIds = [];
 
+        const verifiedTenants = new Set();
+        const invalidTenants = new Set();
+
         for (const op of operations) {
           const entity = op.entity || op.entityName || 'products';
           const payload = op.payload || {};
           const recordId = payload.id || op.entity_id;
           const action = op.operation || op.actionType || 'UPDATE';
-          const opTenant = payload.tenant_id || payload.tenantId || op.tenant_id || body.tenantId || tenantId || 'tenant-101';
+          const rawTenant = payload.tenant_id || payload.tenantId || op.tenant_id || body.tenantId || tenantId;
 
           if (!recordId) continue;
+          if (!rawTenant || typeof rawTenant !== 'string' || !rawTenant.trim()) {
+            console.warn(`[Sync Push] Skipped ${entity} (${recordId}): missing or empty tenant_id`);
+            continue;
+          }
+          const opTenant = rawTenant.trim();
+
+          // Optimized per-batch tenant verification cache
+          if (invalidTenants.has(opTenant)) continue;
+          if (!verifiedTenants.has(opTenant)) {
+            const tenantCheck = await sql`SELECT id FROM tenants WHERE id = ${opTenant} LIMIT 1`.catch(() => []);
+            if (!tenantCheck || tenantCheck.length === 0) {
+              invalidTenants.add(opTenant);
+              console.warn(`[Sync Push] Rejected ${entity} (${recordId}): tenant_id '${opTenant}' does not exist in tenants`);
+              continue;
+            }
+            verifiedTenants.add(opTenant);
+          }
 
           if (entity === 'products' || entity === 'product') {
             if (action === 'DELETE' || payload.deleted) {
