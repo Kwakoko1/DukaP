@@ -860,6 +860,38 @@ export const AuthGateway: React.FC = () => {
 
       if (!existingTenant && userTenantId && !deletedTenantSet.has(userTenantId)) {
         try {
+          const resp = await fetch('/api/tenants', {
+            headers: {
+              'x-tenant-id': userTenantId,
+              'x-user-id': dbUser.id || 'usr-login-system'
+            }
+          });
+          if (resp.ok) {
+            const data = await resp.json();
+            const list = Array.isArray(data) ? data : [data];
+            const match = list.find((t: any) => t.id === userTenantId || t.tenant_uuid === userTenantId);
+            if (match && !match.deleted_at && match.status !== 'Deleted' && match.status !== 'Archived' && match.status !== 'ARCHIVED') {
+              existingTenant = {
+                id: match.id,
+                name: match.name || match.business_name || match.company_name || 'Business Workspace',
+                slug: match.slug || match.name?.toLowerCase().replace(/\s+/g, '-'),
+                status: match.status || 'Active',
+                plan: match.plan || 'Basic',
+                business_type: match.business_type || 'Retail',
+                email: match.email || dbUser.email,
+                created_at: match.created_at || Date.now()
+              };
+              await db.tenants.put(existingTenant as any);
+              await cloudDb.cloud_tenants.put(match as any).catch(() => {});
+            }
+          }
+        } catch (e) {
+          console.warn('[Auth Login] Direct /api/tenants fetch fallback error:', e);
+        }
+      }
+
+      if (!existingTenant && userTenantId && !deletedTenantSet.has(userTenantId)) {
+        try {
           const { data: cloudT } = await supabase.from('tenants').select('*').eq('id', userTenantId);
           if (cloudT && cloudT.length > 0) {
             const ct = cloudT[0];
@@ -1012,7 +1044,25 @@ export const AuthGateway: React.FC = () => {
 
       const resolvedList: ResolvedContext[] = [];
       for (const r of roles) {
-        const br = r.branch_id ? await safeGet(db.branches, r.branch_id) : null;
+        let br = r.branch_id ? await safeGet(db.branches, r.branch_id) : null;
+        if (!br && r.tenant_id) {
+          const tenantBranches = await db.branches.where('tenant_id').equals(r.tenant_id).toArray();
+          br = tenantBranches.find(b => b.id === r.branch_id) || tenantBranches[0];
+          if (!br) {
+            try {
+              const bResp = await fetch(`/api/branches?tenantId=${r.tenant_id}`, {
+                headers: { 'x-tenant-id': r.tenant_id }
+              });
+              if (bResp.ok) {
+                const bData = await bResp.json();
+                if (Array.isArray(bData) && bData.length > 0) {
+                  await db.branches.bulkPut(bData);
+                  br = bData.find((b: any) => b.id === r.branch_id) || bData[0];
+                }
+              }
+            } catch (_) {}
+          }
+        }
         const ind = r.industry_id ? await safeGet(db.industries, r.industry_id) : null;
         const t = r.tenant_id ? await safeGet(db.tenants, r.tenant_id) : null;
         const roleLabel = await resolveFriendlyRole(r.role_id, dbUser.role);
@@ -1020,11 +1070,11 @@ export const AuthGateway: React.FC = () => {
         resolvedList.push({
           id: r.id,
           tenant_id: r.tenant_id,
-          tenantName: t?.name || 'Unknown Tenant',
-          branch_id: r.branch_id,
-          branchName: br?.name || 'Unknown Branch',
-          branchLocation: br?.location || 'Unknown Location',
-          industry_id: r.industry_id,
+          tenantName: t?.name || (t as any)?.business_name || 'Main Workspace',
+          branch_id: r.branch_id || br?.id || 'main-branch',
+          branchName: br?.name || 'Main HQ Branch',
+          branchLocation: br?.location || 'Main Office',
+          industry_id: r.industry_id || 'ind-retail',
           industryName: ind?.name || 'Retail',
           role: roleLabel
         });
