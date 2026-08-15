@@ -2501,7 +2501,8 @@ const server = http.createServer(async (req, res) => {
             processedIds.push(op.id || recordId);
           } else if (entity === 'categories') {
             if (action === 'DELETE') {
-              await sql`UPDATE categories SET deleted_at = ${now}, updated_at = ${now}, sync_version = sync_version + 1 WHERE id = ${recordId}`;
+              await sql`UPDATE categories SET deleted_at = ${now}, updated_at = ${now}, sync_version = sync_version + 1 WHERE id = ${recordId} AND tenant_id = ${opTenant}`;
+              await sql`UPDATE products SET category_id = NULL, category = 'General' WHERE (category_id = ${recordId} OR category = ${payload.name || ''}) AND tenant_id = ${opTenant}`;
             } else {
               await sql`
                 INSERT INTO categories (id, tenant_id, branch_id, name, code, description, industry_type, color, icon, status, created_by, updated_by, created_at, updated_at, sync_version, sync_status, parent_id)
@@ -2536,7 +2537,8 @@ const server = http.createServer(async (req, res) => {
             processedIds.push(op.id || recordId);
           } else if (entity === 'brands') {
             if (action === 'DELETE') {
-              await sql`UPDATE brands SET deleted_at = ${now}, updated_at = ${now}, sync_version = sync_version + 1 WHERE id = ${recordId}`;
+              await sql`UPDATE brands SET deleted_at = ${now}, updated_at = ${now}, sync_version = sync_version + 1 WHERE id = ${recordId} AND tenant_id = ${opTenant}`;
+              await sql`UPDATE products SET brand_id = NULL, brand = '' WHERE (brand_id = ${recordId} OR brand = ${payload.name || ''}) AND tenant_id = ${opTenant}`;
             } else {
               await sql`
                 INSERT INTO brands (id, tenant_id, branch_id, name, code, description, description_corporate_line, color, icon, status, created_by, updated_by, created_at, updated_at, sync_version, sync_status)

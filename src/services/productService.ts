@@ -981,8 +981,9 @@ export async function deleteCategory(idOrName: string, tenantId?: string, reassi
       await db.products.update(p.id, {
         category: reassignToCategory,
         categoryId: reassignToCategory === 'General' ? '' : reassignToCategory,
+        category_id: reassignToCategory === 'General' ? null : reassignToCategory,
         updatedAt: Date.now(),
-      });
+      } as any);
     }
   }
 
@@ -995,6 +996,18 @@ export async function deleteCategory(idOrName: string, tenantId?: string, reassi
     timestamp: Date.now(),
     status: 'Pending',
   });
+
+  // 4. Fire-and-forget direct cloud delete call if online
+  if (typeof fetch !== 'undefined') {
+    fetch(`/api/categories/${encodeURIComponent(catId)}`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-tenant-id': tid,
+        'X-Tenant-ID': tid
+      }
+    }).catch(() => {});
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1111,8 +1124,10 @@ export async function deleteBrand(idOrName: string, tenantId?: string, reassignT
     if (pBrandId === brandId || pBrand.toLowerCase() === lowerTargetName || pBrand === brandName) {
       await db.products.update(p.id, {
         brand: reassignToBrand,
+        brandId: reassignToBrand ? reassignToBrand : '',
+        brand_id: reassignToBrand ? reassignToBrand : null,
         updatedAt: Date.now(),
-      });
+      } as any);
     }
   }
 
@@ -1125,6 +1140,18 @@ export async function deleteBrand(idOrName: string, tenantId?: string, reassignT
     timestamp: Date.now(),
     status: 'Pending',
   });
+
+  // 4. Fire-and-forget direct cloud delete call if online
+  if (typeof fetch !== 'undefined') {
+    fetch(`/api/brands/${encodeURIComponent(brandId)}`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-tenant-id': tid,
+        'X-Tenant-ID': tid
+      }
+    }).catch(() => {});
+  }
 }
 // ═══════════════════════════════════════════════════════════════════════════
 // ENTERPRISE CATEGORY & BRAND HYGIENE & PRESETS SERVICE
