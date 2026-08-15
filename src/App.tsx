@@ -5,6 +5,7 @@ import { ModuleProvider, useModule } from './context/ModuleContext';
 import { SyncProvider, useSyncState } from './context/SyncContext';
 import { initProductionDatabase, db } from './db/dexie';
 import { useLiveQuery } from 'dexie-react-hooks';
+import { syncStatePostUpdate } from './services/pwaRehydrationService';
 
 // Layout & Views
 import { TopBar } from './components/Layout/TopBar';
@@ -53,9 +54,10 @@ const DukaPosAppContent: React.FC = () => {
   const [searchVal, setSearchVal] = useState('');
   const [searchSelectedIdx, setSearchSelectedIdx] = useState(0);
 
-  // Initialize production database on mount (idempotent — safe to call multiple times)
+  // Initialize production database on mount & reconcile PWA post-update state
   useEffect(() => {
     void initProductionDatabase();
+    void syncStatePostUpdate(currentTenant?.id || user?.tenant_id);
   }, []);
 
   // Bootstrap pull: whenever a user logs in, immediately fetch their products

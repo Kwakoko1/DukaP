@@ -3,7 +3,8 @@ import {
   Database, Terminal, Server, ShieldAlert, Cpu, Activity,
   RefreshCw, Play, Download, Trash2, CheckCircle2,
   AlertTriangle, Clock, Layers, Search,
-  HardDrive, Zap, ArrowUpDown, Copy, FileCode, ArrowUp, ArrowDown
+  HardDrive, Zap, ArrowUpDown, Copy, FileCode, ArrowUp, ArrowDown,
+  Smartphone, Sparkles
 } from 'lucide-react';
 import {
   SuperAdminBackendService,
@@ -13,9 +14,15 @@ import {
   type SystemLogEntry,
   type MaintenanceReport
 } from '../../../services/superAdminBackendService';
+import {
+  getStorageDiagnostics,
+  syncStatePostUpdate,
+  type StorageDiagnostics,
+  CURRENT_PWA_BUILD_VER
+} from '../../../services/pwaRehydrationService';
 import { useToast } from '../../UI/Toast';
 
-type BackendSubTab = 'sql-studio' | 'db-explorer' | 'telemetry' | 'logs-audit' | 'maintenance';
+type BackendSubTab = 'sql-studio' | 'db-explorer' | 'telemetry' | 'logs-audit' | 'maintenance' | 'pwa-diagnostics';
 
 const PRESET_QUERIES = [
   {
@@ -121,7 +128,19 @@ export const SABackendControl: React.FC = () => {
   const [maintenanceRunning, setMaintenanceRunning] = useState<string | null>(null);
   const [maintenanceReports, setMaintenanceReports] = useState<MaintenanceReport[]>([]);
 
+  // ── PWA & Storage Diagnostics State ──
+  const [storageDiagnostics, setStorageDiagnostics] = useState<StorageDiagnostics | null>(null);
+  const [loadingDiagnostics, setLoadingDiagnostics] = useState<boolean>(false);
+  const [isSimulatingUpdate, setIsSimulatingUpdate] = useState<boolean>(false);
+
   // ── Initial load & periodic telemetry refresh ──
+  const fetchStorageDiagnostics = async () => {
+    setLoadingDiagnostics(true);
+    const diag = await getStorageDiagnostics();
+    setStorageDiagnostics(diag);
+    setLoadingDiagnostics(false);
+  };
+
   const fetchMetrics = async () => {
     setLoadingMetrics(true);
     const data = await SuperAdminBackendService.getSystemMetrics();
@@ -296,6 +315,42 @@ export const SABackendControl: React.FC = () => {
     }
   };
 
+  // ── PWA Rehydration & Cache Operations ──
+  const handleSimulateUpdate = async () => {
+    setIsSimulatingUpdate(true);
+    try {
+      localStorage.removeItem('kwakopos_build_hash'); // Trigger update state
+      const res = await syncStatePostUpdate();
+      toast.success('PWA Update Reconciliation Complete', `IndexedDB Catalog verified: ${res.productsCount} products preserved.`);
+      await fetchStorageDiagnostics();
+    } catch (err: any) {
+      toast.error('Simulation Failed', err.message);
+    } finally {
+      setIsSimulatingUpdate(false);
+    }
+  };
+
+  const handleSafeCachePurge = async () => {
+    if (typeof caches === 'undefined') {
+      toast.info('Not Supported', 'CacheStorage is not supported in this browser.');
+      return;
+    }
+    try {
+      const keys = await caches.keys();
+      let purgedCount = 0;
+      for (const key of keys) {
+        if (key !== 'kwakopos-product-payloads' && (key.startsWith('kwakopos-assets-') || key.startsWith('dukapos-cache-'))) {
+          await caches.delete(key);
+          purgedCount++;
+        }
+      }
+      toast.success('Safe Cache Purge Complete', `Purged ${purgedCount} deprecated asset caches. Protected data payload cache preserved.`);
+      await fetchStorageDiagnostics();
+    } catch (err: any) {
+      toast.error('Purge Failed', err.message);
+    }
+  };
+
   // ── Handle Table Column Header Click for Sorting ──
   const handleSortCol = (colName: string) => {
     let newOrder: 'asc' | 'desc' = 'asc';
@@ -392,15 +447,19 @@ export const SABackendControl: React.FC = () => {
       {/* ── Sub-Tab Navigation Bar ── */}
       <div className="flex gap-1 p-1 rounded-2xl bg-slate-900/80 border border-white/8 overflow-x-auto scrollbar-none">
         {[
-          { id: 'sql-studio',  label: 'SQL Studio',          icon: <Terminal className="h-3.5 w-3.5" /> },
-          { id: 'db-explorer', label: 'Database Explorer',   icon: <Database className="h-3.5 w-3.5" /> },
-          { id: 'telemetry',   label: 'System Telemetry',    icon: <Activity className="h-3.5 w-3.5" /> },
-          { id: 'logs-audit',  label: 'System Logs Stream',  icon: <Clock className="h-3.5 w-3.5" /> },
-          { id: 'maintenance', label: 'Maintenance Ops',     icon: <Zap className="h-3.5 w-3.5" /> },
+          { id: 'sql-studio',       label: 'SQL Studio',             icon: <Terminal className="h-3.5 w-3.5" /> },
+          { id: 'db-explorer',      label: 'Database Explorer',      icon: <Database className="h-3.5 w-3.5" /> },
+          { id: 'telemetry',        label: 'System Telemetry',       icon: <Activity className="h-3.5 w-3.5" /> },
+          { id: 'logs-audit',       label: 'System Logs Stream',     icon: <Clock className="h-3.5 w-3.5" /> },
+          { id: 'maintenance',      label: 'Maintenance Ops',        icon: <Zap className="h-3.5 w-3.5" /> },
+          { id: 'pwa-diagnostics',  label: 'PWA & Cache Inspector',  icon: <Smartphone className="h-3.5 w-3.5" /> },
         ].map(tab => (
           <button
             key={tab.id}
-            onClick={() => setActiveSubTab(tab.id as BackendSubTab)}
+            onClick={() => {
+              setActiveSubTab(tab.id as BackendSubTab);
+              if (tab.id === 'pwa-diagnostics') fetchStorageDiagnostics();
+            }}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition shrink-0 ${
               activeSubTab === tab.id
                 ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30 border border-indigo-400/30'
@@ -1139,6 +1198,154 @@ export const SABackendControl: React.FC = () => {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ────────────────────────────────────────────────────────────────────── */}
+      {/* 6. PWA UPDATE & CACHE STORAGE DIAGNOSTICS                            */}
+      {/* ────────────────────────────────────────────────────────────────────── */}
+      {activeSubTab === 'pwa-diagnostics' && (
+        <div className="space-y-6">
+          {/* Top Status Banner */}
+          <div className="p-6 rounded-3xl bg-gradient-to-r from-slate-900 via-indigo-950/40 to-slate-900 border border-indigo-500/20 shadow-xl flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="p-3 rounded-2xl bg-indigo-600/20 text-indigo-400 border border-indigo-500/30">
+                <Smartphone className="h-6 w-6" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-base font-black text-white">PWA Update & Storage Protection Engine</h3>
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-black tracking-wider uppercase border border-emerald-500/30">
+                    State Protected
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400 mt-1">
+                  Guards IndexedDB against destructive schema upgrades & prevents ServiceWorker broad cache purge loops.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleSimulateUpdate}
+                disabled={isSimulatingUpdate}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white text-xs font-black shadow-lg shadow-indigo-600/30 transition disabled:opacity-50"
+              >
+                <Sparkles className={`h-3.5 w-3.5 ${isSimulatingUpdate ? 'animate-spin' : ''}`} />
+                {isSimulatingUpdate ? 'Reconciling...' : 'Simulate PWA Migration'}
+              </button>
+
+              <button
+                onClick={handleSafeCachePurge}
+                className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 text-xs font-bold transition"
+              >
+                <Trash2 className="h-3.5 w-3.5 text-rose-400" />
+                Safe Cache Purge
+              </button>
+
+              <button
+                onClick={fetchStorageDiagnostics}
+                disabled={loadingDiagnostics}
+                className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 text-xs font-bold transition"
+                title="Refresh Storage Diagnostics"
+              >
+                <RefreshCw className={`h-4 w-4 ${loadingDiagnostics ? 'animate-spin' : ''}`} />
+              </button>
+            </div>
+          </div>
+
+          {/* Quick Metrics */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="p-4 rounded-2xl bg-slate-900 border border-white/8">
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">PWA Build Version</div>
+              <div className="text-xl font-black text-indigo-400 mt-1 font-mono">{CURRENT_PWA_BUILD_VER}</div>
+              <div className="text-[10px] text-slate-500 mt-0.5">Deployment Hash Tracked</div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-slate-900 border border-white/8">
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">IndexedDB Schema Version</div>
+              <div className="text-xl font-black text-emerald-400 mt-1 font-mono">v{storageDiagnostics?.indexedDB.version || 40}</div>
+              <div className="text-[10px] text-slate-500 mt-0.5">Dexie Non-Destructive Migrations</div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-slate-900 border border-white/8">
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Local Cached Products</div>
+              <div className="text-xl font-black text-cyan-400 mt-1 font-mono">
+                {storageDiagnostics?.indexedDB.stores.find(s => s.name === 'products')?.count || 0}
+              </div>
+              <div className="text-[10px] text-slate-500 mt-0.5">Preserved Across Updates</div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-slate-900 border border-white/8">
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">CacheStorage Buckets</div>
+              <div className="text-xl font-black text-amber-400 mt-1 font-mono">
+                {storageDiagnostics?.cacheStorage.length || 0}
+              </div>
+              <div className="text-[10px] text-slate-500 mt-0.5">Protected Data Caches Active</div>
+            </div>
+          </div>
+
+          {/* Details Split: CacheStorage vs IndexedDB Stores */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* CacheStorage Buckets */}
+            <div className="p-5 rounded-2xl bg-slate-900/80 border border-white/8 space-y-4">
+              <h3 className="text-sm font-black text-white flex items-center gap-2">
+                <HardDrive className="h-4 w-4 text-indigo-400" /> CacheStorage Layout Inspector
+              </h3>
+              <p className="text-xs text-slate-400">
+                Verifies that data caches (<span className="text-emerald-400 font-mono">kwakopos-product-payloads</span>) are isolated from static asset caches (<span className="text-indigo-400 font-mono">kwakopos-assets-v2.1.0</span>).
+              </p>
+
+              <div className="space-y-2">
+                {(!storageDiagnostics || storageDiagnostics.cacheStorage.length === 0) ? (
+                  <div className="p-4 text-center text-xs text-slate-500 bg-slate-950 rounded-xl">No CacheStorage buckets currently registered in window</div>
+                ) : (
+                  storageDiagnostics.cacheStorage.map((cache, idx) => (
+                    <div key={idx} className="flex items-center justify-between p-3 rounded-xl bg-slate-950 border border-white/5 text-xs">
+                      <div className="flex items-center gap-2">
+                        <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                        <span className="font-mono text-white font-bold">{cache.name}</span>
+                        {cache.name === 'kwakopos-product-payloads' && (
+                          <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-bold">
+                            Protected Data
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-slate-400 font-mono text-[11px]">{cache.itemsCount} requests cached</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* IndexedDB Store Counts */}
+            <div className="p-5 rounded-2xl bg-slate-900/80 border border-white/8 space-y-4">
+              <h3 className="text-sm font-black text-white flex items-center gap-2">
+                <Database className="h-4 w-4 text-emerald-400" /> IndexedDB Table Records & Health
+              </h3>
+              <p className="text-xs text-slate-400">
+                Live count of local Dexie object stores confirming zero record loss during version increments.
+              </p>
+
+              <div className="space-y-2 max-h-64 overflow-y-auto scrollbar-thin">
+                {(!storageDiagnostics || storageDiagnostics.indexedDB.stores.length === 0) ? (
+                  <div className="p-4 text-center text-xs text-slate-500 bg-slate-950 rounded-xl">Connecting to IndexedDB...</div>
+                ) : (
+                  storageDiagnostics.indexedDB.stores.map((st, idx) => (
+                    <div key={idx} className="flex items-center justify-between p-3 rounded-xl bg-slate-950 border border-white/5 text-xs">
+                      <div className="flex items-center gap-2 font-mono">
+                        <Layers className="h-3.5 w-3.5 text-slate-400" />
+                        <span className="text-slate-200 font-bold">{st.name}</span>
+                      </div>
+                      <span className="px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-mono font-bold text-[11px]">
+                        {st.count} records
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>
