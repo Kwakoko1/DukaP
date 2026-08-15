@@ -12,7 +12,7 @@ import {
   Egg, Heart, Footprints, Activity, Database,
   Truck, ShoppingCart, ClipboardList, Receipt,
   Calendar, Clock, Target, MessageSquare,
-  GlassWater, UserCheck, Wallet, X, LogOut, Sun, Moon, MapPin
+  GlassWater, UserCheck, Wallet, X, LogOut, Sun, Moon, MapPin, Terminal
 } from 'lucide-react';
 import { getShortModuleName, getShortBranchName } from '../../utils/mobileFormatters';
 
@@ -430,6 +430,7 @@ export const Sidebar: React.FC<SidebarProps> = () => {
     if (n === 'notifications') return <Droplet className="h-4.5 w-4.5 shrink-0" />;
     if (n === 'security center') return <Shield className="h-4.5 w-4.5 shrink-0" />;
     if (n === 'developer center') return <Wrench className="h-4.5 w-4.5 shrink-0" />;
+    if (n === 'backend control' || n === 'database studio' || n === 'sql studio') return <Terminal className="h-4.5 w-4.5 shrink-0 text-indigo-400" />;
     if (n === 'backup & recovery') return <Database className="h-4.5 w-4.5 shrink-0" />;
     if (n === 'activity center') return <BarChart3 className="h-4.5 w-4.5 shrink-0" />;
     if (n === 'platform updates') return <TrendingUp className="h-4.5 w-4.5 shrink-0" />;

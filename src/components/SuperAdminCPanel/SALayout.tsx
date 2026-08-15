@@ -2,7 +2,7 @@ import React from 'react';
 import {
   LayoutDashboard, Building2, Users, CreditCard, ShoppingBag,
   DollarSign, Activity, ShieldCheck, Code2, PackageCheck,
-  Rocket, ChevronRight, Menu, X, Sun, Moon, LogOut
+  Rocket, ChevronRight, Menu, X, Sun, Moon, LogOut, Terminal
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
@@ -13,6 +13,7 @@ export type SATab =
   | 'Subscription Tiers'
   | 'Billing & Finance'
   | 'Business Categories'
+  | 'Backend Control'
   | 'Platform Monitoring'
   | 'Security Center'
   | 'Developer Center'
@@ -38,6 +39,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'Billing & Finance',   icon: <DollarSign className="h-4 w-4" />,      label: 'Billing & Finance',    group: 'Commerce' },
   { id: 'Business Categories', icon: <ShoppingBag className="h-4 w-4" />,     label: 'Marketplace',          group: 'Commerce' },
   // Operations
+  { id: 'Backend Control',     icon: <Terminal className="h-4 w-4" />,        label: 'Backend Control',      group: 'Operations', badge: 'SQL' },
   { id: 'Platform Monitoring', icon: <Activity className="h-4 w-4" />,        label: 'Platform Monitoring',  group: 'Operations' },
   { id: 'Security Center',     icon: <ShieldCheck className="h-4 w-4" />,     label: 'Security Center',      group: 'Operations' },
   { id: 'Developer Center',    icon: <Code2 className="h-4 w-4" />,           label: 'Developer Center',     group: 'Operations' },

@@ -12,6 +12,7 @@ import { isTenantDeleted } from '../../utils/tenantSecurityBroadcast';
 import { SAOverview }            from './tabs/SAOverview';
 import { SAMarketplace }         from './tabs/SAMarketplace';
 import { SABillingFinance }      from './tabs/SABillingFinance';
+import { SABackendControl }      from './tabs/SABackendControl';
 import { SAPlatformMonitoring }  from './tabs/SAPlatformMonitoring';
 import { SASecurityCenter }      from './tabs/SASecurityCenter';
 import { SAProductionReadiness } from './tabs/SAProductionReadiness';
@@ -44,6 +45,11 @@ function resolveActiveTab(externalTab: string): SATab {
     'Billing & Finance':   'Billing & Finance',
     'Business Categories': 'Business Categories',
     'Marketplace':         'Business Categories',
+    'Backend Control':     'Backend Control',
+    'Database Studio':     'Backend Control',
+    'SQL Studio':          'Backend Control',
+    'Database':            'Backend Control',
+    'Backend':             'Backend Control',
     'Platform Monitoring': 'Platform Monitoring',
     'Security Center':     'Security Center',
     'Developer Center':    'Developer Center',
@@ -148,6 +154,7 @@ export const SuperAdminCPanel: React.FC<SuperAdminCPanelProps> = ({ initialTab }
       case 'Subscription Tiers':    return <SASubscriptions />;
       case 'Billing & Finance':     return <SABillingFinance />;
       case 'Business Categories':   return <SAMarketplace />;
+      case 'Backend Control':       return <SABackendControl />;
       case 'Platform Monitoring':   return <SAPlatformMonitoring />;
       case 'Security Center':       return <SASecurityCenter />;
       case 'Developer Center':      return <SADeveloperCenter />;

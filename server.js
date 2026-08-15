@@ -70,6 +70,26 @@ function invalidateTenantBootstrapCache(targetTenantId) {
   }
 }
 
+// ─── SYSTEM ACTIVITY & AUDIT LOG RING BUFFER ─────────────────────────────────
+const systemLogBuffer = [];
+const MAX_LOG_BUFFER = 400;
+
+function pushSystemLog(level, message, metadata = {}) {
+  const entry = {
+    id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    timestamp: Date.now(),
+    level, // 'INFO' | 'WARN' | 'ERROR' | 'SECURITY' | 'SYNC' | 'SQL' | 'MAINTENANCE'
+    message,
+    metadata
+  };
+  systemLogBuffer.unshift(entry);
+  if (systemLogBuffer.length > MAX_LOG_BUFFER) {
+    systemLogBuffer.pop();
+  }
+}
+
+pushSystemLog('INFO', 'KwakoPOS PostgreSQL Backend Server Engine initialized', { port: PORT, target: 'PostgreSQL' });
+
 // Auto-initialize Neon PostgreSQL schema on startup
 async function initDatabaseSchema() {
   try {
@@ -2715,6 +2735,402 @@ const server = http.createServer(async (req, res) => {
         res.writeHead(200, { 'Content-Type': 'application/json', 'X-Bypass-Replica': 'true' });
         res.end(JSON.stringify({ success: true, archivedCount }));
         return;
+      }
+
+      // ─── 18.3A SUPER ADMIN BACKEND CONTROL & DATABASE STUDIO APIS ─────────────
+
+      // 1. POST /api/admin/db/query (Execute arbitrary SQL with metrics and safety controls)
+      if (pathname === '/api/admin/db/query' && req.method === 'POST') {
+        const body = await parseRequestBody(req);
+        const queryText = (body.query || '').trim();
+        const params = body.params || [];
+        const readOnly = body.readOnly !== false;
+
+        if (!queryText) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, error: 'Query string is required' }));
+          return;
+        }
+
+        // Safety check for mutation keywords in read-only mode
+        if (readOnly) {
+          const dangerous = /^\s*(INSERT|UPDATE|DELETE|DROP|TRUNCATE|ALTER|GRANT|REVOKE|VACUUM|REINDEX)\b/i;
+          if (dangerous.test(queryText)) {
+            res.writeHead(403, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+              success: false,
+              error: 'Mutation queries (INSERT, UPDATE, DELETE, DROP, ALTER, etc.) are blocked in Safe Read-Only Mode. Enable "Run Unrestricted Mutation" toggle to execute.'
+            }));
+            return;
+          }
+        }
+
+        const start = performance.now();
+        try {
+          const result = await pool.query(queryText, params);
+          const durationMs = Math.round((performance.now() - start) * 100) / 100;
+          
+          const fields = (result.fields || []).map(f => ({
+            name: f.name,
+            dataTypeID: f.dataTypeID
+          }));
+
+          pushSystemLog('SQL', `Super Admin Query Executed (${result.command}): ${queryText.slice(0, 120)}...`, {
+            rowCount: result.rowCount,
+            durationMs
+          });
+
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            success: true,
+            command: result.command,
+            rowCount: result.rowCount,
+            fields,
+            rows: result.rows,
+            durationMs
+          }));
+          return;
+        } catch (queryErr) {
+          const durationMs = Math.round((performance.now() - start) * 100) / 100;
+          pushSystemLog('ERROR', `SQL Query Failed: ${queryErr.message}`, { query: queryText.slice(0, 100) });
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            success: false,
+            error: queryErr.message,
+            position: queryErr.position,
+            detail: queryErr.detail,
+            hint: queryErr.hint,
+            durationMs
+          }));
+          return;
+        }
+      }
+
+      // 2. GET /api/admin/db/tables (List database tables with row counts and disk sizes)
+      if (pathname === '/api/admin/db/tables' && req.method === 'GET') {
+        try {
+          const tablesResult = await pool.query(`
+            SELECT 
+              t.table_name,
+              COALESCE(s.n_live_tup, 0) as live_tuples,
+              COALESCE(s.n_dead_tup, 0) as dead_tuples,
+              pg_total_relation_size('"' || t.table_schema || '"."' || t.table_name || '"') as total_bytes,
+              pg_relation_size('"' || t.table_schema || '"."' || t.table_name || '"') as table_bytes,
+              pg_indexes_size('"' || t.table_schema || '"."' || t.table_name || '"') as index_bytes,
+              pg_size_pretty(pg_total_relation_size('"' || t.table_schema || '"."' || t.table_name || '"')) as total_size,
+              (
+                SELECT count(*) 
+                FROM information_schema.columns c 
+                WHERE c.table_schema = t.table_schema AND c.table_name = t.table_name
+              ) as column_count
+            FROM information_schema.tables t
+            LEFT JOIN pg_stat_user_tables s ON s.schemaname = t.table_schema AND s.relname = t.table_name
+            WHERE t.table_schema = 'public' AND t.table_type = 'BASE TABLE'
+            ORDER BY t.table_name ASC;
+          `);
+
+          // Fetch columns metadata
+          const columnsResult = await pool.query(`
+            SELECT 
+              table_name,
+              column_name,
+              data_type,
+              is_nullable,
+              column_default
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+            ORDER BY table_name, ordinal_position;
+          `);
+
+          // Group columns by table
+          const columnsByTable = {};
+          columnsResult.rows.forEach(col => {
+            if (!columnsByTable[col.table_name]) columnsByTable[col.table_name] = [];
+            columnsByTable[col.table_name].push(col);
+          });
+
+          const tables = tablesResult.rows.map(row => ({
+            name: row.table_name,
+            estimatedRows: Number(row.live_tuples),
+            deadRows: Number(row.dead_tuples),
+            totalBytes: Number(row.total_bytes),
+            tableBytes: Number(row.table_bytes),
+            indexBytes: Number(row.index_bytes),
+            totalSize: row.total_size,
+            columnCount: Number(row.column_count),
+            columns: columnsByTable[row.table_name] || []
+          }));
+
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: true, tables }));
+          return;
+        } catch (tblErr) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, error: tblErr.message }));
+          return;
+        }
+      }
+
+      // 3. GET /api/admin/db/table-data (Paginated table data inspector)
+      if (pathname === '/api/admin/db/table-data' && req.method === 'GET') {
+        const tableName = fullUrl.searchParams.get('table');
+        const limit = Math.min(parseInt(fullUrl.searchParams.get('limit') || '50', 10), 500);
+        const offset = parseInt(fullUrl.searchParams.get('offset') || '0', 10);
+        const search = fullUrl.searchParams.get('search') || '';
+        const sortCol = fullUrl.searchParams.get('sort') || '';
+        const sortOrder = fullUrl.searchParams.get('order') === 'desc' ? 'DESC' : 'ASC';
+
+        if (!tableName) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, error: 'table parameter required' }));
+          return;
+        }
+
+        // Validate table exists to protect against SQL injection
+        const validCheck = await pool.query(
+          `SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = $1`,
+          [tableName]
+        );
+        if (validCheck.rows.length === 0) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, error: `Table '${tableName}' not found` }));
+          return;
+        }
+
+        try {
+          const totalCountRes = await pool.query(`SELECT COUNT(*) as count FROM "${tableName}"`);
+          const totalCount = parseInt(totalCountRes.rows[0]?.count || '0', 10);
+
+          let dataQuery = `SELECT * FROM "${tableName}"`;
+          const queryParams = [];
+
+          if (sortCol) {
+            // Validate sort column
+            const colCheck = await pool.query(
+              `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = $1 AND column_name = $2`,
+              [tableName, sortCol]
+            );
+            if (colCheck.rows.length > 0) {
+              dataQuery += ` ORDER BY "${sortCol}" ${sortOrder}`;
+            }
+          }
+
+          queryParams.push(limit);
+          dataQuery += ` LIMIT $${queryParams.length}`;
+          queryParams.push(offset);
+          dataQuery += ` OFFSET $${queryParams.length}`;
+
+          const dataRes = await pool.query(dataQuery, queryParams);
+
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            success: true,
+            table: tableName,
+            totalCount,
+            limit,
+            offset,
+            rows: dataRes.rows,
+            fields: (dataRes.fields || []).map(f => f.name)
+          }));
+          return;
+        } catch (dataErr) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, error: dataErr.message }));
+          return;
+        }
+      }
+
+      // 4. GET /api/admin/system/metrics (Live real-time platform & Node vitals)
+      if (pathname === '/api/admin/system/metrics' && req.method === 'GET') {
+        try {
+          const mem = process.memoryUsage();
+          const cpu = process.cpuUsage();
+          
+          // Database stats
+          const [dbSizeRes, statsRes, tenantCountRes, prodCountRes, userCountRes, orderCountRes] = await Promise.all([
+            pool.query(`SELECT current_database(), pg_size_pretty(pg_database_size(current_database())) as size, pg_database_size(current_database()) as raw_size`),
+            pool.query(`SELECT numbackends, xact_commit, xact_rollback, blks_read, blks_hit FROM pg_stat_database WHERE datname = current_database()`),
+            pool.query(`SELECT count(*) as count FROM tenants WHERE deleted_at IS NULL`),
+            pool.query(`SELECT count(*) as count FROM products WHERE (deleted IS NULL OR deleted = false)`),
+            pool.query(`SELECT count(*) as count FROM users WHERE deleted_at IS NULL`),
+            pool.query(`SELECT count(*) as count FROM orders`).catch(() => ({ rows: [{ count: 0 }] }))
+          ]);
+
+          const dbStats = statsRes.rows[0] || {};
+          const cacheHitRate = Number(dbStats.blks_hit || 0) + Number(dbStats.blks_read || 0) > 0
+            ? Math.round((Number(dbStats.blks_hit || 0) / (Number(dbStats.blks_hit || 0) + Number(dbStats.blks_read || 0))) * 1000) / 10
+            : 100;
+
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            success: true,
+            timestamp: Date.now(),
+            process: {
+              uptimeSeconds: Math.round(process.uptime()),
+              pid: process.pid,
+              nodeVersion: process.version,
+              platform: process.platform,
+              arch: process.arch,
+              memory: {
+                rssBytes: mem.rss,
+                heapTotalBytes: mem.heapTotal,
+                heapUsedBytes: mem.heapUsed,
+                externalBytes: mem.external,
+                rssFormatted: `${Math.round(mem.rss / 1024 / 1024 * 10) / 10} MB`,
+                heapUsedFormatted: `${Math.round(mem.heapUsed / 1024 / 1024 * 10) / 10} MB`,
+                heapTotalFormatted: `${Math.round(mem.heapTotal / 1024 / 1024 * 10) / 10} MB`,
+                heapUsagePercent: Math.round((mem.heapUsed / mem.heapTotal) * 100)
+              },
+              cpu: {
+                userMicros: cpu.user,
+                systemMicros: cpu.system
+              }
+            },
+            database: {
+              name: dbSizeRes.rows[0]?.current_database || 'kwakopos',
+              sizeFormatted: dbSizeRes.rows[0]?.size || '0 MB',
+              sizeBytes: Number(dbSizeRes.rows[0]?.raw_size || 0),
+              activeBackends: Number(dbStats.numbackends || pool.totalCount || 1),
+              pool: {
+                totalCount: pool.totalCount || 0,
+                idleCount: pool.idleCount || 0,
+                waitingCount: pool.waitingCount || 0
+              },
+              cacheHitRate: `${cacheHitRate}%`,
+              commits: Number(dbStats.xact_commit || 0),
+              rollbacks: Number(dbStats.xact_rollback || 0)
+            },
+            counts: {
+              tenants: Number(tenantCountRes.rows[0]?.count || 0),
+              users: Number(userCountRes.rows[0]?.count || 0),
+              products: Number(prodCountRes.rows[0]?.count || 0),
+              orders: Number(orderCountRes.rows[0]?.count || 0)
+            }
+          }));
+          return;
+        } catch (metErr) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, error: metErr.message }));
+          return;
+        }
+      }
+
+      // 5. GET /api/admin/system/logs (Live system logs + security audit stream)
+      if (pathname === '/api/admin/system/logs' && req.method === 'GET') {
+        const level = fullUrl.searchParams.get('level') || 'ALL';
+        const limit = Math.min(parseInt(fullUrl.searchParams.get('limit') || '100', 10), 300);
+
+        try {
+          // Fetch persistent security audit logs
+          const auditLogsRes = await pool.query(
+            `SELECT id, tenant_id, branch_id, user_id, action, details, created_at FROM security_audit_logs ORDER BY created_at DESC LIMIT $1`,
+            [limit]
+          ).catch(() => ({ rows: [] }));
+
+          const persistentLogs = (auditLogsRes.rows || []).map(r => ({
+            id: r.id,
+            timestamp: Number(r.created_at || Date.now()),
+            level: 'SECURITY',
+            message: `[${r.action}] ${r.details || ''}`,
+            metadata: { tenant_id: r.tenant_id, user_id: r.user_id, branch_id: r.branch_id }
+          }));
+
+          // Merge with memory buffer
+          let combined = [...systemLogBuffer, ...persistentLogs];
+          
+          if (level && level !== 'ALL') {
+            combined = combined.filter(l => l.level.toUpperCase() === level.toUpperCase());
+          }
+
+          // Sort by timestamp desc
+          combined.sort((a, b) => b.timestamp - a.timestamp);
+          combined = combined.slice(0, limit);
+
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: true, logs: combined, total: combined.length }));
+          return;
+        } catch (logErr) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, error: logErr.message }));
+          return;
+        }
+      }
+
+      // 6. POST /api/admin/system/maintenance (Database maintenance & health operations)
+      if (pathname === '/api/admin/system/maintenance' && req.method === 'POST') {
+        const body = await parseRequestBody(req);
+        const action = (body.action || '').toUpperCase();
+        const targetTable = (body.table || '').trim();
+
+        pushSystemLog('MAINTENANCE', `Maintenance command triggered: ${action} ${targetTable ? `on ${targetTable}` : ''}`);
+
+        try {
+          let report = {};
+          const start = performance.now();
+
+          if (action === 'ANALYZE') {
+            if (targetTable) {
+              await pool.query(`ANALYZE "${targetTable}"`);
+              report = { action: 'ANALYZE', table: targetTable, status: 'Completed' };
+            } else {
+              await pool.query(`ANALYZE`);
+              report = { action: 'ANALYZE', scope: 'Full Database', status: 'Completed' };
+            }
+          } else if (action === 'VACUUM') {
+            if (targetTable) {
+              await pool.query(`VACUUM "${targetTable}"`);
+              report = { action: 'VACUUM', table: targetTable, status: 'Completed' };
+            } else {
+              await pool.query(`VACUUM`);
+              report = { action: 'VACUUM', scope: 'Full Database', status: 'Completed' };
+            }
+          } else if (action === 'REINDEX') {
+            if (targetTable) {
+              await pool.query(`REINDEX TABLE "${targetTable}"`);
+              report = { action: 'REINDEX', table: targetTable, status: 'Completed' };
+            } else {
+              await pool.query(`REINDEX SCHEMA public`);
+              report = { action: 'REINDEX', scope: 'Schema public', status: 'Completed' };
+            }
+          } else if (action === 'AUDIT_INTEGRITY') {
+            // Check for orphan records
+            const [orphanProds, orphanVariants, orphanCats, orphanBrands] = await Promise.all([
+              pool.query(`SELECT count(*) as count FROM products WHERE tenant_id NOT IN (SELECT id FROM tenants)`),
+              pool.query(`SELECT count(*) as count FROM product_variants WHERE tenant_id NOT IN (SELECT id FROM tenants)`),
+              pool.query(`SELECT count(*) as count FROM categories WHERE tenant_id NOT IN (SELECT id FROM tenants)`),
+              pool.query(`SELECT count(*) as count FROM brands WHERE tenant_id NOT IN (SELECT id FROM tenants)`)
+            ]);
+            report = {
+              action: 'AUDIT_INTEGRITY',
+              status: 'Passed',
+              orphanProducts: Number(orphanProds.rows[0]?.count || 0),
+              orphanVariants: Number(orphanVariants.rows[0]?.count || 0),
+              orphanCategories: Number(orphanCats.rows[0]?.count || 0),
+              orphanBrands: Number(orphanBrands.rows[0]?.count || 0),
+              healthy: (
+                Number(orphanProds.rows[0]?.count || 0) === 0 &&
+                Number(orphanVariants.rows[0]?.count || 0) === 0 &&
+                Number(orphanCats.rows[0]?.count || 0) === 0 &&
+                Number(orphanBrands.rows[0]?.count || 0) === 0
+              )
+            };
+          } else {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: false, error: `Unknown action '${action}'` }));
+            return;
+          }
+
+          const durationMs = Math.round((performance.now() - start) * 100) / 100;
+          report.durationMs = durationMs;
+
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: true, report }));
+          return;
+        } catch (maintErr) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, error: maintErr.message }));
+          return;
+        }
       }
 
       // 18.4 POST /api/fleet/vehicles
