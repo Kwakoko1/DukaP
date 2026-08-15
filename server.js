@@ -373,6 +373,82 @@ async function initDatabaseSchema() {
       console.warn('[server.js] Relational constraint check warning:', migErr);
     }
 
+    // ─── 4.1 USERS SCHEMA & DATA RECONCILIATION ────────────────────────────────
+    try {
+      await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS first_name TEXT;`.catch(() => {});
+      await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_name TEXT;`.catch(() => {});
+      await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'Active';`.catch(() => {});
+      await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_super_admin BOOLEAN DEFAULT false;`.catch(() => {});
+      await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS pin_hash TEXT DEFAULT '1911';`.catch(() => {});
+      await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS registration_source TEXT DEFAULT 'PLATFORM_ADMIN';`.catch(() => {});
+      await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS created_by TEXT DEFAULT 'usr-superadmin';`.catch(() => {});
+      await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_status TEXT DEFAULT 'VERIFIED';`.catch(() => {});
+      await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at BIGINT;`.catch(() => {});
+      await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS version INT DEFAULT 1;`.catch(() => {});
+
+      // Auto-reconcile Super Admin record
+      await sql`
+        INSERT INTO users (
+          id, tenant_id, branch_id, name, first_name, last_name, username, email, phone, role, status, pin_hash, is_super_admin, registration_source, created_by, verification_status, version, created_at, updated_at
+        )
+        VALUES (
+          'usr-superadmin', 'tenant-admin-system', 'branch-admin-main', 'System Platform Owner', 'System Platform', 'Owner', 'superadmin', 'admin@kwakoko.co.tz', '+255713296319', 'Super Admin', 'Active', '1911', true, 'PLATFORM_ADMIN', 'SYSTEM_PROVISIONER', 'VERIFIED', 1, ${Date.now()}, ${Date.now()}
+        )
+        ON CONFLICT (id) DO UPDATE SET
+          email = 'admin@kwakoko.co.tz',
+          username = 'superadmin',
+          role = 'Super Admin',
+          is_super_admin = true,
+          name = 'System Platform Owner',
+          first_name = 'System Platform',
+          last_name = 'Owner',
+          branch_id = 'branch-admin-main',
+          status = 'Active',
+          pin_hash = '1911',
+          registration_source = 'PLATFORM_ADMIN',
+          created_by = 'SYSTEM_PROVISIONER',
+          verification_status = 'VERIFIED',
+          updated_at = ${Date.now()};
+      `.catch(() => {});
+
+      // Fix any legacy email references or cashier roles on super admin
+      await sql`
+        UPDATE users SET
+          email = 'admin@kwakoko.co.tz',
+          username = 'superadmin',
+          role = 'Super Admin',
+          is_super_admin = true,
+          name = 'System Platform Owner',
+          first_name = 'System Platform',
+          last_name = 'Owner',
+          branch_id = 'branch-admin-main',
+          status = 'Active',
+          pin_hash = '1911',
+          registration_source = 'PLATFORM_ADMIN',
+          created_by = 'SYSTEM_PROVISIONER',
+          verification_status = 'VERIFIED',
+          updated_at = ${Date.now()}
+        WHERE email ILIKE '%admin@dukapos.com%' OR (is_super_admin = true AND role != 'Super Admin');
+      `.catch(() => {});
+
+      // Auto-reconcile tenant users: populate first_name, last_name, status, etc.
+      await sql`
+        UPDATE users SET
+          first_name = COALESCE(NULLIF(first_name, ''), NULLIF(SPLIT_PART(name, ' ', 1), ''), 'Tenant'),
+          last_name = COALESCE(NULLIF(last_name, ''), NULLIF(SUBSTRING(name FROM POSITION(' ' IN name) + 1), ''), 'Owner'),
+          status = COALESCE(NULLIF(status, ''), 'Active'),
+          pin_hash = COALESCE(NULLIF(pin_hash, ''), '1911'),
+          updated_at = COALESCE(updated_at, created_at, ${Date.now()}),
+          registration_source = COALESCE(NULLIF(registration_source, ''), 'TENANT_ONBOARDING'),
+          created_by = COALESCE(NULLIF(created_by, ''), 'usr-superadmin'),
+          verification_status = COALESCE(NULLIF(verification_status, ''), 'VERIFIED'),
+          version = COALESCE(version, 1)
+        WHERE first_name IS NULL OR last_name IS NULL OR status IS NULL OR verification_status IS NULL OR updated_at IS NULL;
+      `.catch(() => {});
+    } catch (userMigErr) {
+      console.warn('[server.js] Users table migration warning:', userMigErr);
+    }
+
     await sql`
       CREATE TABLE IF NOT EXISTS user_branch_roles (
         id TEXT PRIMARY KEY,

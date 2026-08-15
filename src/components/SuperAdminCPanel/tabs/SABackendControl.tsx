@@ -117,6 +117,8 @@ export const SABackendControl: React.FC = () => {
   const [tableSortCol, setTableSortCol] = useState<string>('');
   const [tableSortOrder, setTableSortOrder] = useState<'asc' | 'desc'>('asc');
   const [loadingTableData, setLoadingTableData] = useState<boolean>(false);
+  const [tenantsDict, setTenantsDict] = useState<Record<string, { name: string; code: string }>>({});
+  const [branchesDict, setBranchesDict] = useState<Record<string, { name: string; code: string }>>({});
 
   // ── Logs State ──
   const [logs, setLogs] = useState<SystemLogEntry[]>([]);
@@ -158,7 +160,157 @@ export const SABackendControl: React.FC = () => {
         setSelectedTable(res.tables[0].name);
       }
     }
+
+    // Load tenants dictionary for human-readable ID resolution
+    try {
+      const tRes = await SuperAdminBackendService.getTableData('tenants', 200, 0);
+      if (tRes.success && tRes.rows) {
+        const dict: Record<string, { name: string; code: string }> = {};
+        tRes.rows.forEach((t: any) => {
+          dict[t.id] = { name: t.name || 'Tenant', code: t.business_code || t.tenant_code || t.id };
+        });
+        setTenantsDict(dict);
+      }
+    } catch (_) {}
+
+    // Load branches dictionary for human-readable branch resolution
+    try {
+      const bRes = await SuperAdminBackendService.getTableData('branches', 200, 0);
+      if (bRes.success && bRes.rows) {
+        const bdict: Record<string, { name: string; code: string }> = {};
+        bRes.rows.forEach((b: any) => {
+          bdict[b.id] = { name: b.name || 'Branch', code: b.branch_code || b.id };
+        });
+        setBranchesDict(bdict);
+      }
+    } catch (_) {}
+
     setLoadingTables(false);
+  };
+
+  const renderTableCellValue = (field: string, val: any, row: any) => {
+    if (val === null || val === undefined) {
+      return <span className="text-slate-600 italic">NULL</span>;
+    }
+
+    // 1. Resolve tenant_id
+    if (field === 'tenant_id') {
+      const strVal = String(val);
+      const tenantInfo = tenantsDict[strVal];
+      if (tenantInfo) {
+        return (
+          <span
+            className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 font-sans font-bold text-[11px]"
+            title={`Tenant UUID: ${strVal}`}
+          >
+            <span>🏢</span>
+            <span>{tenantInfo.name}</span>
+            <span className="text-[10px] font-mono text-indigo-400/80">({tenantInfo.code})</span>
+          </span>
+        );
+      }
+      if (strVal === 'tenant-admin-system') {
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-300 font-sans font-bold text-[11px]">
+            <span>🛡️</span> System Platform (SYS-ADMIN-0000)
+          </span>
+        );
+      }
+    }
+
+    // 2. Resolve branch_id
+    if (field === 'branch_id') {
+      const strVal = String(val);
+      const branchInfo = branchesDict[strVal];
+      if (branchInfo) {
+        return (
+          <span
+            className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 font-sans font-bold text-[11px]"
+            title={`Branch UUID: ${strVal}`}
+          >
+            <span>📍</span>
+            <span>{branchInfo.name}</span>
+          </span>
+        );
+      }
+      if (strVal === 'branch-admin-main' || strVal === 'branch-main') {
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-800 text-slate-300 font-sans font-bold text-[11px]">
+            <span>📍</span> Main HQ Branch
+          </span>
+        );
+      }
+    }
+
+    // 3. Resolve user id
+    if (field === 'id' && typeof val === 'string') {
+      if (val === 'usr-superadmin') {
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-500/20 text-amber-300 font-mono font-bold text-[11px]">
+            🛡️ USR-SUPERADMIN
+          </span>
+        );
+      }
+      if (val.startsWith('usr-') && val.endsWith('-owner')) {
+        const parts = val.split('-');
+        const shortHex = parts[1]?.slice(0, 8).toUpperCase();
+        return (
+          <span
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-indigo-500/20 text-indigo-300 font-mono font-bold text-[11px]"
+            title={`Full User ID: ${val}`}
+          >
+            USR • {shortHex || 'OWNER'} (Owner)
+          </span>
+        );
+      }
+    }
+
+    // 4. Role Badges
+    if (field === 'role') {
+      const isSuper = String(val).toLowerCase().includes('super') || row?.is_super_admin;
+      return (
+        <span className={`px-2 py-0.5 rounded-lg font-sans font-bold text-[10px] uppercase tracking-wider ${
+          isSuper 
+            ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+            : 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30'
+        }`}>
+          {String(val)}
+        </span>
+      );
+    }
+
+    // 5. Status & Verification Badges
+    if (field === 'status' || field === 'verification_status') {
+      const isOk = String(val).toUpperCase() === 'ACTIVE' || String(val).toUpperCase() === 'VERIFIED';
+      return (
+        <span className={`px-2 py-0.5 rounded-lg font-sans font-bold text-[10px] uppercase tracking-wider ${
+          isOk 
+            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+            : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+        }`}>
+          {String(val)}
+        </span>
+      );
+    }
+
+    // 6. Boolean Flags
+    if (field === 'is_super_admin' || typeof val === 'boolean') {
+      return val ? (
+        <span className="px-2 py-0.5 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold text-[10px]">
+          TRUE
+        </span>
+      ) : (
+        <span className="px-2 py-0.5 rounded-lg bg-slate-800 text-slate-400 font-bold text-[10px]">
+          FALSE
+        </span>
+      );
+    }
+
+    if (typeof val === 'object') {
+      return JSON.stringify(val);
+    }
+
+    return String(val);
   };
 
   const fetchTableRecords = async (
@@ -859,13 +1011,7 @@ export const SABackendControl: React.FC = () => {
                             <td className="px-3 py-2 text-slate-600">{tablePage * 30 + idx + 1}</td>
                             {tableFields.map(f => (
                               <td key={f} className="px-3 py-2 max-w-xs truncate">
-                                {row[f] === null ? (
-                                  <span className="text-slate-600 italic">NULL</span>
-                                ) : typeof row[f] === 'object' ? (
-                                  JSON.stringify(row[f])
-                                ) : (
-                                  String(row[f])
-                                )}
+                                {renderTableCellValue(f, row[f], row)}
                               </td>
                             ))}
                           </tr>
