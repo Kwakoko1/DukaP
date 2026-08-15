@@ -290,7 +290,21 @@ async function initDatabaseSchema() {
     await sql`CREATE INDEX IF NOT EXISTS idx_orders_revenue_lookup ON orders (tenant_id, total, status) WHERE created_at > 0;`.catch(() => {});
     await sql`CREATE INDEX IF NOT EXISTS idx_tenant_subs_kpi ON tenant_subscriptions (tenant_id, status) WHERE updated_at > 0;`.catch(() => {});
 
-    // 3.1 Taxonomy Schema Columns & Indexes
+    // 3.1 Taxonomy & Tenant Profile Schema Columns & Indexes
+    await sql`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS slug TEXT;`.catch(() => {});
+    await sql`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS email TEXT;`.catch(() => {});
+    await sql`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS phone TEXT;`.catch(() => {});
+    await sql`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS owner_name TEXT;`.catch(() => {});
+    await sql`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS business_type TEXT DEFAULT 'Retail';`.catch(() => {});
+    await sql`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS registration_source TEXT DEFAULT 'SELF_REGISTERED';`.catch(() => {});
+    await sql`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS verification_status TEXT DEFAULT 'VERIFIED';`.catch(() => {});
+    await sql`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS registration_ip TEXT;`.catch(() => {});
+    await sql`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS registration_device TEXT;`.catch(() => {});
+    await sql`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS updated_at BIGINT;`.catch(() => {});
+    await sql`ALTER TABLE branches ADD COLUMN IF NOT EXISTS branch_code TEXT;`.catch(() => {});
+    await sql`ALTER TABLE branches ADD COLUMN IF NOT EXISTS is_default BOOLEAN DEFAULT false;`.catch(() => {});
+    await sql`ALTER TABLE branches ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'Active';`.catch(() => {});
+    await sql`ALTER TABLE branches ADD COLUMN IF NOT EXISTS updated_at BIGINT;`.catch(() => {});
     await sql`ALTER TABLE categories ADD COLUMN IF NOT EXISTS industry_type TEXT DEFAULT 'retail';`.catch(() => {});
     await sql`ALTER TABLE brands ADD COLUMN IF NOT EXISTS description_corporate_line TEXT;`.catch(() => {});
     await sql`ALTER TABLE products ADD COLUMN IF NOT EXISTS category_id TEXT;`.catch(() => {});
@@ -1531,14 +1545,38 @@ const server = http.createServer(async (req, res) => {
         const payload = await parseRequestBody(req);
         const uid = payload.id || `usr-${Date.now()}`;
         const now = Date.now();
+        const rawName = (payload.name || payload.fullName || 'User').trim();
+        const nameParts = rawName.split(/\s+/);
+        const firstName = payload.firstName || payload.first_name || nameParts[0] || 'User';
+        const lastName = payload.lastName || payload.last_name || nameParts.slice(1).join(' ') || 'Staff';
+        const email = (payload.email || '').trim().toLowerCase();
+        const username = (payload.username || email.split('@')[0] || uid).toLowerCase().trim();
+        const role = payload.role || 'Cashier';
+        const isSuper = role === 'Super Admin' || Boolean(payload.is_super_admin);
+        const pinHash = payload.pin_hash || payload.pin || '1911';
+        const status = payload.status || 'Active';
+        const verificationStatus = payload.verification_status || 'VERIFIED';
+        const regSource = payload.registration_source || (isSuper ? 'PLATFORM_ADMIN' : 'ADMIN_CREATED');
+        const createdBy = payload.created_by || 'usr-superadmin';
+
         await sql`
-          INSERT INTO users (id, tenant_id, branch_id, name, username, email, phone, role, password_hash, created_at)
-          VALUES (${uid}, ${payload.tenant_id || tenantId || ''}, ${payload.branch_id || ''}, ${payload.name || ''}, ${payload.username || ''}, ${payload.email || ''}, ${payload.phone || ''}, ${payload.role || 'Cashier'}, ${payload.password_hash || payload.password || ''}, ${payload.created_at || now})
+          INSERT INTO users (
+            id, tenant_id, branch_id, name, first_name, last_name, username, email, phone, role, status, pin_hash, password_hash, is_super_admin, registration_source, created_by, verification_status, version, created_at, updated_at
+          )
+          VALUES (
+            ${uid}, ${payload.tenant_id || tenantId || ''}, ${payload.branch_id || ''}, ${rawName}, ${firstName}, ${lastName}, ${username}, ${email}, ${payload.phone || ''}, ${role}, ${status}, ${pinHash}, ${payload.password_hash || payload.password || ''}, ${isSuper}, ${regSource}, ${createdBy}, ${verificationStatus}, 1, ${payload.created_at || now}, ${now}
+          )
           ON CONFLICT (id) DO UPDATE SET
             name = EXCLUDED.name,
+            first_name = EXCLUDED.first_name,
+            last_name = EXCLUDED.last_name,
+            username = EXCLUDED.username,
             role = EXCLUDED.role,
             phone = EXCLUDED.phone,
-            password_hash = EXCLUDED.password_hash;
+            status = EXCLUDED.status,
+            verification_status = EXCLUDED.verification_status,
+            password_hash = EXCLUDED.password_hash,
+            updated_at = ${now};
         `.catch(() => {});
         invalidateTenantBootstrapCache(payload.tenant_id || tenantId);
         res.writeHead(200);
@@ -1559,11 +1597,26 @@ const server = http.createServer(async (req, res) => {
         const email = (payload.email || '').trim().toLowerCase();
         const slug = payload.slug || companyName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || tid;
         const plan = payload.plan || 'Professional';
-        const status = payload.status || 'Trial';
+        const status = payload.status || 'Active';
         const trialEnd = now + (14 * 86400000); // 14-day trial window
 
+        // Generate 360 Human-Readable Identifiers
+        const cleanName = (payload.fullName || payload.name || 'Tenant Owner').trim();
+        const nameParts = cleanName.split(/\s+/);
+        const firstName = payload.firstName || nameParts[0] || 'Tenant';
+        const lastName = payload.lastName || nameParts.slice(1).join(' ') || 'Owner';
+        const username = (payload.username || email.split('@')[0] || `user${now.toString().slice(-4)}`).toLowerCase().trim();
+        const phone = payload.phone || '';
+        const pinHash = payload.pin || payload.pin_hash || '1911';
+
+        const cleanCoCode = companyName.replace(/[^a-zA-Z]/g, '').slice(0, 6).toUpperCase() || 'KWAKO';
+        const randSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+        const businessCode = payload.businessCode || `BIZ-${cleanCoCode}-${randSuffix}`;
+        const tenantCode = payload.humanId || payload.tenant_code || `TZ-RET-${cleanCoCode}-${randSuffix}`;
+        const branchCode = `${cleanCoCode.slice(0, 5)}-HQ-01`;
+
         try {
-          // Execute atomic PostgreSQL insertion
+          // 1. Execute atomic PostgreSQL insertion for Tenant Profile
           await sql`
             INSERT INTO tenants (
               id, name, plan, status, business_code, tenant_code, slug,
@@ -1571,34 +1624,51 @@ const server = http.createServer(async (req, res) => {
               registration_ip, registration_device, created_at, updated_at
             )
             VALUES (
-              ${tid}, ${companyName}, ${plan}, ${status}, ${payload.businessCode || ''}, ${payload.humanId || tid}, ${slug},
-              ${email}, ${payload.fullName || 'Tenant Owner'}, ${payload.businessType || 'Retail'},
+              ${tid}, ${companyName}, ${plan}, ${status}, ${businessCode}, ${tenantCode}, ${slug},
+              ${email}, ${cleanName}, ${payload.businessType || 'Retail'},
               'SELF_REGISTERED', 'VERIFIED', ${String(ip)}, ${String(device).substring(0, 255)}, ${now}, ${now}
             )
-            ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, updated_at = ${now};
+            ON CONFLICT (id) DO UPDATE SET 
+              name = EXCLUDED.name, 
+              business_code = EXCLUDED.business_code,
+              tenant_code = EXCLUDED.tenant_code,
+              status = EXCLUDED.status,
+              updated_at = ${now};
           `;
 
+          // 2. Default HQ Branch
           await sql`
             INSERT INTO branches (
               id, tenant_id, name, location, is_headquarters, is_default, status, branch_code, created_at
             )
             VALUES (
               ${bid}, ${tid}, ${payload.branchName || 'Main HQ Branch'}, ${payload.address || 'HQ Office'}, true, true, 'Active',
-              ${companyName.replace(/[^a-zA-Z]/g, '').slice(0, 5).toUpperCase() + '-HQ-01'}, ${now}
+              ${branchCode}, ${now}
             )
             ON CONFLICT (id) DO NOTHING;
           `;
 
+          // 3. Complete 360-Degree User Profile (All 22 fields populated)
           await sql`
             INSERT INTO users (
-              id, tenant_id, branch_id, name, username, email, phone, role, password_hash, created_at
+              id, tenant_id, branch_id, name, first_name, last_name, username, email, phone, role, status, pin_hash, password_hash, is_super_admin, registration_source, created_by, verification_status, version, created_at, updated_at
             )
             VALUES (
-              ${uid}, ${tid}, ${bid}, ${payload.fullName || 'Tenant Owner'}, ${email}, ${email}, ${payload.phone || ''}, 'Tenant Owner', ${payload.password || 'password123'}, ${now}
+              ${uid}, ${tid}, ${bid}, ${cleanName}, ${firstName}, ${lastName}, ${username}, ${email}, ${phone}, 'Tenant Owner', 'Active', ${pinHash}, ${payload.password || 'password123'}, false, 'TENANT_ONBOARDING', 'usr-superadmin', 'VERIFIED', 1, ${now}, ${now}
             )
-            ON CONFLICT (id) DO NOTHING;
+            ON CONFLICT (id) DO UPDATE SET
+              name = EXCLUDED.name,
+              first_name = EXCLUDED.first_name,
+              last_name = EXCLUDED.last_name,
+              username = EXCLUDED.username,
+              email = EXCLUDED.email,
+              phone = EXCLUDED.phone,
+              status = 'Active',
+              verification_status = 'VERIFIED',
+              updated_at = ${now};
           `;
 
+          // 4. User Branch Role Mapping
           await sql`
             INSERT INTO user_branch_roles (
               id, tenant_id, user_id, branch_id, role_name, created_at
