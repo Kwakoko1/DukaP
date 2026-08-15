@@ -378,6 +378,19 @@ async function setupPostgres() {
           ALTER TABLE stock_ledger ADD CONSTRAINT fk_stock_ledger_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
         END IF;
 
+        -- Safe SET NULL taxonomy foreign keys on products
+        ALTER TABLE products DROP CONSTRAINT IF EXISTS products_category_id_fkey;
+        ALTER TABLE products DROP CONSTRAINT IF EXISTS fk_products_category;
+        ALTER TABLE products DROP CONSTRAINT IF EXISTS products_brand_id_fkey;
+        ALTER TABLE products DROP CONSTRAINT IF EXISTS fk_products_brand;
+
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_products_category') THEN
+          ALTER TABLE products ADD CONSTRAINT fk_products_category FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_products_brand') THEN
+          ALTER TABLE products ADD CONSTRAINT fk_products_brand FOREIGN KEY (brand_id) REFERENCES brands(id) ON DELETE SET NULL;
+        END IF;
+
         -- 4. Add Check constraints
         IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_products_tenant_nonempty') THEN
           ALTER TABLE products ADD CONSTRAINT chk_products_tenant_nonempty CHECK (tenant_id IS NOT NULL AND length(trim(tenant_id)) > 0);

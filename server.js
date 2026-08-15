@@ -319,6 +319,19 @@ async function initDatabaseSchema() {
             ALTER TABLE stock_ledger ADD CONSTRAINT fk_stock_ledger_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
           END IF;
 
+          -- Safe SET NULL taxonomy foreign keys on products
+          ALTER TABLE products DROP CONSTRAINT IF EXISTS products_category_id_fkey;
+          ALTER TABLE products DROP CONSTRAINT IF EXISTS fk_products_category;
+          ALTER TABLE products DROP CONSTRAINT IF EXISTS products_brand_id_fkey;
+          ALTER TABLE products DROP CONSTRAINT IF EXISTS fk_products_brand;
+
+          IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_products_category') THEN
+            ALTER TABLE products ADD CONSTRAINT fk_products_category FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL;
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_products_brand') THEN
+            ALTER TABLE products ADD CONSTRAINT fk_products_brand FOREIGN KEY (brand_id) REFERENCES brands(id) ON DELETE SET NULL;
+          END IF;
+
           -- Non-empty Check Constraints
           IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_products_tenant_nonempty') THEN
             ALTER TABLE products ADD CONSTRAINT chk_products_tenant_nonempty CHECK (tenant_id IS NOT NULL AND length(trim(tenant_id)) > 0);
@@ -1813,11 +1826,35 @@ const server = http.createServer(async (req, res) => {
 
       if (pathname.startsWith('/api/categories/') && req.method === 'DELETE') {
         const cid = pathname.replace('/api/categories/', '');
+        const tid = req.headers['x-tenant-id'] || tenantId;
         const now = Date.now();
-        await sql`UPDATE categories SET deleted_at = ${now}, updated_at = ${now} WHERE id = ${cid}`;
-        res.writeHead(200);
-        res.end(JSON.stringify({ success: true, id: cid }));
-        return;
+
+        try {
+          if (!tid || tid === 'tenant-admin-system') {
+            await sql`UPDATE categories SET deleted_at = ${now}, updated_at = ${now} WHERE id = ${cid}`;
+            await sql`UPDATE products SET category_id = NULL, category = 'General' WHERE category_id = ${cid}`;
+          } else {
+            const result = await sql`
+              UPDATE categories SET deleted_at = ${now}, updated_at = ${now}
+              WHERE id = ${cid} AND tenant_id = ${tid}
+              RETURNING *;
+            `;
+            if (result.length === 0) {
+              res.writeHead(404);
+              res.end(JSON.stringify({ error: 'Category not found or unauthorized access.' }));
+              return;
+            }
+            await sql`UPDATE products SET category_id = NULL, category = 'General' WHERE category_id = ${cid} AND tenant_id = ${tid}`;
+          }
+          res.writeHead(200);
+          res.end(JSON.stringify({ success: true, message: 'Category deleted successfully.', id: cid }));
+          return;
+        } catch (err) {
+          console.error('[DELETE Category Error]:', err);
+          res.writeHead(500);
+          res.end(JSON.stringify({ error: 'Database error during category deletion.' }));
+          return;
+        }
       }
 
       // 3.2 GET, POST, PUT, DELETE /api/brands
@@ -1881,11 +1918,35 @@ const server = http.createServer(async (req, res) => {
 
       if (pathname.startsWith('/api/brands/') && req.method === 'DELETE') {
         const bid_str = pathname.replace('/api/brands/', '');
+        const tid = req.headers['x-tenant-id'] || tenantId;
         const now = Date.now();
-        await sql`UPDATE brands SET deleted_at = ${now}, updated_at = ${now} WHERE id = ${bid_str}`;
-        res.writeHead(200);
-        res.end(JSON.stringify({ success: true, id: bid_str }));
-        return;
+
+        try {
+          if (!tid || tid === 'tenant-admin-system') {
+            await sql`UPDATE brands SET deleted_at = ${now}, updated_at = ${now} WHERE id = ${bid_str}`;
+            await sql`UPDATE products SET brand_id = NULL, brand = '' WHERE brand_id = ${bid_str}`;
+          } else {
+            const result = await sql`
+              UPDATE brands SET deleted_at = ${now}, updated_at = ${now}
+              WHERE id = ${bid_str} AND tenant_id = ${tid}
+              RETURNING *;
+            `;
+            if (result.length === 0) {
+              res.writeHead(404);
+              res.end(JSON.stringify({ error: 'Brand not found or unauthorized access.' }));
+              return;
+            }
+            await sql`UPDATE products SET brand_id = NULL, brand = '' WHERE brand_id = ${bid_str} AND tenant_id = ${tid}`;
+          }
+          res.writeHead(200);
+          res.end(JSON.stringify({ success: true, message: 'Brand deleted successfully.', id: bid_str }));
+          return;
+        } catch (err) {
+          console.error('[DELETE Brand Error]:', err);
+          res.writeHead(500);
+          res.end(JSON.stringify({ error: 'Database error during brand deletion.' }));
+          return;
+        }
       }
 
       // 4. GET /api/userBranchRoles

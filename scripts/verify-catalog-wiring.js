@@ -27,7 +27,7 @@ const client = new pg.Client({ connectionString });
 
 async function runCatalogVerification() {
   console.log('======================================================');
-  console.log('🧪 VERIFYING CATALOG MANAGER & INVENTORY WIRING');
+  console.log('🧪 VERIFYING CATALOG MANAGER & SAFE DELETION WIRING');
   console.log('======================================================');
 
   try {
@@ -35,7 +35,7 @@ async function runCatalogVerification() {
 
     // 1. Verify connection
     const dbRes = await client.query('SELECT current_database()');
-    console.log(`✅ [1/5] Connected to Database: ${dbRes.rows[0].current_database}`);
+    console.log(`✅ [1/6] Connected to Database: ${dbRes.rows[0].current_database}`);
 
     // 2. Fetch or seed test tenant
     let tenantRes = await client.query('SELECT id, name FROM tenants LIMIT 1');
@@ -44,7 +44,7 @@ async function runCatalogVerification() {
       tenantRes = { rows: [{ id: 'tenant-test-wiring', name: 'Test Business' }] };
     }
     const testTenantId = tenantRes.rows[0].id;
-    console.log(`✅ [2/5] Using Tenant Context: ${tenantRes.rows[0].name} (${testTenantId})`);
+    console.log(`✅ [2/6] Using Tenant Context: ${tenantRes.rows[0].name} (${testTenantId})`);
 
     // 3. Test Category CRUD & industry_type column
     const testCatId = `cat-test-${Date.now()}`;
@@ -59,7 +59,7 @@ async function runCatalogVerification() {
     if (!insertedCat || insertedCat.industry_type !== 'pharmacy') {
       throw new Error(`Category insertion verification failed: ${JSON.stringify(insertedCat)}`);
     }
-    console.log(`✅ [3/5] Category Created & Verified: "${insertedCat.name}" (Industry: ${insertedCat.industry_type})`);
+    console.log(`✅ [3/6] Category Created & Verified: "${insertedCat.name}" (Industry: ${insertedCat.industry_type})`);
 
     // 4. Test Brand CRUD & description_corporate_line column
     const testBrandId = `brand-test-${Date.now()}`;
@@ -74,36 +74,45 @@ async function runCatalogVerification() {
     if (!insertedBrand || insertedBrand.description_corporate_line !== 'Official Corporate Line') {
       throw new Error(`Brand insertion verification failed: ${JSON.stringify(insertedBrand)}`);
     }
-    console.log(`✅ [4/5] Brand Created & Verified: "${insertedBrand.name}" (Corporate Line: ${insertedBrand.description_corporate_line})`);
+    console.log(`✅ [4/6] Brand Created & Verified: "${insertedBrand.name}" (Corporate Line: ${insertedBrand.description_corporate_line})`);
 
     // 5. Test Product Relational Wiring (category_id, brand_id FK resolution)
     const testProdId = `prod-test-${Date.now()}`;
     await client.query(
-      `INSERT INTO products (id, tenant_id, name, category, category_id, brand, sku, price, stock, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-      [testProdId, testTenantId, 'Test Product With Taxonomy', testCatName, testCatId, testBrandName, 'TEST-SKU-001', 5000, 10, Date.now(), Date.now()]
+      `INSERT INTO products (id, tenant_id, name, category, category_id, brand, brand_id, sku, price, stock, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+      [testProdId, testTenantId, 'Test Product With Taxonomy', testCatName, testCatId, testBrandName, testBrandId, 'TEST-SKU-001', 5000, 10, Date.now(), Date.now()]
     );
     const prodRes = await client.query(`
-      SELECT p.id, p.name, p.category, p.category_id, p.brand, c.name as category_rel_name, b.name as brand_rel_name
+      SELECT p.id, p.name, p.category, p.category_id, p.brand, p.brand_id, c.name as category_rel_name, b.name as brand_rel_name
       FROM products p
       LEFT JOIN categories c ON p.category_id = c.id
-      LEFT JOIN brands b ON p.brand = b.name
+      LEFT JOIN brands b ON p.brand_id = b.id
       WHERE p.id = $1
     `, [testProdId]);
     const insertedProd = prodRes.rows[0];
-    console.log(`✅ [5/5] Product Taxonomy Wiring Verified:`);
+    console.log(`✅ [5/6] Product Taxonomy Wiring Verified:`);
     console.log(`   - Product: "${insertedProd.name}" (${insertedProd.id})`);
     console.log(`   - Category FK: "${insertedProd.category_id}" -> Rel Category: "${insertedProd.category_rel_name}"`);
-    console.log(`   - Brand Field: "${insertedProd.brand}" -> Rel Brand: "${insertedProd.brand_rel_name}"`);
+    console.log(`   - Brand FK: "${insertedProd.brand_id}" -> Rel Brand: "${insertedProd.brand_rel_name}"`);
 
-    // Cleanup test fixtures
-    await client.query('DELETE FROM products WHERE id = $1', [testProdId]);
+    // 6. Test Safe Deletion (ON DELETE SET NULL without Foreign Key Violation)
     await client.query('DELETE FROM categories WHERE id = $1', [testCatId]);
     await client.query('DELETE FROM brands WHERE id = $1', [testBrandId]);
+
+    const afterDelProd = (await client.query('SELECT category_id, brand_id FROM products WHERE id = $1', [testProdId])).rows[0];
+    if (afterDelProd.category_id !== null || afterDelProd.brand_id !== null) {
+      throw new Error(`Expected category_id and brand_id to be NULL after category/brand deletion, got: ${JSON.stringify(afterDelProd)}`);
+    }
+    console.log(`✅ [6/6] Safe Deletion (ON DELETE SET NULL) Verified!`);
+    console.log(`   - Product after taxonomy deletion: category_id=${afterDelProd.category_id}, brand_id=${afterDelProd.brand_id} (0 errors)`);
+
+    // Cleanup test product
+    await client.query('DELETE FROM products WHERE id = $1', [testProdId]);
     console.log(`\n🧹 Cleaned up test fixtures.`);
 
     console.log('\n======================================================');
-    console.log('🎉 ALL CATALOG MANAGER & TAXONOMY WIRING CHECKS PASSED!');
+    console.log('🎉 ALL SAFE DELETION & TAXONOMY WIRING CHECKS PASSED!');
     console.log('======================================================\n');
   } catch (err) {
     console.error('❌ Verification failed:', err);
