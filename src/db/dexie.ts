@@ -1553,6 +1553,8 @@ export interface Category {
   name: string;
   description?: string;
   parent_id?: string;
+  branch_id?: string | null;
+  industry_type?: string;
   default_tax_rate?: string;
   target_margin_pct?: number;
   module?: string;
@@ -1568,6 +1570,8 @@ export interface Brand {
   id: string;
   name: string;
   description?: string;
+  description_corporate_line?: string;
+  branch_id?: string | null;
   logo_url?: string;
   website?: string;
   is_active?: boolean;

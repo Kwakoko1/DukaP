@@ -180,6 +180,7 @@ export const Sidebar: React.FC<SidebarProps> = () => {
             subItems: [
               'Inventory Overview',
               'Products',
+              'Categories & Brands',
               'Stock Adjustment',
               'Stock Transfer',
               'Stock Alerts',

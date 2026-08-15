@@ -26,6 +26,7 @@ import {
 } from '../../services/inventoryService';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { SyncDashboard } from './SyncDashboard';
+import { CatalogManager } from './CatalogManager';
 import { DEFAULT_SECURITY_CONFIG, type SecurityConfig } from '../../services/settingsService';
 import { Dialog, Badge, Input, Button } from '../UI/custom-ui';
 import {
@@ -47,7 +48,7 @@ export function generateAutoSku(name?: string, category?: string, idOrSeed?: str
 }
 
 // ─── Types ─────────────────────────────────────────────────────────────────
-type InventoryTab = 'dashboard' | 'products' | 'stockSync' | 'ledger' | 'adjustments' | 'transfers' | 'alerts' | 'count' | 'reports' | 'recipes' | 'wastage';
+type InventoryTab = 'dashboard' | 'products' | 'categories' | 'stockSync' | 'ledger' | 'adjustments' | 'transfers' | 'alerts' | 'count' | 'reports' | 'recipes' | 'wastage';
 export type ProductTab = 'general' | 'pricing' | 'inventory' | 'variants' | 'images' | 'suppliers' | 'batch' | 'serials' | 'reorder' | 'history';
 type ReportType = 'balance' | 'movements' | 'valuation' | 'batch' | 'expiry' | 'reorder' | 'slow' | 'negative';
 
@@ -126,8 +127,10 @@ export const Inventory: React.FC = () => {
   useEffect(() => {
     if (!activeTab) return;
     const norm = activeTab.toLowerCase().trim();
-    if (norm === 'products' || norm === 'medicines' || norm === 'stock register' || norm.includes('categor') || norm.includes('brand')) {
+    if (norm === 'products' || norm === 'medicines' || norm === 'stock register') {
       setInvTab('products');
+    } else if (norm.includes('categor') || norm.includes('brand')) {
+      setInvTab('categories');
     } else if (norm.includes('bundle') || norm.includes('kit') || norm.includes('recipe')) {
       setInvTab('recipes' as any);
     } else if (norm.includes('adjustment')) {
@@ -5413,6 +5416,7 @@ export const Inventory: React.FC = () => {
   const TOP_TABS: { id: InventoryTab; label: string; icon: React.ReactNode; badge?: number }[] = [
     { id: 'dashboard',   label: 'Inventory Overview',  icon: <BarChart3 size={15}/> },
     { id: 'products',    label: 'Products',            icon: <Package size={15}/>, badge: stats.total },
+    { id: 'categories',  label: 'Categories & Brands', icon: <Tag size={15}/> },
     { id: 'adjustments', label: 'Adjustments',         icon: <Sliders size={15}/> },
     { id: 'transfers',   label: 'Transfers',           icon: <ArrowLeftRight size={15}/>, badge: kpis?.pendingTransfers },
     { id: 'alerts',      label: 'Stock Alerts',        icon: <AlertTriangle size={15}/>, badge: kpis?.lowStockCount },
@@ -5445,6 +5449,7 @@ export const Inventory: React.FC = () => {
       <div className="inv-tab-body">
         {invTab === 'dashboard'   && renderDashboardTab()}
         {invTab === 'products'    && renderProductsTab()}
+        {invTab === 'categories'  && <CatalogManager onOpenProductEditor={openEditor} />}
         {invTab === 'stockSync'   && renderStockSyncTab()}
         {invTab === 'ledger'      && renderLedgerTab()}
         {invTab === 'adjustments' && renderAdjustmentsTab()}

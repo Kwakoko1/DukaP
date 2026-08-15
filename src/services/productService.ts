@@ -866,6 +866,8 @@ export async function createCategory(
     id: typeof input !== 'string' && input.id ? input.id : `cat-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
     name: trimmedName,
     tenant_id: tid,
+    branch_id: typeof input !== 'string' ? (input.branch_id || _branchId || null) : (_branchId || null),
+    industry_type: typeof input !== 'string' ? input.industry_type : undefined,
     description: typeof input !== 'string' ? input.description : undefined,
     created_at: Date.now(),
   };
@@ -1035,7 +1037,9 @@ export async function createBrand(
     id: typeof input !== 'string' && input.id ? input.id : `brand-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
     name: trimmedName,
     tenant_id: tid,
+    branch_id: typeof input !== 'string' ? (input.branch_id || null) : null,
     description: typeof input !== 'string' ? input.description : undefined,
+    description_corporate_line: typeof input !== 'string' ? (input.description_corporate_line || input.description) : undefined,
     created_at: Date.now(),
   };
   await db.brands.put(brand);
