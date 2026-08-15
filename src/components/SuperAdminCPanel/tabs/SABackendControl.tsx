@@ -20,6 +20,7 @@ import {
   type StorageDiagnostics,
   CURRENT_PWA_BUILD_VER
 } from '../../../services/pwaRehydrationService';
+import { PWADiagnostic } from '../../PWA/PWADiagnostic';
 import { useToast } from '../../UI/Toast';
 
 type BackendSubTab = 'sql-studio' | 'db-explorer' | 'telemetry' | 'logs-audit' | 'maintenance' | 'pwa-diagnostics';
@@ -1345,6 +1346,11 @@ export const SABackendControl: React.FC = () => {
                 )}
               </div>
             </div>
+          </div>
+
+          {/* Interactive PWA Diagnostics Component Widget */}
+          <div className="pt-4 border-t border-white/10">
+            <PWADiagnostic />
           </div>
         </div>
       )}
