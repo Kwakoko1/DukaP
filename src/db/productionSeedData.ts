@@ -17,11 +17,11 @@ export const PRODUCTION_SEED_DATA = {
   users: [
     {
       id: 'usr-superadmin',
-      email: 'admin@dukapos.com',
-      password_hash: 'admin123',
+      email: 'admin@kwakoko.co.tz',
+      password_hash: 'Kwakoko@2026&$',
       is_super_admin: true,
       name: 'System Platform Owner',
-      phone: '+255799999999',
+      phone: '+255713296319',
       tenant_id: 'tenant-admin-system',
       role: 'Super Admin',
       status: 'Active'
@@ -31,7 +31,7 @@ export const PRODUCTION_SEED_DATA = {
   userSecurity: [
     {
       user_id: 'usr-superadmin',
-      pin_hash: '0000',
+      pin_hash: '1911',
       failed_attempts: 0,
       two_factor_enabled: false
     }

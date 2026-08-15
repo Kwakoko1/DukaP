@@ -3432,7 +3432,7 @@ export async function initProductionDatabase() {
       // Seed Super Admin UserSecurity (if empty)
       const secCount = await db.userSecurity.count();
       if (secCount === 0) {
-        await db.userSecurity.put({ user_id: 'usr-superadmin', pin_hash: '0000', failed_attempts: 0, two_factor_enabled: false });
+        await db.userSecurity.put({ user_id: 'usr-superadmin', pin_hash: '1911', failed_attempts: 0, two_factor_enabled: false });
       }
       console.log('[DukaPos] System security & RBAC permissions initialized.');
     }
@@ -3570,11 +3570,11 @@ export async function initProductionDatabase() {
       await db.users.bulkPut([
         {
           id: 'usr-superadmin',
-          email: 'admin@dukapos.com',
-          password_hash: 'admin123',
+          email: 'admin@kwakoko.co.tz',
+          password_hash: 'Kwakoko@2026&$',
           is_super_admin: true,
           name: 'System Platform Owner',
-          phone: '+255799999999',
+          phone: '+255713296319',
           tenant_id: 'tenant-admin-system'
         }
       ]);

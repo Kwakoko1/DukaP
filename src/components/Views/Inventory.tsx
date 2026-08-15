@@ -1041,7 +1041,7 @@ export const Inventory: React.FC = () => {
 
   const handleVerifyPin = (e: React.FormEvent) => {
     e.preventDefault();
-    if (enteredPin === '1234' || enteredPin === 'admin123') {
+    if (enteredPin === '1234' || enteredPin === '1911') {
       setIsPinModalOpen(false);
       if (pinSuccessCallback) pinSuccessCallback();
     } else {

@@ -7,6 +7,7 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { AlertTriangle, RefreshCw, Shield, Home } from 'lucide-react';
 import { monitoringService } from '../../services/monitoringService';
+import { isChunkLoadError } from '../../utils/safeLazy';
 
 interface Props {
   children: ReactNode;
@@ -34,9 +35,27 @@ export class ProductionErrorBoundary extends Component<Props, State> {
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     monitoringService.recordFailedRequest();
     console.error(`[ProductionErrorBoundary] Unhandled UI Exception caught. Correlation ID: ${this.state.errorId}`, error, errorInfo);
+
+    if (isChunkLoadError(error) && typeof window !== 'undefined') {
+      const attempts = parseInt(sessionStorage.getItem('dukapos_chunk_reload_attempts') || '0', 10);
+      if (attempts < 2) {
+        sessionStorage.setItem('dukapos_chunk_reload_attempts', String(attempts + 1));
+        console.info('[ProductionErrorBoundary] Auto-healing dynamic module import failure via page reload...');
+        if ('caches' in window) {
+          caches.keys().then(keys => keys.forEach(k => caches.delete(k))).catch(() => {});
+        }
+        window.location.reload();
+      }
+    }
   }
 
   private handleReload = () => {
+    if (typeof window !== 'undefined') {
+      sessionStorage.removeItem('dukapos_chunk_reload_attempts');
+      if ('caches' in window) {
+        caches.keys().then(keys => keys.forEach(k => caches.delete(k))).catch(() => {});
+      }
+    }
     window.location.reload();
   };
 

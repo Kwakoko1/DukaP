@@ -6,6 +6,24 @@ import { ErrorBoundary } from './components/UI/ErrorBoundary';
 import { initPWAUpdateService } from './services/pwaUpdateService';
 import { initProductionDatabase } from './db/dexie';
 import { autoHealDexieSchemaMismatch } from './utils/dbMigrationRecovery';
+import { isChunkLoadError } from './utils/safeLazy';
+
+// Global resilience handler for dynamic module script chunk loading failures
+if (typeof window !== 'undefined') {
+  window.addEventListener('unhandledrejection', (event) => {
+    if (isChunkLoadError(event.reason)) {
+      console.warn('[Global] Dynamic module script load failure caught in unhandledrejection:', event.reason);
+      const attempts = parseInt(sessionStorage.getItem('dukapos_chunk_reload_attempts') || '0', 10);
+      if (attempts < 2) {
+        sessionStorage.setItem('dukapos_chunk_reload_attempts', String(attempts + 1));
+        if ('caches' in window) {
+          caches.keys().then(keys => keys.forEach(k => caches.delete(k))).catch(() => {});
+        }
+        window.location.reload();
+      }
+    }
+  });
+}
 
 // Initialize Enterprise PWA Update Manager
 initPWAUpdateService();

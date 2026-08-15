@@ -141,7 +141,7 @@ class BarOperationsService {
     passcode: string
   ): Promise<boolean> {
     // Audit log can be created for tracking
-    const isAuthorized = passcode === 'manager123' || passcode === 'admin123';
+    const isAuthorized = passcode === 'manager123' || passcode === '1911';
     return isAuthorized;
   }
 }

@@ -592,7 +592,7 @@ export const Receipts: React.FC<ReceiptsProps> = ({ initialTab = 'history' }) =>
 
     if (!isOwnerOrManager) {
       const pin = window.prompt(`Manager PIN Authorization required to void Receipt #${receipt.receipt_number}:`);
-      if (pin === '1234' || pin === 'admin123' || (user as any).pin === pin) {
+      if (pin === '1234' || pin === '1911' || (user as any).pin === pin) {
         await proceedWithCancel(reason.trim());
       } else {
         alert('❌ Unauthorized: Invalid Manager PIN.');

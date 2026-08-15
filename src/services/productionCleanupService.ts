@@ -252,11 +252,11 @@ export const productionCleanupService = {
       // Stage D: Preserve Super Admin & Core Platform Configuration
       const superAdminUser = {
         id: 'usr-superadmin',
-        email: 'admin@dukapos.com',
-        password_hash: 'admin123',
+        email: 'admin@kwakoko.co.tz',
+        password_hash: 'Kwakoko@2026&$',
         is_super_admin: true,
         name: 'System Platform Owner',
-        phone: '+255799999999',
+        phone: '+255713296319',
         tenant_id: 'tenant-admin-system'
       };
 
@@ -420,7 +420,7 @@ export const productionCleanupService = {
       };
 
       const preservedItems = [
-        'Super Admin Account (admin@dukapos.com / usr-superadmin)',
+        'Super Admin Account (admin@kwakoko.co.tz / usr-superadmin)',
         'Core SaaS Subscription Plans (Trial, Starter, Business, Enterprise)',
         'Industry Preset Catalog (Retail, Pharmacy, Restaurant, SACCO, Bar, BusinessConsultant)',
         'Role Definitions & Security Permission Schemes',

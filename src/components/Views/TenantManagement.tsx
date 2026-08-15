@@ -526,7 +526,7 @@ export const TenantManagement: React.FC = () => {
     const adminContext = {
       id: user?.id || 'usr-superadmin',
       name: user?.name || 'System Platform Owner',
-      email: user?.email || 'admin@dukapos.com',
+      email: user?.email || 'admin@kwakoko.co.tz',
       role: 'Super Admin' as const
     };
 
@@ -672,7 +672,7 @@ export const TenantManagement: React.FC = () => {
     const adminContext = {
       id: user?.id || 'usr-superadmin',
       name: user?.name || 'System Platform Owner',
-      email: user?.email || 'admin@dukapos.com',
+      email: user?.email || 'admin@kwakoko.co.tz',
       role: 'Super Admin' as const
     };
 
@@ -702,7 +702,7 @@ export const TenantManagement: React.FC = () => {
     const adminContext = {
       id: user?.id || 'usr-superadmin',
       name: user?.name || 'System Platform Owner',
-      email: user?.email || 'admin@dukapos.com',
+      email: user?.email || 'admin@kwakoko.co.tz',
       role: 'Super Admin' as const
     };
 
@@ -763,7 +763,7 @@ export const TenantManagement: React.FC = () => {
     const adminContext = {
       id: user?.id || 'usr-superadmin',
       name: user?.name || 'Super Admin Engine',
-      email: user?.email || 'admin@dukapos.com',
+      email: user?.email || 'admin@kwakoko.co.tz',
       role: 'Super Admin' as const,
       ipAddress: getSyncRealClientIp()
     };

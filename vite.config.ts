@@ -71,13 +71,13 @@ function ensureDbSeeded() {
         isProductionLocked: true,
         cleanedAt: Date.now(),
         tenants: [], branches: [], users: [
-          { id: 'usr-superadmin', email: 'admin@dukapos.com', password_hash: 'admin123',
-            is_super_admin: true, name: 'System Platform Owner', phone: '+255799999999',
+          { id: 'usr-superadmin', email: 'admin@kwakoko.co.tz', password_hash: 'Kwakoko@2026&$',
+            is_super_admin: true, name: 'System Platform Owner', phone: '+255713296319',
             tenant_id: 'tenant-admin-system', role: 'Super Admin', status: 'Active' }
         ],
         products: [], variants: [], orders: [], stockLedger: [], customers: [],
         userBranchRoles: [], tenantModules: [], tenantSettings: [], featureFlags: [],
-        userSecurity: [{ user_id: 'usr-superadmin', pin_hash: '0000', failed_attempts: 0, two_factor_enabled: false }],
+        userSecurity: [{ user_id: 'usr-superadmin', pin_hash: '1911', failed_attempts: 0, two_factor_enabled: false }],
         subscriptionPlans: [], subscriptions: [], auditLogs: []
       }
       fs.writeFileSync(dbPath, JSON.stringify(fallback, null, 2), 'utf-8')
@@ -346,7 +346,7 @@ export default defineConfig({
                 tenants: [],
                 branches: [],
                 users: [
-                  { id: 'usr-superadmin', email: 'admin@dukapos.com', password_hash: 'admin123', is_super_admin: true, name: 'System Platform Owner', phone: '+255799999999', tenant_id: 'tenant-admin-system', created_at: NOW_CLEAN }
+                  { id: 'usr-superadmin', email: 'admin@kwakoko.co.tz', password_hash: 'Kwakoko@2026&$', is_super_admin: true, name: 'System Platform Owner', phone: '+255713296319', tenant_id: 'tenant-admin-system', created_at: NOW_CLEAN }
                 ],
                 userBranchRoles: [],
                 tenantModules: [],

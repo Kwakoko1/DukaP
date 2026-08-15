@@ -2,6 +2,7 @@ import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { AlertTriangle, RefreshCw, LogOut } from 'lucide-react';
 
 import { clearActiveSession } from '../../utils/sessionStorage';
+import { isChunkLoadError } from '../../utils/safeLazy';
 
 interface Props {
   children: ReactNode;
@@ -28,20 +29,14 @@ export class ErrorBoundary extends Component<Props, State> {
     console.error('[Global ErrorBoundary Caught Exception]:', error, errorInfo);
     this.setState({ errorInfo });
 
-    const isChunkError =
-      error?.name === 'ChunkLoadError' ||
-      (error?.message && (
-        error.message.includes('Failed to fetch dynamically imported module') ||
-        error.message.includes('Importing a module script failed') ||
-        error.message.includes('error loading chunk') ||
-        error.message.includes('Loading chunk')
-      ));
-
-    if (isChunkError && typeof window !== 'undefined') {
+    if (isChunkLoadError(error) && typeof window !== 'undefined') {
       const attempts = parseInt(sessionStorage.getItem('dukapos_chunk_reload_attempts') || '0', 10);
       if (attempts < 2) {
         sessionStorage.setItem('dukapos_chunk_reload_attempts', String(attempts + 1));
         console.info('[ErrorBoundary] Auto-healing dynamic module import failure via page reload...');
+        if ('caches' in window) {
+          caches.keys().then(keys => keys.forEach(k => caches.delete(k))).catch(() => {});
+        }
         window.location.reload();
       }
     }
@@ -50,6 +45,9 @@ export class ErrorBoundary extends Component<Props, State> {
   private handleReload = () => {
     if (typeof window !== 'undefined') {
       sessionStorage.removeItem('dukapos_chunk_reload_attempts');
+      if ('caches' in window) {
+        caches.keys().then(keys => keys.forEach(k => caches.delete(k))).catch(() => {});
+      }
     }
     window.location.reload();
   };

@@ -626,7 +626,7 @@ export const POS: React.FC = () => {
 
   const handleVerifySupervisor = (e: React.FormEvent) => {
     e.preventDefault();
-    if (supervisorPin === '1234' || supervisorPin === 'admin123') {
+    if (supervisorPin === '1234' || supervisorPin === '1911') {
       setIsSupervisorModalOpen(false);
       if (supervisorSuccessCallback) supervisorSuccessCallback();
     } else {

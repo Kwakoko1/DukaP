@@ -299,7 +299,7 @@ export const ProductionReadinessControl: React.FC = () => {
               <AlertTriangle className="w-4 h-4 text-rose-500" /> Irreversible Production Action
             </div>
             <p className="text-[11px] leading-relaxed">
-              This action will delete all test business records, products, inventory movements, transactions, and user accounts. Only the Super Admin account (<strong className="font-mono">admin@dukapos.com</strong>) and core SaaS infrastructure will be preserved.
+              This action will delete all test business records, products, inventory movements, transactions, and user accounts. Only the Super Admin account (<strong className="font-mono">admin@kwakoko.co.tz</strong>) and core SaaS infrastructure will be preserved.
             </p>
           </div>
 
