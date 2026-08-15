@@ -95,6 +95,11 @@ export interface MaintenanceReport {
   orphanVariants?: number;
   orphanCategories?: number;
   orphanBrands?: number;
+  totalPurged?: number;
+  purgedProducts?: number;
+  purgedVariants?: number;
+  purgedCategories?: number;
+  purgedBrands?: number;
   healthy?: boolean;
 }
 
@@ -179,7 +184,7 @@ export const SuperAdminBackendService = {
   },
 
   /**
-   * Fetch live system and security audit logs
+   * Fetch live system logs
    */
   async getSystemLogs(level: string = 'ALL', limit: number = 100): Promise<{ success: boolean; logs?: SystemLogEntry[]; error?: string }> {
     try {
@@ -192,9 +197,9 @@ export const SuperAdminBackendService = {
   },
 
   /**
-   * Run maintenance operations (VACUUM, ANALYZE, REINDEX, AUDIT_INTEGRITY)
+   * Run maintenance operations (VACUUM, ANALYZE, REINDEX, AUDIT_INTEGRITY, PURGE_ORPHANS)
    */
-  async runMaintenance(action: 'VACUUM' | 'ANALYZE' | 'REINDEX' | 'AUDIT_INTEGRITY', table?: string): Promise<{ success: boolean; report?: MaintenanceReport; error?: string }> {
+  async runMaintenance(action: 'VACUUM' | 'ANALYZE' | 'REINDEX' | 'AUDIT_INTEGRITY' | 'PURGE_ORPHANS', table?: string): Promise<{ success: boolean; report?: MaintenanceReport; error?: string }> {
     try {
       const response = await fetch('/api/admin/system/maintenance', {
         method: 'POST',

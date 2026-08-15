@@ -302,7 +302,7 @@ export const SABackendControl: React.FC = () => {
   };
 
   // ── Maintenance Actions ──
-  const handleRunMaintenance = async (action: 'VACUUM' | 'ANALYZE' | 'REINDEX' | 'AUDIT_INTEGRITY', table?: string) => {
+  const handleRunMaintenance = async (action: 'VACUUM' | 'ANALYZE' | 'REINDEX' | 'AUDIT_INTEGRITY' | 'PURGE_ORPHANS', table?: string) => {
     setMaintenanceRunning(action);
     const res = await SuperAdminBackendService.runMaintenance(action, table);
     setMaintenanceRunning(null);
@@ -1159,7 +1159,7 @@ export const SABackendControl: React.FC = () => {
                   <ShieldAlert className="h-5 w-5" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold text-white">Integrity & Orphan Scan</h3>
+                  <h3 className="text-sm font-bold text-white">Integrity &amp; Orphan Scan</h3>
                   <p className="text-xs text-slate-400 mt-0.5">Scans all 13 tables for orphaned records violating tenant foreign key isolation</p>
                 </div>
               </div>
@@ -1171,24 +1171,63 @@ export const SABackendControl: React.FC = () => {
                 {maintenanceRunning === 'AUDIT_INTEGRITY' ? 'Scanning Schema...' : 'Run Foreign Key Integrity Scan'}
               </button>
             </div>
+
+            {/* Card 5: PURGE ORPHANS */}
+            <div className="p-5 rounded-2xl bg-slate-900 border border-rose-500/20 space-y-3">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-rose-500/20 text-rose-400 border border-rose-500/30">
+                  <Trash2 className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">Purge Orphan Records</h3>
+                  <p className="text-xs text-slate-400 mt-0.5">Permanently removes unlinked products, variants, and categories across all deleted tenants</p>
+                </div>
+              </div>
+              <button
+                onClick={() => handleRunMaintenance('PURGE_ORPHANS')}
+                disabled={maintenanceRunning !== null}
+                className="w-full py-2 px-4 rounded-xl bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white font-bold text-xs shadow-lg shadow-rose-600/20 transition disabled:opacity-50"
+              >
+                {maintenanceRunning === 'PURGE_ORPHANS' ? 'Purging Orphans...' : 'Execute 1-Click Orphan Purge'}
+              </button>
+            </div>
           </div>
 
           {/* Maintenance Output Log */}
           {maintenanceReports.length > 0 && (
             <div className="rounded-2xl border border-white/8 bg-slate-900/80 p-5 space-y-3">
-              <h3 className="text-xs font-black text-white uppercase tracking-wider">Operation Reports</h3>
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-black text-white uppercase tracking-wider">Operation Reports</h3>
+                {maintenanceReports.some(r => r.healthy === false) && (
+                  <button
+                    onClick={() => handleRunMaintenance('PURGE_ORPHANS')}
+                    disabled={maintenanceRunning !== null}
+                    className="flex items-center gap-1 px-3 py-1 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-xs font-bold transition shadow-md shadow-rose-600/30"
+                  >
+                    <Trash2 className="h-3 w-3" /> Purge All Detected Orphans
+                  </button>
+                )}
+              </div>
+
               <div className="space-y-2">
                 {maintenanceReports.map((report, idx) => (
-                  <div key={idx} className="p-3 rounded-xl bg-slate-950 border border-white/5 text-xs flex items-center justify-between">
+                  <div key={idx} className="p-3 rounded-xl bg-slate-950 border border-white/5 text-xs flex items-center justify-between flex-wrap gap-2">
                     <div className="flex items-center gap-2">
-                      <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+                      <CheckCircle2 className={`h-4 w-4 shrink-0 ${report.healthy === false ? 'text-amber-400' : 'text-emerald-400'}`} />
                       <div>
                         <span className="font-bold text-white font-mono">{report.action}</span>
                         {report.scope && <span className="text-slate-400 ml-2">Scope: {report.scope}</span>}
                         {report.table && <span className="text-slate-400 ml-2">Table: {report.table}</span>}
+                        {report.totalPurged !== undefined && (
+                          <span className="ml-2 font-bold text-emerald-400">
+                            • Purged {report.totalPurged} orphan records (Products: {report.purgedProducts || 0}, Variants: {report.purgedVariants || 0}, Categories: {report.purgedCategories || 0}, Brands: {report.purgedBrands || 0})
+                          </span>
+                        )}
                         {report.healthy !== undefined && (
                           <span className={`ml-2 font-bold ${report.healthy ? 'text-emerald-400' : 'text-rose-400'}`}>
-                            {report.healthy ? '• All 13 tables 100% healthy' : '• Orphan records detected'}
+                            {report.healthy 
+                              ? '• All tables 100% healthy (0 orphans)' 
+                              : `• Orphan records detected: Products: ${report.orphanProducts || 0}, Variants: ${report.orphanVariants || 0}, Categories: ${report.orphanCategories || 0}, Brands: ${report.orphanBrands || 0}`}
                           </span>
                         )}
                       </div>

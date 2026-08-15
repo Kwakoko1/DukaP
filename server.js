@@ -3131,6 +3131,25 @@ const server = http.createServer(async (req, res) => {
                 Number(orphanBrands.rows[0]?.count || 0) === 0
               )
             };
+          } else if (action === 'PURGE_ORPHANS') {
+            const [delVariants, delProds, delCats, delBrands, delStock] = await Promise.all([
+              pool.query(`DELETE FROM product_variants WHERE tenant_id NOT IN (SELECT id FROM tenants)`),
+              pool.query(`DELETE FROM products WHERE tenant_id NOT IN (SELECT id FROM tenants)`),
+              pool.query(`DELETE FROM categories WHERE tenant_id NOT IN (SELECT id FROM tenants)`),
+              pool.query(`DELETE FROM brands WHERE tenant_id NOT IN (SELECT id FROM tenants)`),
+              pool.query(`DELETE FROM stock_ledger WHERE tenant_id NOT IN (SELECT id FROM tenants)`)
+            ]);
+            const totalPurged = (delVariants.rowCount || 0) + (delProds.rowCount || 0) + (delCats.rowCount || 0) + (delBrands.rowCount || 0) + (delStock.rowCount || 0);
+            report = {
+              action: 'PURGE_ORPHANS',
+              status: 'Completed',
+              totalPurged,
+              purgedProducts: delProds.rowCount || 0,
+              purgedVariants: delVariants.rowCount || 0,
+              purgedCategories: delCats.rowCount || 0,
+              purgedBrands: delBrands.rowCount || 0,
+              healthy: true
+            };
           } else {
             res.writeHead(400, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ success: false, error: `Unknown action '${action}'` }));
