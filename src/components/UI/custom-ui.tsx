@@ -166,6 +166,7 @@ export const Dialog: React.FC<DialogProps> = ({
   draggable = true,
 }) => {
   const firstFocusableRef = useRef<HTMLButtonElement>(null);
+  const headerRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [isPeeking, setIsPeeking] = useState(false);
@@ -202,72 +203,57 @@ export const Dialog: React.FC<DialogProps> = ({
 
   if (!isOpen) return null;
 
-  const startDrag = (clientX: number, clientY: number, target: HTMLElement) => {
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!draggable) return;
+    const target = e.target as HTMLElement;
     if (target.closest('button, input, select, textarea, a, kbd, [role="button"]')) return;
+
+    // Prevent text selection interference
+    e.preventDefault();
+    
+    // Set pointer capture to guarantee pointermove and pointerup stream to this element
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch (_) {}
 
     setIsDragging(true);
     dragStartRef.current = {
-      startX: clientX,
-      startY: clientY,
+      startX: e.clientX,
+      startY: e.clientY,
       initialX: position.x,
       initialY: position.y,
     };
-
     document.body.style.userSelect = 'none';
+  };
 
-    const handlePointerMove = (moveX: number, moveY: number) => {
-      if (!dragStartRef.current) return;
-      const deltaX = moveX - dragStartRef.current.startX;
-      const deltaY = moveY - dragStartRef.current.startY;
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isDragging || !dragStartRef.current) return;
 
-      const newX = dragStartRef.current.initialX + deltaX;
-      const newY = dragStartRef.current.initialY + deltaY;
+    const deltaX = e.clientX - dragStartRef.current.startX;
+    const deltaY = e.clientY - dragStartRef.current.startY;
 
-      // Soft clamp to viewport to prevent losing modal off-screen
-      const maxClampX = Math.max(100, window.innerWidth * 0.45);
-      const maxClampY = Math.max(100, window.innerHeight * 0.45);
-      const clampedX = Math.max(-maxClampX, Math.min(maxClampX, newX));
-      const clampedY = Math.max(-maxClampY, Math.min(maxClampY, newY));
+    const newX = dragStartRef.current.initialX + deltaX;
+    const newY = dragStartRef.current.initialY + deltaY;
 
-      setPosition({ x: clampedX, y: clampedY });
-    };
+    // Soft clamp to viewport
+    const maxClampX = Math.max(100, window.innerWidth * 0.45);
+    const maxClampY = Math.max(100, window.innerHeight * 0.45);
+    const clampedX = Math.max(-maxClampX, Math.min(maxClampX, newX));
+    const clampedY = Math.max(-maxClampY, Math.min(maxClampY, newY));
 
-    const handleMouseMove = (moveEvent: MouseEvent) => {
-      handlePointerMove(moveEvent.clientX, moveEvent.clientY);
-    };
+    setPosition({ x: clampedX, y: clampedY });
+  };
 
-    const handleTouchMove = (touchEvent: TouchEvent) => {
-      if (touchEvent.touches.length > 0) {
-        handlePointerMove(touchEvent.touches[0].clientX, touchEvent.touches[0].clientY);
-      }
-    };
-
-    const stopDrag = () => {
+  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (isDragging) {
       setIsDragging(false);
       dragStartRef.current = null;
       document.body.style.userSelect = '';
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', stopDrag);
-      window.removeEventListener('touchmove', handleTouchMove);
-      window.removeEventListener('touchend', stopDrag);
-      window.removeEventListener('touchcancel', stopDrag);
-    };
-
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', stopDrag);
-    window.addEventListener('touchmove', handleTouchMove, { passive: true });
-    window.addEventListener('touchend', stopDrag);
-    window.addEventListener('touchcancel', stopDrag);
-  };
-
-  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-    startDrag(e.clientX, e.clientY, e.target as HTMLElement);
-  };
-
-  const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
-    if (e.touches.length > 0) {
-      startDrag(e.touches[0].clientX, e.touches[0].clientY, e.target as HTMLElement);
+      try {
+        if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+          e.currentTarget.releasePointerCapture(e.pointerId);
+        }
+      } catch (_) {}
     }
   };
 
@@ -298,48 +284,51 @@ export const Dialog: React.FC<DialogProps> = ({
       <div
         style={
           position.x !== 0 || position.y !== 0
-            ? { transform: `translate(${position.x}px, ${position.y}px)` }
+            ? { transform: `translate3d(${position.x}px, ${position.y}px, 0)` }
             : undefined
         }
         className={`relative flex flex-col w-full ${sizes[size]} max-h-[calc(100vh-32px)] rounded-2xl bg-white dark:bg-darkbg-card border border-slate-200 dark:border-darkbg-border shadow-2xl z-10 animate-scale-in overflow-hidden transition-opacity duration-150 ${
           isPeeking
             ? 'opacity-20 select-none'
             : isDragging
-            ? 'opacity-95 shadow-indigo-500/40 ring-2 ring-indigo-500/30'
+            ? 'opacity-95 shadow-indigo-500/40 ring-2 ring-indigo-500/40 scale-[1.002]'
             : ''
         }`}
       >
         {/* ── Sticky Header (Draggable Handle) ── */}
         <div
-          className={`flex-none border-b border-slate-100 dark:border-darkbg-border/40 bg-slate-50/70 dark:bg-darkbg/70 ${
+          ref={headerRef}
+          className={`flex-none border-b border-slate-100 dark:border-darkbg-border/40 bg-slate-50/90 dark:bg-darkbg/90 touch-none ${
             draggable ? 'cursor-grab active:cursor-grabbing select-none' : ''
           }`}
-          onMouseDown={handleMouseDown}
-          onTouchStart={handleTouchStart}
-          title={draggable ? 'Click & drag header to move modal' : undefined}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
+          title={draggable ? 'Click & drag header to move modal window' : undefined}
         >
           {/* Top Visual Drag Handle Bar */}
           {draggable && (
-            <div className="flex justify-center pt-2 pb-0">
-              <div className="w-12 h-1 bg-slate-300 dark:bg-slate-700 rounded-full opacity-60 hover:opacity-100 transition-opacity" />
+            <div className="flex justify-center pt-2 pb-0 cursor-grab active:cursor-grabbing">
+              <div className="w-16 h-1.5 bg-slate-300 dark:bg-slate-600 rounded-full opacity-70 hover:opacity-100 transition-opacity" />
             </div>
           )}
 
-          <div className="px-5 pt-2 pb-2.5 flex items-center justify-between">
-            <div className="flex items-center gap-2 min-w-0">
+          <div className="px-5 pt-1.5 pb-2.5 flex items-center justify-between">
+            <div className="flex items-center gap-2 min-w-0 pointer-events-none">
               {draggable && (
-                <GripHorizontal size={14} className="text-slate-400 dark:text-slate-500 opacity-60 flex-shrink-0" />
+                <GripHorizontal size={16} className="text-indigo-500 dark:text-indigo-400 opacity-80 flex-shrink-0" />
               )}
               <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white truncate">{title}</h3>
             </div>
             
             {/* Header Actions */}
-            <div className="flex items-center gap-1 shrink-0">
+            <div className="flex items-center gap-1 shrink-0 pointer-events-auto">
               {/* Peek Mode Button */}
               <button
                 type="button"
                 onClick={() => setIsPeeking(!isPeeking)}
-                onMouseDown={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
                 className={`rounded-lg p-1.5 transition-colors text-xs flex items-center gap-1 ${
                   isPeeking 
                     ? 'bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300' 
@@ -356,7 +345,7 @@ export const Dialog: React.FC<DialogProps> = ({
                 <button
                   type="button"
                   onClick={() => setPosition({ x: 0, y: 0 })}
-                  onMouseDown={(e) => e.stopPropagation()}
+                  onPointerDown={(e) => e.stopPropagation()}
                   className="rounded-lg p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors text-xs flex items-center gap-1"
                   title="Reset Modal Position to Center"
                 >
@@ -369,7 +358,7 @@ export const Dialog: React.FC<DialogProps> = ({
               <button
                 ref={firstFocusableRef}
                 onClick={onClose}
-                onMouseDown={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
                 className="rounded-lg p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
                 title="Close (Esc)"
               >
@@ -380,10 +369,10 @@ export const Dialog: React.FC<DialogProps> = ({
             </div>
           </div>
           {description && (
-            <p className="px-5 pb-2 text-xs text-slate-500 dark:text-slate-400">{description}</p>
+            <p className="px-5 pb-2 text-xs text-slate-500 dark:text-slate-400 pointer-events-none">{description}</p>
           )}
           {subHeader && (
-            <div className="px-5 pt-1 pb-0 bg-white dark:bg-darkbg-card border-t border-slate-100 dark:border-darkbg-border/40">
+            <div className="px-5 pt-1 pb-0 bg-white dark:bg-darkbg-card border-t border-slate-100 dark:border-darkbg-border/40 pointer-events-auto">
               {subHeader}
             </div>
           )}
