@@ -37,6 +37,9 @@ console.log(`[PostgreSQL Engine] Connection target: ${DATABASE_URL.replace(/:[^:
 const pool = new pg.Pool({
   connectionString: DATABASE_URL,
   ssl: isSSLRequired ? { rejectUnauthorized: false } : false,
+  max: parseInt(process.env.DB_POOL_MAX || '25', 10),
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 8000,
 });
 
 pool.on('error', (err) => {
@@ -55,6 +58,34 @@ async function sql(strings, ...values) {
   }
   const result = await pool.query(queryText, values);
   return result.rows;
+}
+
+// Security Headers Helper
+function applySecurityHeaders(res) {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+}
+
+// In-Memory Rate Limiting Guard for Sensitive Routes
+const rateLimitMap = new Map();
+const RATE_LIMIT_WINDOW_MS = 60 * 1000;
+const MAX_AUTH_ATTEMPTS_PER_MIN = 25;
+
+function checkRateLimit(ip, route = 'auth') {
+  const key = `${ip}:${route}`;
+  const now = Date.now();
+  const entry = rateLimitMap.get(key) || { count: 0, resetAt: now + RATE_LIMIT_WINDOW_MS };
+  
+  if (now > entry.resetAt) {
+    entry.count = 1;
+    entry.resetAt = now + RATE_LIMIT_WINDOW_MS;
+  } else {
+    entry.count += 1;
+  }
+  rateLimitMap.set(key, entry);
+  return entry.count <= MAX_AUTH_ATTEMPTS_PER_MIN;
 }
 
 // In-Memory Bootstrap Snapshot Cache Engine (Redis Fallback)
@@ -1591,9 +1622,16 @@ const server = http.createServer(async (req, res) => {
       }
       // 0.1 POST /api/auth/register — Enterprise Atomic Server-Side Tenant Registration
       if (pathname === '/api/auth/register' && req.method === 'POST') {
+        applySecurityHeaders(res);
+        const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '0.0.0.0';
+        if (!checkRateLimit(clientIp, 'register')) {
+          res.writeHead(429, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, error: 'Too many registration attempts. Please wait 1 minute.' }));
+          return;
+        }
         const payload = await parseRequestBody(req);
         const now = Date.now();
-        const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '0.0.0.0';
+        const ip = clientIp;
         const device = req.headers['user-agent'] || 'Web Client';
 
         const tid = payload.tenantId || `tenant-${now}`;
@@ -1747,6 +1785,13 @@ const server = http.createServer(async (req, res) => {
 
       // 0.2 POST /api/auth/login — Multi-Tenant Cloud Database Authentication & Direct Hydration
       if (pathname === '/api/auth/login' && req.method === 'POST') {
+        applySecurityHeaders(res);
+        const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '0.0.0.0';
+        if (!checkRateLimit(clientIp, 'login')) {
+          res.writeHead(429, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, error: 'Too many login attempts. Please wait 1 minute.' }));
+          return;
+        }
         const payload = await parseRequestBody(req);
         const identifier = (payload.identifier || payload.email || payload.username || '').trim();
         const password = (payload.password || '').trim();
