@@ -975,7 +975,6 @@ const DukaPosAppContent: React.FC = () => {
         </div>
       </Dialog>
       <PWAUpdateBanner />
-      <SyncTelemetryHUD />
     </div>
   );
 };
@@ -988,6 +987,7 @@ function App() {
           <ModuleProvider>
             <SyncProvider>
               <DukaPosAppContent />
+              <SyncTelemetryHUD />
             </SyncProvider>
           </ModuleProvider>
         </AuthProvider>

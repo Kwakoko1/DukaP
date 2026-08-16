@@ -11,12 +11,14 @@
  */
 import React, { useState, useEffect } from 'react';
 import { useSession } from '../../contexts/SessionContext';
+import { useAuth } from '../../context/AuthContext';
 import { syncTelemetryService, type SyncTelemetryMetrics } from '../../services/syncTelemetryService';
 import { Wifi, WifiOff, RefreshCw, ShieldCheck, Clock, Activity, HardDrive } from 'lucide-react';
 import { Dialog, Badge, Button } from './custom-ui';
 
 export const SyncTelemetryHUD: React.FC = () => {
-  const { status, context, isOnline, isOffline } = useSession();
+  const { status, context, isOnline: sessionIsOnline } = useSession();
+  const { user, isSuperAdminView } = useAuth();
   const [metrics, setMetrics] = useState<SyncTelemetryMetrics>(syncTelemetryService.getMetrics());
   const [showDiagnostics, setShowDiagnostics] = useState(false);
 
@@ -28,6 +30,9 @@ export const SyncTelemetryHUD: React.FC = () => {
     return () => unsub();
   }, []);
 
+  const isOnline = sessionIsOnline || metrics.isOnline;
+  const isOffline = !isOnline;
+
   // Format Offline Grace Countdown
   const graceRemainingText = React.useMemo(() => {
     if (!context?.offlineExpiresAt || isOnline) return null;
@@ -37,7 +42,8 @@ export const SyncTelemetryHUD: React.FC = () => {
     return `${hours}h ${mins}m grace left`;
   }, [context?.offlineExpiresAt, isOnline]);
 
-  if (status === 'LOGGED_OUT' || status === 'UNKNOWN') {
+  // Hide only on login screen when there is definitely no active user
+  if (!user && !isSuperAdminView && status === 'LOGGED_OUT') {
     return null;
   }
 
@@ -45,7 +51,7 @@ export const SyncTelemetryHUD: React.FC = () => {
     <>
       <div 
         onClick={() => setShowDiagnostics(true)}
-        className="fixed bottom-16 md:bottom-3 right-4 z-40 flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-900/90 dark:bg-slate-800/90 text-white shadow-xl backdrop-blur-md border border-slate-700/50 text-xs cursor-pointer hover:scale-105 transition-all select-none"
+        className="fixed bottom-16 md:bottom-3 right-4 z-50 flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-900/90 dark:bg-slate-800/90 text-white shadow-2xl backdrop-blur-md border border-slate-700/50 text-xs cursor-pointer hover:scale-105 transition-all select-none"
         title="Click to open Edge Sync & Security Diagnostics"
       >
         {/* Network & Sync Pulse */}
