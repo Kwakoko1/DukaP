@@ -940,14 +940,15 @@ export const UsersRoles: React.FC = () => {
 
           const uRoleLower = ((u as any).role || u.role || '').toLowerCase();
           let targetRoleSlug = 'cashier';
-          if (u.id.includes('owner') || uRoleLower.includes('owner')) targetRoleSlug = 'tenant_owner';
+          if (u.id === 'usr-superadmin' || uRoleLower.includes('super') || (u as any).is_super_admin) targetRoleSlug = 'super_admin';
+          else if (u.id.includes('owner') || uRoleLower.includes('owner')) targetRoleSlug = 'tenant_owner';
           else if (uRoleLower.includes('admin')) targetRoleSlug = 'business_administrator';
           else if (uRoleLower.includes('manager')) targetRoleSlug = 'branch_manager';
           else if (uRoleLower.includes('inventory')) targetRoleSlug = 'inventory_officer';
           else if (uRoleLower.includes('accountant')) targetRoleSlug = 'accountant';
 
           const matchedRoleObj = allRoles.find(r => r.slug === targetRoleSlug || r.name.toLowerCase().includes(targetRoleSlug.replace('_', ' ')));
-          const assignedRoleId = matchedRoleObj?.id || (u.id.includes('owner') ? `role-owner-${currentTenant.id}` : `role-cashier-${currentTenant.id}`);
+          const assignedRoleId = matchedRoleObj?.id || (u.id === 'usr-superadmin' ? 'role-super-admin' : (u.id.includes('owner') ? `role-owner-${currentTenant.id}` : `role-cashier-${currentTenant.id}`));
 
           const newTu: TenantUser = {
             id: tuId,
@@ -1381,8 +1382,24 @@ export const UsersRoles: React.FC = () => {
 
                       const primaryAlloc = tenantUserBranches.find(tub => tub.user_id === tu.user_id && tub.is_primary) || tenantUserBranches.find(tub => tub.user_id === tu.user_id);
                       const branchObj = dbBranches.find(b => b.id === (primaryAlloc?.branch_id || dbUser?.branch_id));
-                      const roleObj = rolesMap.get(primaryAlloc?.role_id || 'role-cashier');
+                      const roleObj = primaryAlloc?.role_id ? rolesMap.get(primaryAlloc.role_id) : null;
                       const initials = (dbUser?.name || '??').split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase();
+
+                      // Resolve Accurate Role Name
+                      let resolvedRoleName = 'Staff';
+                      if (isSuperAdminAccount) {
+                        resolvedRoleName = 'Super Admin';
+                      } else if (dbUser?.role && dbUser.role !== 'Cashier') {
+                        resolvedRoleName = dbUser.role;
+                      } else if (roleObj?.name) {
+                        resolvedRoleName = roleObj.name;
+                      } else if (tu.job_title && !['Employee', 'Staff'].includes(tu.job_title)) {
+                        resolvedRoleName = tu.job_title;
+                      } else if (dbUser?.role) {
+                        resolvedRoleName = dbUser.role;
+                      } else {
+                        resolvedRoleName = 'Cashier';
+                      }
 
                       // Resolve Branch Name
                       let branchName = 'Main HQ Branch';
@@ -1446,8 +1463,8 @@ export const UsersRoles: React.FC = () => {
                             <p className="text-[10px] text-slate-400">{tu.department}</p>
                           </td>
                           <td className="p-3.5">
-                            <Badge variant={getRoleBadgeVariant(roleObj?.name || '') as any} className="font-bold text-[10px]">
-                              {roleObj?.name || 'Cashier'}
+                            <Badge variant={getRoleBadgeVariant(resolvedRoleName) as any} className="font-bold text-[10px]">
+                              {resolvedRoleName}
                             </Badge>
                           </td>
                           <td className="p-3.5">
