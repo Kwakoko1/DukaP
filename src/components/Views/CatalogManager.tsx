@@ -190,24 +190,25 @@ export const CatalogManager: React.FC<CatalogManagerProps> = ({ onOpenProductEdi
   const allBrands = useLiveQuery(async () => {
     const brandMap = new Map<string, number>();
 
-    // Load registered brands with fallback
-    let registered = (isSuperAdminView || !currentTenant?.id)
-      ? await db.brands.toArray()
-      : await db.brands.where('tenant_id').equals(currentTenant.id).toArray();
-    if (registered.length === 0 && currentTenant?.id) {
-      registered = await db.brands.toArray();
-    }
+    // Load registered brands with resilient tenant scope matching
+    const allDbBrands = await db.brands.toArray();
+    const registered = allDbBrands.filter(b => {
+      if (isSuperAdminView || !currentTenant?.id) return true;
+      const bTid = b.tenant_id || (b as any).tenantId;
+      return !bTid || bTid === currentTenant.id || bTid === 'all' || bTid === 'tenant-101';
+    });
     registered.forEach(b => {
       if (b.name && b.name.trim()) brandMap.set(b.name.trim(), 0);
     });
 
-    // Count product associations with fallback
-    let prods = (isSuperAdminView || !currentTenant?.id)
-      ? await db.products.toArray()
-      : await db.products.where('tenant_id').equals(currentTenant.id).toArray();
-    if (prods.length === 0 && currentTenant?.id) {
-      prods = await db.products.toArray();
-    }
+    // Count product associations with resilient tenant scope matching
+    const allDbProds = await db.products.toArray();
+    const prods = allDbProds.filter(p => {
+      if (isSuperAdminView || !currentTenant?.id) return true;
+      const pTid = p.tenant_id || (p as any).tenantId;
+      return !pTid || pTid === currentTenant.id || pTid === 'all' || pTid === 'tenant-101';
+    });
+
     prods.forEach(p => {
       if (p.brand && p.brand.trim()) {
         const bName = p.brand.trim();
@@ -336,6 +337,9 @@ export const CatalogManager: React.FC<CatalogManagerProps> = ({ onOpenProductEdi
       }
       setBrandName('');
       setBrandDesc('');
+      setBrandFilter('all'); // Ensure newly created brand (0 items) is immediately visible!
+      setBrandSearch('');
+      await reconcileCategoriesAndBrands(currentTenant.id);
     } catch (err: any) {
       alert(`Error saving brand: ${err?.message || err}`);
     }

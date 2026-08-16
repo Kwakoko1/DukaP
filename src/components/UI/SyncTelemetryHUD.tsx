@@ -20,7 +20,7 @@ import { Dialog, Badge, Button } from './custom-ui';
 export const SyncTelemetryHUD: React.FC = () => {
   const { status, context } = useSession();
   const { user, isSuperAdminView } = useAuth();
-  const { isOnline, isSyncing: syncIsSyncing, pendingCount: syncPendingCount } = useSyncState();
+  const { isOnline, isSyncing: syncIsSyncing, pendingCount: syncPendingCount, toggleOfflineSimulation, syncData } = useSyncState();
   const [metrics, setMetrics] = useState<SyncTelemetryMetrics>(syncTelemetryService.getMetrics());
   const [showDiagnostics, setShowDiagnostics] = useState(false);
 
@@ -166,22 +166,32 @@ export const SyncTelemetryHUD: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex justify-end gap-2 pt-2">
+          <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-slate-700">
             <Button
               variant="outline"
               size="sm"
-              onClick={async () => {
-                syncTelemetryService.recordSyncStart();
-                await syncTelemetryService.refreshOutboxCount();
-                syncTelemetryService.recordSyncComplete(85, true);
-              }}
+              onClick={toggleOfflineSimulation}
             >
-              <RefreshCw size={13} className="mr-1" />
-              Force Edge Sync Probe
+              {isOnline ? <WifiOff size={13} className="mr-1" /> : <Wifi size={13} className="mr-1 text-emerald-500" />}
+              <span>{isOnline ? 'Simulate Offline' : 'Go Online'}</span>
             </Button>
-            <Button size="sm" onClick={() => setShowDiagnostics(false)}>
-              Close
-            </Button>
+            
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={async () => {
+                  await syncData(true);
+                  await syncTelemetryService.refreshOutboxCount();
+                }}
+              >
+                <RefreshCw size={13} className="mr-1" />
+                Force Edge Sync Probe
+              </Button>
+              <Button size="sm" onClick={() => setShowDiagnostics(false)}>
+                Close
+              </Button>
+            </div>
           </div>
         </div>
       </Dialog>

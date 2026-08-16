@@ -1073,13 +1073,15 @@ export async function reconcileCategoriesAndBrands(tenantId?: string): Promise<{
 
     const catNameSet = new Set(existingCats.map(c => (c.name || '').trim().toLowerCase()));
     const brandNameSet = new Set(existingBrands.map(b => (b.name || '').trim().toLowerCase()));
+    const deletedBrandNames = getDeletedBrandNames();
+    const deletedCatNames = getDeletedCategoryNames();
 
     let categoriesAdded = 0;
     let brandsAdded = 0;
 
     for (const p of prods) {
       const cName = (p.category || '').trim();
-      if (cName && !catNameSet.has(cName.toLowerCase())) {
+      if (cName && !catNameSet.has(cName.toLowerCase()) && !deletedCatNames.has(cName) && !deletedCatNames.has(cName.toLowerCase())) {
         const tid = tenantId || p.tenant_id || (p as any).tenantId || 'tenant-101';
         await db.categories.put({
           id: `cat-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
@@ -1092,7 +1094,7 @@ export async function reconcileCategoriesAndBrands(tenantId?: string): Promise<{
       }
 
       const bName = (p.brand || '').trim();
-      if (bName && !brandNameSet.has(bName.toLowerCase())) {
+      if (bName && !brandNameSet.has(bName.toLowerCase()) && !deletedBrandNames.has(bName) && !deletedBrandNames.has(bName.toLowerCase())) {
         const tid = tenantId || p.tenant_id || (p as any).tenantId || 'tenant-101';
         await db.brands.put({
           id: `brand-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
@@ -1132,8 +1134,25 @@ export async function createBrand(
     if (!tid) tid = 'tenant-101';
   }
 
+  // Remove from deleted tombstones if it was previously deleted
+  try {
+    const rawSet = localStorage.getItem('dukapos_deleted_brands');
+    if (rawSet) {
+      const set = new Set<string>(JSON.parse(rawSet));
+      set.delete(trimmedName);
+      set.delete(trimmedName.toLowerCase());
+      localStorage.setItem('dukapos_deleted_brands', JSON.stringify(Array.from(set)));
+    }
+  } catch (_) {}
+
   // Case-insensitive uniqueness validation within tenant
-  const existing = await db.brands.where('tenant_id').equals(tid).filter(b => Boolean(b.name && b.name.toLowerCase() === trimmedName.toLowerCase())).first();
+  const allDbBrands = await db.brands.toArray();
+  const existing = allDbBrands.find(b => {
+    const bTid = b.tenant_id || (b as any).tenantId;
+    const matchTid = !bTid || bTid === tid || !tid;
+    return matchTid && Boolean(b.name && b.name.trim().toLowerCase() === trimmedName.toLowerCase());
+  });
+
   if (existing) {
     return existing;
   }
