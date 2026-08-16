@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { GripHorizontal } from 'lucide-react';
 
 // Reusable Button component
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
@@ -314,6 +315,9 @@ export const Dialog: React.FC<DialogProps> = ({
 
           <div className="px-5 pt-2 pb-2.5 flex items-center justify-between">
             <div className="flex items-center gap-2">
+              {draggable && (
+                <GripHorizontal size={14} className="text-slate-400 dark:text-slate-500 opacity-60 flex-shrink-0" />
+              )}
               <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">{title}</h3>
             </div>
             <button
