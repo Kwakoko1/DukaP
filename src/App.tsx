@@ -40,6 +40,7 @@ const PoultryLivestockModule = safeLazy(() => import('./components/Views/Poultry
 const FleetManagement = safeLazy(() => import('./components/Views/FleetManagement').then(m => ({ default: m.FleetManagement })));
 const HelpManualConsole = safeLazy(() => import('./components/Views/HelpManual/HelpManualConsole').then(m => ({ default: m.HelpManualConsole })));
 import { PWAUpdateBanner } from './components/PWA/PWAUpdateBanner';
+import { SyncTelemetryHUD } from './components/UI/SyncTelemetryHUD';
 import { useSubscription } from './hooks/useSubscription';
 import { Search, Lock } from 'lucide-react';
 import { Dialog, Badge } from './components/UI/custom-ui';
@@ -974,6 +975,7 @@ const DukaPosAppContent: React.FC = () => {
         </div>
       </Dialog>
       <PWAUpdateBanner />
+      <SyncTelemetryHUD />
     </div>
   );
 };
