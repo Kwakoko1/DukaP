@@ -57,6 +57,19 @@ export function validateProductPermission(
 }
 
 // ─── Schema Mapper: camelCase <=> snake_case ────────────────────────────────
+export function isParentProduct(
+  p: Product | null | undefined,
+  variants?: ProductVariant[]
+): boolean {
+  if (!p) return false;
+  const isFlagged = Boolean(p.hasVariants || (p as any).has_variants);
+  if (isFlagged) return true;
+  if (variants && variants.length > 0) {
+    return variants.some(v => v.productId === p.id);
+  }
+  return false;
+}
+
 export function mapProductToLocal(prod: any): Product {
   const tenantId = prod.tenantId || prod.tenant_id || '';
   const branchId = prod.branchId || prod.branch_id || '';
@@ -64,7 +77,7 @@ export function mapProductToLocal(prod: any): Product {
   const resolvedSellingPrice = prod.sellingPrice ?? prod.selling_price ?? prod.price ?? 0;
   const rawStock = prod.stock ?? prod.quantity ?? prod.current_quantity ?? 0;
   const resolvedStock = typeof rawStock === 'number' ? rawStock : (parseFloat(String(rawStock)) || 0);
-  const resolvedHasVariants = prod.hasVariants ?? prod.has_variants ?? false;
+  const resolvedHasVariants = Boolean(prod.hasVariants ?? prod.has_variants ?? false);
 
   return {
     ...prod,

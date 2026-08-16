@@ -10,6 +10,7 @@ import {
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Button, Input, Dialog, Badge } from '../UI/custom-ui';
 import { barService } from '../../services/barService';
+import { isParentProduct } from '../../services/productService';
 import { 
   Search, ShoppingCart, Plus, Minus, Trash2, UserPlus, ShieldAlert,
   HelpCircle, Calculator, ArrowLeftRight, X
@@ -551,21 +552,23 @@ export const POS: React.FC = () => {
   };
 
   const handleProductGridClick = async (product: Product) => {
-    if (product.hasVariants) {
+    if (isParentProduct(product)) {
       const vars = await db.productVariants.where('productId').equals(product.id).toArray();
-      setVariantsList(vars);
+      if (vars.length > 0) {
+        setVariantsList(vars);
 
-      const initialQuantities: Record<string, number> = {};
-      vars.forEach(v => {
-        const cartItem = cart.find(item => item.variant?.id === v.id);
-        initialQuantities[v.id] = cartItem ? cartItem.quantity : 0;
-      });
-      setVariantQuantities(initialQuantities);
+        const initialQuantities: Record<string, number> = {};
+        vars.forEach(v => {
+          const cartItem = cart.find(item => item.variant?.id === v.id);
+          initialQuantities[v.id] = cartItem ? cartItem.quantity : 0;
+        });
+        setVariantQuantities(initialQuantities);
 
-      setSelectedParentForVariants(product);
-    } else {
-      handleItemAddition(product);
+        setSelectedParentForVariants(product);
+        return;
+      }
     }
+    handleItemAddition(product);
   };
 
   const performUpdateQuantity = (itemKey: string, val: number) => {
@@ -1557,7 +1560,7 @@ export const POS: React.FC = () => {
                 if (query.length >= 3) {
                   // Check simple products
                   const matchP = products.find(p => p.barcode?.toLowerCase() === query || p.sku?.toLowerCase() === query);
-                  if (matchP && !matchP.hasVariants) {
+                  if (matchP && !isParentProduct(matchP, productVariants)) {
                     handleItemAddition(matchP);
                     setSearchQuery('');
                     return;
@@ -1600,6 +1603,7 @@ export const POS: React.FC = () => {
               <div className="pos-product-grid">
                 {filteredProducts.map(p => {
                   const isOut = p.stock <= 0 && activeModule !== 'SACCO';
+                  const isParent = isParentProduct(p, productVariants);
                   return (
                     <div 
                       key={p.id}
@@ -1609,7 +1613,7 @@ export const POS: React.FC = () => {
                       <div>
                         <div className="flex justify-between items-center text-[9px] text-slate-400 font-semibold mb-1">
                           <span>{p.category}</span>
-                          {p.hasVariants && <Badge variant="warning">Variants</Badge>}
+                          {isParent && <Badge variant="warning">Variants</Badge>}
                         </div>
                         <h4 className="text-xs font-bold text-slate-800 dark:text-white line-clamp-2">
                           {p.name}

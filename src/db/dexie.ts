@@ -3268,7 +3268,8 @@ export async function reconcileAllParentProductStocks(): Promise<{
       .equals(p.id)
       .toArray();
 
-    if (p.hasVariants || childVariants.length > 0) {
+    const isParent = Boolean(p.hasVariants || (p as any).has_variants || childVariants.length > 0);
+    if (isParent) {
       reconciledCount++;
       const activeVars = childVariants.filter(
         v => (v.status as any) !== 'Inactive' && !(v as any).deletedAt && !(v as any).deleted_at
@@ -3276,8 +3277,9 @@ export async function reconcileAllParentProductStocks(): Promise<{
       const computedTotal = activeVars.reduce((sum, v) => sum + (Number(v.stock) || 0), 0);
 
       const hasStringStock = typeof p.stock !== 'number' || isNaN(p.stock) || String(p.stock).length > 8;
+      const missingHasVariantsFlag = !p.hasVariants || !(p as any).has_variants;
 
-      if (p.stock !== computedTotal || hasStringStock || (p.hasVariants && activeVars.length === 0)) {
+      if (p.stock !== computedTotal || hasStringStock || missingHasVariantsFlag || (p.hasVariants && activeVars.length === 0)) {
         fixedDiscrepancies++;
         await syncParentStock(p.id);
       }

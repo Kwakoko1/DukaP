@@ -23,6 +23,7 @@ import {
   getEffectiveVariantSellingPrice,
   getEffectiveVariantBuyingPrice,
 } from '../db/dexie';
+import { isParentProduct } from './productService';
 
 // ─── Helper: generate a short prefixed UUID ────────────────────────────────
 function uid(prefix: string): string {
@@ -94,7 +95,7 @@ export async function getDashboardKPIs(
 
   // Process simple products
   for (const p of activeProducts) {
-    if (!p.hasVariants) {
+    if (!isParentProduct(p, variants)) {
       const qty = Math.max(0, p.stock || 0);
       totalUnitsInStock += qty;
 
@@ -138,7 +139,7 @@ export async function getDashboardKPIs(
   // Low / Out / Overstock counts
   let lowStockCount = 0, outOfStockCount = 0, overstockCount = 0;
   for (const p of activeProducts) {
-    if (!p.hasVariants) {
+    if (!isParentProduct(p, variants)) {
       const rule = reorderRules.find(r => r.product_id === p.id && !r.variant_id);
       const min = rule?.min_quantity ?? p.reorderLevel ?? 10;
       const max = rule?.max_quantity ?? 1000;
@@ -1112,9 +1113,9 @@ export async function getProductValuationMetrics(
       const lastPurchaseCost = lastPurchase ? lastPurchase.unit_cost : avgCost;
 
       const sellingPrice = p.sellingPrice || p.price || 0;
-      const wholesalePrice = p.wholesalePrice || sellingPrice * 0.85;
-      const vipPrice = p.vipPrice || sellingPrice * 0.90;
-      const onlinePrice = p.onlinePrice || sellingPrice;
+      const wholesalePrice = p.wholesalePrice || 0;
+      const vipPrice = p.vipPrice || 0;
+      const onlinePrice = p.onlinePrice || 0;
 
       const buyingValue = Math.round(qty * avgCost * 100) / 100;
       const sellingValue = Math.round(qty * sellingPrice * 100) / 100;
@@ -1174,9 +1175,9 @@ export async function getProductValuationMetrics(
         const lastPurchaseCost = lastPurchase ? lastPurchase.unit_cost : avgCost;
 
         const sellingPrice = v.sellingPrice || p.sellingPrice || p.price || 0;
-        const wholesalePrice = v.wholesalePrice || p.wholesalePrice || sellingPrice * 0.85;
-        const vipPrice = v.vipPrice || p.vipPrice || sellingPrice * 0.90;
-        const onlinePrice = v.onlinePrice || p.onlinePrice || sellingPrice;
+        const wholesalePrice = v.wholesalePrice || p.wholesalePrice || 0;
+        const vipPrice = v.vipPrice || p.vipPrice || 0;
+        const onlinePrice = v.onlinePrice || p.onlinePrice || 0;
 
         const buyingValue = Math.round(qty * avgCost * 100) / 100;
         const sellingValue = Math.round(qty * sellingPrice * 100) / 100;

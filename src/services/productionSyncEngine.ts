@@ -10,6 +10,7 @@ import { getOrCreateDeviceId } from './syncEventGenerator';
 import { resolveEntityConflict } from './SyncResolver';
 import { hlcEngine } from './hlcEngine';
 import { syncTelemetryService } from './syncTelemetryService';
+import { isParentProduct } from './productService';
 
 export interface SyncConflict {
   entityName: string;
@@ -82,7 +83,7 @@ class ProductionSyncEngine {
 
       const { stockLedgerSyncEngine } = await import('./stockLedgerSyncEngine');
 
-      if (product.hasVariants) {
+      if (isParentProduct(product)) {
         const variants = await db.productVariants.where('productId').equals(productId).toArray();
         let totalStock = 0;
         for (const v of variants) {

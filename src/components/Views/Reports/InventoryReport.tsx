@@ -2,13 +2,14 @@ import React, { useMemo } from 'react';
 import { Layers, TrendingUp, AlertTriangle, Activity } from 'lucide-react';
 import { KpiCard, SectionCard, EmptyRows } from './types';
 import type { ReportProps } from './types';
+import { isParentProduct } from '../../../services/productService';
 
 export const InventoryReport: React.FC<ReportProps> = ({
   products, productVariants, searchTerm, fmtCcy
 }) => {
   const inventoryData = useMemo(() => {
     const data: any[] = [];
-    products.filter(p => !p.hasVariants).forEach(p => {
+    products.filter(p => !isParentProduct(p, productVariants)).forEach(p => {
       data.push({
         sku: p.sku || '—', name: p.name, details: 'Simple Product',
         stock: p.stock, reorderLevel: p.reorderLevel ?? 5,

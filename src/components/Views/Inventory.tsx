@@ -11,7 +11,7 @@ import {
 } from '../../db/dexie';
 import {
   ProductService, cleanDuplicateVariants, getVariantAttrSig,
-  createCategory, deleteCategory, createBrand
+  createCategory, deleteCategory, createBrand, isParentProduct
 } from '../../services/productService';
 import { Html5Qrcode } from 'html5-qrcode';
 import {
@@ -284,6 +284,8 @@ export const Inventory: React.FC = () => {
                 sellingPrice: Number(sp.selling_price || sp.sellingPrice || sp.price || 0),
                 price: Number(sp.price || sp.selling_price || 0),
                 stock: Number(sp.stock || 0),
+                hasVariants: Boolean(sp.hasVariants ?? sp.has_variants ?? false),
+                has_variants: Boolean(sp.hasVariants ?? sp.has_variants ?? false),
                 syncStatus: 'SYNCED'
               });
             }
@@ -1180,10 +1182,11 @@ export const Inventory: React.FC = () => {
         (p.sku || '').toLowerCase().includes(q) ||
         (p.description || '').toLowerCase().includes(q)
       );
-      const matchType = filterType === 'all' || (filterType === 'simple' && !p.hasVariants) || (filterType === 'variant' && p.hasVariants);
+      const isParent = isParentProduct(p, productVariants);
+      const matchType = filterType === 'all' || (filterType === 'simple' && !isParent) || (filterType === 'variant' && isParent);
       return matchSearch && matchType;
     });
-  }, [products, searchQuery, filterType]);
+  }, [products, productVariants, searchQuery, filterType]);
 
   // Stable O(1) product lookup map — supports ID, SKU, barcode, and variant resolution
   const productMap = useMemo(() => {
@@ -1232,15 +1235,15 @@ export const Inventory: React.FC = () => {
     const activeProductVariants = products.length === 0 ? [] : productVariants.filter(v => validIds.has(v.productId));
 
     const total = products.length;
-    const variantProducts = products.filter(p => p.hasVariants).length;
+    const variantProducts = products.filter(p => isParentProduct(p, productVariants)).length;
     
     // Low stock: simple products with stock < 10 + variants with stock < (reorderLevel || 5)
-    const simpleLow = products.filter(p => !p.hasVariants && p.stock < 10 && p.stock > 0).length;
+    const simpleLow = products.filter(p => !isParentProduct(p, productVariants) && p.stock < 10 && p.stock > 0).length;
     const variantLow = activeProductVariants.filter(v => v.stock < (v.reorderLevel ?? 5) && v.stock > 0).length;
     const lowStock = products.length === 0 ? 0 : (simpleLow + variantLow);
 
     // Out of stock: simple products with stock <= 0 + variants with stock <= 0
-    const simpleOut = products.filter(p => !p.hasVariants && p.stock <= 0).length;
+    const simpleOut = products.filter(p => !isParentProduct(p, productVariants) && p.stock <= 0).length;
     const variantOut = activeProductVariants.filter(v => v.stock <= 0).length;
     const outOfStock = products.length === 0 ? 0 : (simpleOut + variantOut);
 
@@ -1248,7 +1251,7 @@ export const Inventory: React.FC = () => {
   }, [products, productVariants]);
 
   const lowStockAlerts = useMemo(() => {
-    const simpleLowStock = products.filter(p => !p.hasVariants && p.stock < 10 && p.stock > 0).map(p => ({
+    const simpleLowStock = products.filter(p => !isParentProduct(p, productVariants) && p.stock < 10 && p.stock > 0).map(p => ({
       id: p.id,
       name: p.name,
       category: p.category,
@@ -1258,6 +1261,7 @@ export const Inventory: React.FC = () => {
       buyingPrice: p.buyingPrice,
       sellingPrice: p.sellingPrice || p.price,
       isVariant: false,
+      variantId: undefined as string | undefined,
       productRef: p
     }));
 
@@ -1274,6 +1278,7 @@ export const Inventory: React.FC = () => {
         buyingPrice: v.buyingPrice || parent?.buyingPrice || 0,
         sellingPrice: v.sellingPrice || parent?.sellingPrice || parent?.price || 0,
         isVariant: true,
+        variantId: v.id,
         productRef: parent
       };
     });
@@ -1282,7 +1287,7 @@ export const Inventory: React.FC = () => {
   }, [products, productVariants, productMap]);
 
   const outOfStockAlerts = useMemo(() => {
-    const simpleOutOfStock = products.filter(p => !p.hasVariants && p.stock <= 0).map(p => ({
+    const simpleOutOfStock = products.filter(p => !isParentProduct(p, productVariants) && p.stock <= 0).map(p => ({
       id: p.id,
       name: p.name,
       category: p.category,
@@ -1292,6 +1297,7 @@ export const Inventory: React.FC = () => {
       buyingPrice: p.buyingPrice,
       sellingPrice: p.sellingPrice || p.price,
       isVariant: false,
+      variantId: undefined as string | undefined,
       productRef: p
     }));
 
@@ -1308,6 +1314,7 @@ export const Inventory: React.FC = () => {
         buyingPrice: v.buyingPrice || parent?.buyingPrice || 0,
         sellingPrice: v.sellingPrice || parent?.sellingPrice || parent?.price || 0,
         isVariant: true,
+        variantId: v.id,
         productRef: parent
       };
     });
@@ -1340,7 +1347,12 @@ export const Inventory: React.FC = () => {
       setPVipPrice((product as any).vipPrice || 0);
       setPOnlinePrice((product as any).onlinePrice || 0);
       setPStock(product.stock || 0);
-      setPHasVariants(product.hasVariants || false);
+
+      const existingDbVars = await db.productVariants.where('productId').equals(product.id).toArray();
+      const hasChildVars = existingDbVars.length > 0;
+      const isParent = isParentProduct(product, existingDbVars) || hasChildVars;
+
+      setPHasVariants(isParent);
       setPExpiry(product.expiryDate || '');
       setPTaxRate((product as any).taxRate !== undefined ? (product as any).taxRate : 0);
       setPReorderLevel(5);
@@ -1350,10 +1362,10 @@ export const Inventory: React.FC = () => {
       setPImageUrl((product as any).image_url || '');
       setPImagePreview((product as any).image_url || '');
 
-      if (product.hasVariants) {
+      if (isParent) {
         await cleanDuplicateVariants(currentTenant.id);
 
-        const vars = await db.productVariants.where('productId').equals(product.id).toArray();
+        const vars = existingDbVars;
 
         // In-memory deduplication pass for any residual duplicate variants
         const uniqueMap = new Map<string, ProductVariant>();
@@ -2079,10 +2091,10 @@ export const Inventory: React.FC = () => {
 
             {/* Price Tiers & Stock Meta */}
             <div className="flex flex-wrap items-center gap-4 p-3 bg-slate-50 dark:bg-darkbg/40 border dark:border-darkbg-border rounded-xl text-xs font-medium text-slate-600 dark:text-slate-300">
-              <span>💰 Retail: <strong className="text-slate-900 dark:text-white">{fmtCcy(metric.sellingPrice)}</strong></span>
-              <span>🏪 Wholesale: <strong className="text-slate-900 dark:text-white">{fmtCcy(metric.wholesalePrice)}</strong></span>
-              <span>⭐ VIP: <strong className="text-slate-900 dark:text-white">{fmtCcy(metric.vipPrice)}</strong></span>
-              <span>🌐 Online: <strong className="text-slate-900 dark:text-white">{fmtCcy(metric.onlinePrice)}</strong></span>
+              <span>💰 Retail: <strong className="text-slate-900 dark:text-white">{metric.sellingPrice > 0 ? fmtCcy(metric.sellingPrice) : 'Not Set'}</strong></span>
+              <span>🏪 Wholesale: <strong className="text-slate-900 dark:text-white">{metric.wholesalePrice > 0 ? fmtCcy(metric.wholesalePrice) : 'Not Set'}</strong></span>
+              <span>⭐ VIP: <strong className="text-slate-900 dark:text-white">{metric.vipPrice > 0 ? fmtCcy(metric.vipPrice) : 'Not Set'}</strong></span>
+              <span>🌐 Online: <strong className="text-slate-900 dark:text-white">{metric.onlinePrice > 0 ? fmtCcy(metric.onlinePrice) : 'Not Set'}</strong></span>
               <span className="ml-auto text-slate-400">SKU: <code className="font-mono bg-white dark:bg-darkbg px-1.5 py-0.5 rounded border border-slate-200 dark:border-darkbg-border text-slate-700 dark:text-slate-200">{(metric.sku && metric.sku !== '—' && metric.sku.trim()) ? metric.sku : generateAutoSku(metric.name, metric.category, metric.productId)}</code></span>
             </div>
           </div>
@@ -2265,7 +2277,7 @@ export const Inventory: React.FC = () => {
                     <td style={{textAlign: 'right'}}>{fmtCcy(item.sellingPrice)}</td>
                     <td>
                       <div style={{display:'flex',gap:'4px'}}>
-                        {item.productRef && <button className="inv-view-all-btn" onClick={() => openAdjustment(item.productRef!)}>Adjust Stock</button>}
+                        {item.productRef && <button className="inv-view-all-btn" onClick={() => openAdjustment(item.productRef!, item.isVariant ? item.variantId : undefined)}>Adjust Stock</button>}
                         {item.productRef && <button className="inv-view-all-btn" onClick={() => openEditor(item.productRef!)} style={{background:'transparent'}}>Edit</button>}
                       </div>
                     </td>
@@ -2326,7 +2338,8 @@ export const Inventory: React.FC = () => {
                             }}
                           ><Eye size={13}/></button>
                         )}
-                        {item.productRef && <button className="inv-view-all-btn" onClick={() => openEditor(item.productRef!)}>Edit / Restock</button>}
+                        {item.productRef && <button className="inv-view-all-btn" onClick={() => openAdjustment(item.productRef!, item.isVariant ? item.variantId : undefined)}>Adjust Stock</button>}
+                        {item.productRef && <button className="inv-view-all-btn" onClick={() => openEditor(item.productRef!)} style={{background:'transparent'}}>Edit / Restock</button>}
                       </div>
                     </td>
                   </tr>
@@ -2520,16 +2533,20 @@ export const Inventory: React.FC = () => {
     const proceedToSave = async () => {
       setIsSaving(true);
       try {
+        const finalHasVariants = Boolean(pHasVariants || localVariants.length > 0);
+
         const savedProd: Product = {
           id: pId, name: pName.trim(), category: pCategory.trim(),
           buyingPrice: pBuyingPrice, sellingPrice: pSellingPrice, price: pSellingPrice,
           stock: 0, expiryDate: pExpiry || undefined,
           tenant_id: currentTenant.id, branch_id: currentBranch.id,
-          module: pModule || activeModule, hasVariants: pHasVariants,
+          module: pModule || activeModule,
+          hasVariants: finalHasVariants,
+          has_variants: finalHasVariants,
           brand: pBrand.trim() || undefined, description: pDescription.trim() || undefined,
           supplier: pSupplier.trim() || undefined,
           supplier_id: pSupplierId || undefined,
-          attributes: pHasVariants ? Object.keys(customAttributes) : undefined,
+          attributes: finalHasVariants ? Object.keys(customAttributes) : undefined,
           sku: pSku.trim() || undefined, barcode: pBarcode.trim() || undefined,
           createdAt: targetTime,
           ...(pImageUrl.trim() && { image_url: pImageUrl.trim() }),
@@ -2543,7 +2560,7 @@ export const Inventory: React.FC = () => {
 
         let finalProduct: Product;
         if (selectedProduct) {
-          savedProd.stock = pHasVariants ? localVariants.reduce((sum, lv) => sum + (Number(lv.stock) || 0), 0) : (Number(pStock) || 0);
+          savedProd.stock = finalHasVariants ? localVariants.reduce((sum, lv) => sum + (Number(lv.stock) || 0), 0) : (Number(pStock) || 0);
           finalProduct = await ProductService.updateProduct(pId, savedProd, ctx, isOnline);
         } else {
           finalProduct = await ProductService.createProduct(savedProd, ctx, isOnline);
@@ -2553,13 +2570,13 @@ export const Inventory: React.FC = () => {
         const preSnapshotVars = await db.productVariants.where('productId').equals(finalProductId).toArray();
 
         for (const ev of preSnapshotVars) {
-          if (!pHasVariants || !localVariants.find(lv => lv.id === ev.id)) {
+          if (!finalHasVariants || !localVariants.find(lv => lv.id === ev.id)) {
             await queueOperation('DELETE', 'productVariants' as any, ev);
             await db.productVariants.delete(ev.id);
           }
         }
 
-        if (pHasVariants) {
+        if (finalHasVariants) {
           for (const lv of localVariants) {
             const isNew = !preSnapshotVars.find(ev => ev.id === lv.id);
             const freshVar = { 
@@ -3133,7 +3150,14 @@ export const Inventory: React.FC = () => {
                         type="checkbox"
                         className="rounded text-indigo-600 focus:ring-indigo-500 h-4 w-4"
                         checked={pHasVariants}
-                        onChange={e => setPHasVariants(e.target.checked)}
+                        onChange={e => {
+                          const checked = e.target.checked;
+                          if (!checked && localVariants.length > 0) {
+                            const confirmDisable = window.confirm('⚠️ Warning: Unchecking "Has Variants" will remove all existing variants for this product upon saving. Are you sure you want to disable variants?');
+                            if (!confirmDisable) return;
+                          }
+                          setPHasVariants(checked);
+                        }}
                       />
                       <span className="text-[11px]">Has Variants (Size/Color)</span>
                     </label>
@@ -4127,10 +4151,22 @@ export const Inventory: React.FC = () => {
     setVariantCache(prev => ({ ...prev, [productId]: vars }));
   };
 
-  const openAdjustment = (product: Product) => {
+  const openAdjustment = async (product: Product, targetVariantId?: string) => {
     const line = makeBlankLine(product.id);
+    if (targetVariantId) {
+      line.variantId = targetVariantId;
+    }
     setAdjustLines([line]);
-    loadVariantsForProduct(product.id);
+    await loadVariantsForProduct(product.id);
+
+    if (isParentProduct(product, productVariants) && !targetVariantId) {
+      const vars = await db.productVariants.where('productId').equals(product.id).toArray();
+      if (vars.length > 0) {
+        line.variantId = vars[0].id;
+        setAdjustLines([{ ...line }]);
+      }
+    }
+
     setAdjustmentDate(getLocalIsoString());
     setIsAdjustmentOpen(true);
   };
@@ -6250,10 +6286,10 @@ export const Inventory: React.FC = () => {
 
             {/* Tier Prices */}
             <div className="py-2.5 px-6 border-b border-slate-200 dark:border-slate-800 flex gap-4 shrink-0 flex-wrap text-xs text-slate-600 dark:text-slate-400 font-medium bg-white dark:bg-slate-900">
-              <span>💰 Retail: <strong className="text-slate-900 dark:text-white">{fmtCcy(ledgerDrilldownProduct.sellingPrice)}</strong></span>
-              <span>🏪 Wholesale: <strong className="text-slate-900 dark:text-white">{fmtCcy(ledgerDrilldownProduct.wholesalePrice)}</strong></span>
-              <span>⭐ VIP: <strong className="text-slate-900 dark:text-white">{fmtCcy(ledgerDrilldownProduct.vipPrice)}</strong></span>
-              <span>🌐 Online: <strong className="text-slate-900 dark:text-white">{fmtCcy(ledgerDrilldownProduct.onlinePrice)}</strong></span>
+              <span>💰 Retail: <strong className="text-slate-900 dark:text-white">{ledgerDrilldownProduct.sellingPrice > 0 ? fmtCcy(ledgerDrilldownProduct.sellingPrice) : 'Not Set'}</strong></span>
+              <span>🏪 Wholesale: <strong className="text-slate-900 dark:text-white">{ledgerDrilldownProduct.wholesalePrice > 0 ? fmtCcy(ledgerDrilldownProduct.wholesalePrice) : 'Not Set'}</strong></span>
+              <span>⭐ VIP: <strong className="text-slate-900 dark:text-white">{ledgerDrilldownProduct.vipPrice > 0 ? fmtCcy(ledgerDrilldownProduct.vipPrice) : 'Not Set'}</strong></span>
+              <span>🌐 Online: <strong className="text-slate-900 dark:text-white">{ledgerDrilldownProduct.onlinePrice > 0 ? fmtCcy(ledgerDrilldownProduct.onlinePrice) : 'Not Set'}</strong></span>
               <span className="ml-auto text-slate-400">Stock Age: <strong className="text-slate-700 dark:text-slate-300">{ledgerDrilldownProduct.stockAgeDays}d</strong></span>
             </div>
 
