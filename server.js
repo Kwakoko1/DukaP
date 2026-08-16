@@ -3106,6 +3106,7 @@ const server = http.createServer(async (req, res) => {
         const body = await parseRequestBody(req);
         const now = Date.now();
         const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '0.0.0.0';
+        const tenantId = body.tenantId || req.headers['x-tenant-id'] || 'tenant-default';
 
         const targetEnabled = !!body.enabled;
         const targetInstalled = body.installed !== undefined ? !!body.installed : true;
