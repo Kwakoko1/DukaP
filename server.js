@@ -3210,13 +3210,23 @@ const server = http.createServer(async (req, res) => {
 
           let dataQuery = `SELECT * FROM "${tableName}"${whereClause}`;
 
+          if (tableName === 'users') {
+            dataQuery = `
+              SELECT u.*, COALESCE(t.name, u.name) as business_name, t.business_code, t.tenant_code 
+              FROM "users" u 
+              LEFT JOIN "tenants" t ON u.tenant_id = t.id 
+              ${whereClause.replace(/"([a-zA-Z0-9_]+)"/g, 'u."$1"')}
+            `;
+          }
+
           if (sortCol) {
             const colCheck = await pool.query(
               `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = $1 AND column_name = $2`,
               [tableName, sortCol]
             );
             if (colCheck.rows.length > 0) {
-              dataQuery += ` ORDER BY "${sortCol}" ${sortOrder}`;
+              const prefix = tableName === 'users' ? 'u.' : '';
+              dataQuery += ` ORDER BY ${prefix}"${sortCol}" ${sortOrder}`;
             }
           }
 

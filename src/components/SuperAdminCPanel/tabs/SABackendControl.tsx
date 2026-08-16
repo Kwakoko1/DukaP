@@ -281,7 +281,7 @@ export const SABackendControl: React.FC = () => {
       );
     }
 
-    // 3. Resolve user id with Business Name
+    // 3. Resolve Entity ID (Tenants, Users, Products, etc.)
     if (field === 'id' && typeof val === 'string') {
       if (val === 'usr-superadmin') {
         return (
@@ -290,34 +290,54 @@ export const SABackendControl: React.FC = () => {
           </span>
         );
       }
-      if (val.startsWith('usr-')) {
-        // Resolve associated business name from row.tenant_id, tenantsDict, or row data
+
+      // If viewing the Tenants table itself
+      if (selectedTable === 'tenants') {
+        const bizName = row?.name || row?.company_name || row?.owner_name || 'Business';
+        const bizCode = row?.business_code || row?.tenant_code || `BIZ-${val.slice(0, 6).toUpperCase()}`;
+        return (
+          <span
+            className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 font-sans font-bold text-[11px]"
+            title={`Tenant UUID: ${val}`}
+          >
+            <span>🏢</span>
+            <span>{bizName}</span>
+            <span className="text-[10px] font-mono text-indigo-400/80">({bizCode})</span>
+          </span>
+        );
+      }
+
+      // If viewing Users table or User records
+      if (val.startsWith('usr-') || selectedTable === 'users') {
         const rowTenantId = row?.tenant_id;
         const tenantInfo = rowTenantId ? tenantsDict[rowTenantId] : null;
         const businessName = tenantInfo?.name || row?.business_name || row?.company_name || row?.tenant_name;
         
-        const isOwner = val.endsWith('-owner') || row?.role === 'Tenant Owner';
+        const isOwner = val.endsWith('-owner') || row?.role === 'Tenant Owner' || row?.role === 'Owner';
         const roleLabel = isOwner ? 'Owner' : (row?.role || 'Staff');
         
+        // Priority 1: Registered Business Name
         if (businessName && businessName !== 'Tenant') {
           return (
             <span
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-indigo-500/20 text-indigo-300 font-mono font-bold text-[11px]"
-              title={`Full User ID: ${val} (Tenant: ${rowTenantId || 'N/A'})`}
+              className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-indigo-500/20 text-indigo-300 font-mono font-bold text-[11px]"
+              title={`Full User ID: ${val} (Tenant ID: ${rowTenantId || 'N/A'})`}
             >
-              USR • {businessName} ({roleLabel})
+              <span>🏢</span>
+              <span>USR • {businessName} ({roleLabel})</span>
             </span>
           );
         }
 
-        const parts = val.split('-');
-        const shortHex = parts[1]?.slice(0, 8).toUpperCase();
+        // Priority 2: Owner/Merchant Full Name
+        const ownerDisplayName = row?.name || (row?.first_name ? `${row.first_name} ${row.last_name || ''}`.trim() : '') || row?.username || 'Merchant';
         return (
           <span
-            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-indigo-500/20 text-indigo-300 font-mono font-bold text-[11px]"
-            title={`Full User ID: ${val}`}
+            className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-indigo-500/20 text-indigo-300 font-mono font-bold text-[11px]"
+            title={`Full User ID: ${val} (Tenant ID: ${rowTenantId || 'N/A'})`}
           >
-            USR • {shortHex || 'USER'} ({roleLabel})
+            <span>🏢</span>
+            <span>USR • {ownerDisplayName} ({roleLabel})</span>
           </span>
         );
       }
