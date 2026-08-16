@@ -8,6 +8,8 @@ import { db, type SyncItem, type SyncStatus } from '../db/dexie';
 import { supabase } from '../db/supabaseClient';
 import { getOrCreateDeviceId } from './syncEventGenerator';
 import { resolveEntityConflict } from './SyncResolver';
+import { hlcEngine } from './hlcEngine';
+import { syncTelemetryService } from './syncTelemetryService';
 
 export interface SyncConflict {
   entityName: string;
@@ -154,7 +156,9 @@ class ProductionSyncEngine {
             'X-Device-ID': item.device_id || deviceId,
             'X-Tenant-ID': item.tenant_id || tenantId || '',
             'X-Branch-ID': item.branch_id || 'main-branch',
+            'X-HLC-Timestamp': item.hlc || hlcEngine.now(),
           };
+          syncTelemetryService.recordSyncStart();
           if (import.meta.env?.DEV) {
             console.debug('Sync Engine Request Headers:', headers);
           }
@@ -238,10 +242,12 @@ class ProductionSyncEngine {
 
       this.apiLatencyMs = Date.now() - startTime;
       this.lastSyncedAt = Date.now();
+      syncTelemetryService.recordSyncComplete(this.apiLatencyMs, failedCount === 0);
       return { success: true, syncedItems: syncedCount, failedItems: failedCount };
 
     } catch (err) {
       console.error('ProductionSyncEngine execution error:', err);
+      syncTelemetryService.recordSyncComplete(Date.now() - startTime, false);
       return { success: false, syncedItems: syncedCount, failedItems: failedCount };
     } finally {
       this.isSyncing = false;

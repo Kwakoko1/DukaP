@@ -20,6 +20,7 @@ import { deviceManager } from './deviceManager';
 import { permissionManager } from './permissionManager';
 import { sessionStore } from './sessionStore';
 import { db } from '../../db/dexie';
+import { cryptoVaultService } from '../cryptoVaultService';
 
 const DEFAULT_SESSION_CONFIG: SessionConfig = {
   accessTokenTtlSeconds: 1200, // 20 minutes
@@ -220,6 +221,10 @@ export class SessionManager {
     await sessionStore.saveLocalSession(localState);
     await permissionManager.reloadPermissionsForUser(tenant.id, user.role || 'Staff');
 
+    try {
+      await cryptoVaultService.deriveSessionVaultKey(`${user.id}:${sessionId}:${deviceId || 'device'}`);
+    } catch (_) {}
+
     this.transitionState('AUTHENTICATED_ONLINE');
     this.startHeartbeat();
     this.resetIdleTimer();
@@ -250,6 +255,7 @@ export class SessionManager {
     if (this.offlineGraceTimer) clearTimeout(this.offlineGraceTimer);
 
     tokenManager.clearTokens();
+    cryptoVaultService.clearVault();
     await sessionStore.clearLocalSession();
     this.context = null;
 

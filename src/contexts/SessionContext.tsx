@@ -6,6 +6,8 @@ import type { SessionState, SessionContextData, SessionErrorCode } from '../serv
 import { sessionManager } from '../services/session/sessionManager';
 import { permissionManager } from '../services/session/permissionManager';
 import { deviceManager } from '../services/session/deviceManager';
+import { abacEngine, type AbacResource } from '../services/abacEngine';
+import { customRulesEngine } from '../services/customRulesEngine';
 
 interface SessionContextValue {
   status: SessionState;
@@ -25,6 +27,8 @@ interface SessionContextValue {
   lock: () => void;
   unlock: (credentials: { password?: string; pin?: string }) => Promise<boolean>;
   hasPermission: (permission: string) => boolean;
+  evaluateAbac: (action: string, resource: Partial<AbacResource>) => { allowed: boolean; reason?: string };
+  evaluateRule: (event: string, context: Record<string, any>) => { allowed: boolean; actionType?: string; message?: string };
 }
 
 const SessionContext = createContext<SessionContextValue | null>(null);
@@ -55,6 +59,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const isOffline = status === 'AUTHENTICATED_OFFLINE';
     const canOperateOffline = isOnline || isOffline;
     const canSync = isOnline;
+    const activeBranchId = context?.branchId || context?.branches?.[0]?.id || 'main-branch';
 
     return {
       status,
@@ -83,6 +88,38 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       },
       hasPermission: (permission: string) => {
         return permissionManager.hasPermission(permission);
+      },
+      evaluateAbac: (action: string, resource: Partial<AbacResource>) => {
+        if (!context?.userId || !context?.tenantId) return { allowed: false, reason: 'No active session' };
+        return abacEngine.evaluate({
+          subject: {
+            userId: context.userId,
+            role: context.role || 'Staff',
+            tenantId: context.tenantId,
+            assignedBranchId: activeBranchId,
+            isSuperAdmin: context.role === 'Super Admin'
+          },
+          resource: {
+            resourceType: (resource.resourceType || 'sale') as any,
+            branchId: resource.branchId || activeBranchId,
+            tenantId: resource.tenantId || context.tenantId,
+            amount: resource.amount,
+            isConfidential: resource.isConfidential
+          },
+          action,
+          environment: {
+            isOnline,
+            activeBranchId
+          }
+        });
+      },
+      evaluateRule: (event: string, ruleContext: Record<string, any>) => {
+        const tenantId = context?.tenantId || 'tenant-default';
+        return customRulesEngine.evaluate({
+          tenantId,
+          event,
+          context: ruleContext
+        });
       }
     };
   }, [status, context, error]);

@@ -185,10 +185,11 @@ export interface SyncItem {
   user_id?: string;
   sync_token?: string;
 
-  // Backwards compatibility properties
+  // Backwards compatibility & HLC causality properties
   actionType?: 'INSERT' | 'UPDATE' | 'DELETE' | string;
   entityName?: string;
   timestamp?: number;
+  hlc?: string;
 }
 
 export interface Tenant {
