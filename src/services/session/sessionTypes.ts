@@ -99,7 +99,8 @@ export interface LocalSessionState {
 export interface SessionConfig {
   accessTokenTtlSeconds: number; // default 1200 (20 min)
   refreshTokenTtlMs: number; // default 14 days
-  offlineGracePeriodMs: number; // default 24 hours
+  offlineGracePeriodMs: number; // calculated from offlineGraceHours
+  offlineGraceHours: 24 | 36 | 72; // Configurable options: 24h, 36h, 72h
   onlineIdleTimeoutMs: number; // default 45 minutes
   absoluteTimeoutMs: number; // default 7 days
   idleWarningThresholdMs: number; // default 60 seconds

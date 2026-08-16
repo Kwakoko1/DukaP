@@ -24,6 +24,7 @@ import { db } from '../../db/dexie';
 const DEFAULT_SESSION_CONFIG: SessionConfig = {
   accessTokenTtlSeconds: 1200, // 20 minutes
   refreshTokenTtlMs: 14 * 24 * 60 * 60 * 1000, // 14 days
+  offlineGraceHours: 24, // 24h default (24 | 36 | 72)
   offlineGracePeriodMs: 24 * 60 * 60 * 1000, // 24 hours
   onlineIdleTimeoutMs: 45 * 60 * 1000, // 45 minutes
   absoluteTimeoutMs: 7 * 24 * 60 * 60 * 1000, // 7 days
@@ -62,6 +63,13 @@ export class SessionManager {
   public async initialize(): Promise<SessionState> {
     console.log('[SessionManager] Initializing Hybrid Session Engine...');
     this.transitionState('AUTHENTICATING');
+
+    try {
+      const savedGrace = typeof localStorage !== 'undefined' ? localStorage.getItem('KWAKOPOS_OFFLINE_GRACE_HOURS') : null;
+      if (savedGrace && [24, 36, 72].includes(Number(savedGrace))) {
+        this.setOfflineGraceHours(Number(savedGrace) as 24 | 36 | 72);
+      }
+    } catch (_) {}
 
     const isOnline = typeof navigator !== 'undefined' && navigator.onLine;
 
@@ -349,6 +357,24 @@ export class SessionManager {
 
   public getServerTimeOffset(): number {
     return this.serverTimeOffsetMs;
+  }
+
+  public setOfflineGraceHours(hours: 24 | 36 | 72): void {
+    const validHours: 24 | 36 | 72 = [24, 36, 72].includes(hours) ? hours : 24;
+    this.config.offlineGraceHours = validHours;
+    this.config.offlineGracePeriodMs = validHours * 60 * 60 * 1000;
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('KWAKOPOS_OFFLINE_GRACE_HOURS', String(validHours));
+      }
+    } catch (_) {}
+    if (this.context && this.context.authenticatedAt) {
+      this.context.offlineExpiresAt = this.context.authenticatedAt + this.config.offlineGracePeriodMs;
+    }
+  }
+
+  public getOfflineGraceHours(): 24 | 36 | 72 {
+    return this.config.offlineGraceHours || 24;
   }
 
   public subscribe(listener: SessionEventListener): () => void {

@@ -27,6 +27,7 @@ import { LegalPolicyModal, type LegalTab } from '../Legal/LegalPolicyModal';
 import { Subscriptions } from './Subscriptions';
 import { BusinessProfile } from './BusinessProfile';
 import { AppVersionFooter } from '../Layout/AppVersionFooter';
+import { sessionManager } from '../../services/session/sessionManager';
 
 export const Settings: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
   const { currentTenant, currentBranch, role, branches, user } = useAuth();
@@ -768,15 +769,16 @@ export const Settings: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
                             disabled={!hasScopePermission}
                             value={formSecurity.offlineGraceHours}
                             onChange={(e) => {
-                              const val = Number(e.target.value);
+                              const val = Number(e.target.value) as 24 | 36 | 72;
                               setFormSecurity(p => ({ ...p, offlineGraceHours: val }));
+                              sessionManager.setOfflineGraceHours(val);
                               void handleSaveConfig('SECURITY', 'offlineGraceHours', val);
                             }}
                             className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 text-xs px-2 focus:outline-none dark:border-darkbg-border dark:bg-darkbg dark:text-white"
                           >
-                            <option value="24">24 Hours Grace</option>
-                            <option value="48">48 Hours Grace</option>
-                            <option value="72">72 Hours Grace</option>
+                            <option value="24">24 Hours Grace (1 Day — Standard Security)</option>
+                            <option value="36">36 Hours Grace (1.5 Days — Extended Shift)</option>
+                            <option value="72">72 Hours Grace (3 Days — Weekend / Remote Ops)</option>
                           </select>
                           {isOverriddenAtEditingScope('SECURITY', 'offlineGraceHours') && (
                             <Button variant="outline" className="h-9 px-2" onClick={() => handleClearOverride('SECURITY', 'offlineGraceHours')} title="Clear Override"><RotateCcw size={14} /></Button>
