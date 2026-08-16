@@ -176,6 +176,7 @@ export class BootstrapEngine {
         db.productVariants,
         db.stockLedger,
         db.customers,
+        db.suppliers,
         db.subscriptionPlans,
         db.syncMetadata,
       ],
@@ -205,6 +206,9 @@ export class BootstrapEngine {
         }
         if (Array.isArray(snapshot.customers) && snapshot.customers.length > 0) {
           tasks.push(db.customers.bulkPut(snapshot.customers).then(() => { counts.customers = snapshot.customers.length; }));
+        }
+        if (Array.isArray((snapshot as any).suppliers) && (snapshot as any).suppliers.length > 0) {
+          tasks.push(db.suppliers.bulkPut((snapshot as any).suppliers).then(() => { counts.suppliers = (snapshot as any).suppliers.length; }));
         }
         if (Array.isArray(snapshot.subscriptionPlans) && snapshot.subscriptionPlans.length > 0) {
           tasks.push(db.subscriptionPlans.bulkPut(snapshot.subscriptionPlans).then(() => { counts.subscriptionPlans = snapshot.subscriptionPlans.length; }));

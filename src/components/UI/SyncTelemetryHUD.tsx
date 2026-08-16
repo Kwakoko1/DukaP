@@ -153,6 +153,14 @@ export const SyncTelemetryHUD: React.FC = () => {
 
           <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 space-y-2">
             <div className="flex items-center justify-between">
+              <span className="font-semibold text-slate-600 dark:text-slate-400">Database Schema Version</span>
+              <Badge variant="info">KwakoPosDB v27 (Schema IDB)</Badge>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="font-semibold text-slate-600 dark:text-slate-400">PWA Build & Release</span>
+              <span className="font-mono text-[11px] text-slate-700 dark:text-slate-300">v1.2.5 (Build 20260816.01)</span>
+            </div>
+            <div className="flex items-center justify-between">
               <span className="font-semibold text-slate-600 dark:text-slate-400">Hardware Data Vault</span>
               <Badge variant="success">AES-GCM-256 WebCrypto</Badge>
             </div>

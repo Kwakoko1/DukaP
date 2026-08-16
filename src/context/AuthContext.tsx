@@ -9,6 +9,7 @@ import { tenantRecoveryService } from '../services/tenantRecoveryService';
 import { tenantHealthMonitor } from '../services/tenantHealthMonitor';
 import { stockLedgerSyncEngine } from '../services/stockLedgerSyncEngine';
 import { bootstrapEngine } from '../services/bootstrapEngine';
+import { dataIntegrityManager } from '../services/dataIntegrityManager';
 import { tenantSecurityBroadcast } from '../utils/tenantSecurityBroadcast';
 import { getActiveSessionRaw, setActiveSession, clearActiveSession } from '../utils/sessionStorage';
 
@@ -433,6 +434,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           console.log(`[Auth] Session restored successfully for ${normUser?.name || 'User'} (${normRole})`);
           
           if (sess.tenant && sess.tenant.id) {
+            dataIntegrityManager.executeStartupSequence(sess.tenant.id, sess.user, sess.branch?.id).catch(err => {
+              console.error('[Auth] Startup data integrity sequence notice:', err);
+            });
+
             syncFromCloudOnLogin(sess.tenant.id).catch(err => {
               console.error('Background cloud sync failed on init:', err);
             });
