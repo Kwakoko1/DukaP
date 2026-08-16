@@ -720,11 +720,17 @@ export const AuthGateway: React.FC = () => {
             
             // Rehydrate local Dexie database cache with fresh server data
             await db.transaction('rw', [
-              db.users, db.tenants, db.branches, db.tenantUsers, db.userSecurity
+              db.users, db.tenants, db.branches, db.tenantUsers, db.tenantUserBranches,
+              db.userBranchRoles, db.tenantModules, db.tenantSettings, db.featureFlags, db.userSecurity
             ], async () => {
               if (authData.tenant) await db.tenants.put(authData.tenant);
               if (Array.isArray(authData.branches) && authData.branches.length > 0) await db.branches.bulkPut(authData.branches);
               if (Array.isArray(authData.tenantUsers) && authData.tenantUsers.length > 0) await db.tenantUsers.bulkPut(authData.tenantUsers);
+              if (Array.isArray(authData.tenantUserBranches) && authData.tenantUserBranches.length > 0) await db.tenantUserBranches.bulkPut(authData.tenantUserBranches);
+              if (Array.isArray(authData.userBranchRoles) && authData.userBranchRoles.length > 0) await db.userBranchRoles.bulkPut(authData.userBranchRoles);
+              if (Array.isArray(authData.tenantModules) && authData.tenantModules.length > 0) await db.tenantModules.bulkPut(authData.tenantModules);
+              if (Array.isArray(authData.tenantSettings) && authData.tenantSettings.length > 0) await db.tenantSettings.bulkPut(authData.tenantSettings);
+              if (Array.isArray(authData.featureFlags) && authData.featureFlags.length > 0) await db.featureFlags.bulkPut(authData.featureFlags);
               if (authData.userSecurity) await db.userSecurity.put(authData.userSecurity);
               await db.users.put(dbUser);
             });

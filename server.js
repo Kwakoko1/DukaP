@@ -1845,11 +1845,16 @@ const server = http.createServer(async (req, res) => {
             return;
           }
 
-          // Fetch associated tenant, branches, and roles
+          // Fetch associated tenant, branches, and roles in high-performance parallel execution
           const tenantId = user.tenant_id || `tenant-${user.id}`;
           let tenant = null;
           let branches = [];
           let tenantUsers = [];
+          let tenantUserBranches = [];
+          let userBranchRoles = [];
+          let tenantModules = [];
+          let tenantSettings = [];
+          let featureFlags = [];
           let userSecurity = null;
 
           if (tenantId) {
@@ -1871,20 +1876,43 @@ const server = http.createServer(async (req, res) => {
             }
             tenant = tRows[0] || null;
 
-            branches = await sql`SELECT * FROM branches WHERE tenant_id = ${tenantId};`;
+            const [
+              branchRows,
+              tuRows,
+              tubRows,
+              ubrRows,
+              modRows,
+              setRows,
+              flagRows,
+              secRows
+            ] = await Promise.all([
+              sql`SELECT * FROM branches WHERE tenant_id = ${tenantId};`.catch(() => []),
+              sql`SELECT * FROM tenant_users WHERE tenant_id = ${tenantId};`.catch(() => []),
+              sql`SELECT * FROM tenant_user_branches WHERE tenant_id = ${tenantId};`.catch(() => []),
+              sql`SELECT * FROM user_branch_roles WHERE tenant_id = ${tenantId};`.catch(() => []),
+              sql`SELECT * FROM tenant_modules WHERE tenant_id = ${tenantId};`.catch(() => []),
+              sql`SELECT * FROM tenant_settings WHERE tenant_id = ${tenantId};`.catch(() => []),
+              sql`SELECT * FROM feature_flags WHERE tenant_id = ${tenantId};`.catch(() => []),
+              sql`SELECT * FROM user_security WHERE user_id = ${user.id} LIMIT 1;`.catch(() => [])
+            ]);
+
+            branches = branchRows;
             if (branches.length === 0) {
-              // Ensure at least one default branch exists for this tenant
               const branchId = `branch-${tenantId}-hq`;
               await sql`
                 INSERT INTO branches (id, tenant_id, name, location, is_headquarters, status, created_at)
                 VALUES (${branchId}, ${tenantId}, 'Main HQ Branch', 'Dar es Salaam', true, 'Active', ${Date.now()})
                 ON CONFLICT (id) DO NOTHING;
               `.catch(() => {});
-              branches = await sql`SELECT * FROM branches WHERE tenant_id = ${tenantId};`;
+              branches = [{ id: branchId, tenant_id: tenantId, name: 'Main HQ Branch', location: 'Dar es Salaam', is_headquarters: true, status: 'Active' }];
             }
 
-            tenantUsers = await sql`SELECT * FROM tenant_users WHERE tenant_id = ${tenantId};`;
-            const secRows = await sql`SELECT * FROM user_security WHERE user_id = ${user.id} LIMIT 1;`;
+            tenantUsers = tuRows;
+            tenantUserBranches = tubRows;
+            userBranchRoles = ubrRows;
+            tenantModules = modRows;
+            tenantSettings = setRows;
+            featureFlags = flagRows;
             userSecurity = secRows[0] || null;
           }
 
@@ -1895,6 +1923,11 @@ const server = http.createServer(async (req, res) => {
             tenant,
             branches,
             tenantUsers,
+            tenantUserBranches,
+            userBranchRoles,
+            tenantModules,
+            tenantSettings,
+            featureFlags,
             userSecurity
           }));
           return;
