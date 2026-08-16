@@ -6,11 +6,15 @@
  * 2. Pre and Post migration snapshots accurately validate product, category, brand, order, and stock ledger counts.
  * 3. DataIntegrityManager startup state machine detects empty local states and triggers server recovery.
  * 4. User logout revokes session tokens without clearing business entities from local IndexedDB.
+ * 5. Atomic outbox transactions generate outbox queue records alongside business mutations.
+ * 6. Soft tombstone deletion marks records with `deletedAt` without immediate wipe.
  */
 
 import { db } from '../db/dexie';
 import { dbMigrationEngine } from '../services/dbMigrationEngine';
 import { dataIntegrityManager } from '../services/dataIntegrityManager';
+import { productRepository } from '../db/repositories/productRepository';
+import { outboxRepository } from '../db/sync/outboxRepository';
 
 export async function runDataPersistenceTests(): Promise<{ passed: boolean; details: string[] }> {
   const details: string[] = [];
@@ -76,8 +80,44 @@ export async function runDataPersistenceTests(): Promise<{ passed: boolean; deta
       details.push('❌ Test 3 Failed: DataIntegrityManager reported unexpected missing data.');
     }
 
+    // Test 4: Canonical Repository Atomic Outbox Mutation
+    const atomicProd = await productRepository.saveProduct({
+      id: 'prod-atomic-test-1',
+      name: 'Atomic Outbox Test Product',
+      category: 'General',
+      price: 5000,
+      buyingPrice: 4000,
+      sellingPrice: 5000,
+      stock: 10,
+      tenant_id: testTenantId,
+      branch_id: 'branch-1',
+      module: 'retail',
+      hasVariants: false,
+    });
+    
+    const pendingOutbox = await outboxRepository.getPendingMutations(testTenantId);
+    const hasOutboxItem = pendingOutbox.some((m) => m.entityId === 'prod-atomic-test-1');
+
+    if (atomicProd && hasOutboxItem) {
+      details.push('✅ Test 4 Passed: Atomic mutation saved product and queued outbox item within transaction.');
+    } else {
+      passed = false;
+      details.push('❌ Test 4 Failed: Atomic mutation failed to produce queued outbox item.');
+    }
+
+    // Test 5: Soft Tombstone Deletion
+    await productRepository.deleteProduct('prod-atomic-test-1', testTenantId);
+    const softDeleted = await db.products.get('prod-atomic-test-1');
+    if (softDeleted && softDeleted.deletedAt) {
+      details.push('✅ Test 5 Passed: Product deletion created soft tombstone without purging record.');
+    } else {
+      passed = false;
+      details.push('❌ Test 5 Failed: Product deletion failed to create soft tombstone.');
+    }
+
     // Cleanup test data
     await db.products.delete('prod-test-1');
+    await db.products.delete('prod-atomic-test-1');
     await db.categories.delete('cat-test-1');
     await db.brands.delete('brand-test-1');
 
