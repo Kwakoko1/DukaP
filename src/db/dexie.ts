@@ -3533,25 +3533,9 @@ export async function initProductionDatabase() {
 
     const usersCount = await db.users.count();
     if (usersCount === 0) {
-      console.log('[DukaPos] First-time setup: seeding production baseline (no demo data)...');
-
-      // Clear all tables for a clean slate
-      await db.products.clear();
-      await db.productVariants.clear();
-      await db.customers.clear();
-      await db.orders.clear();
-      await db.tenants.clear();
-      await db.branches.clear();
-      await db.industries.clear();
-      await db.tenantIndustries.clear();
-      await db.users.clear();
-      await db.userBranchRoles.clear();
-      await db.stockLedger.clear();
-      await db.stockBalance.clear();
-      await db.tenantModules.clear();
-      await db.tenantSettings.clear();
-      await db.featureFlags.clear();
-      await db.auditLogs.clear();
+      console.log('[DukaPos] First-time setup: seeding system master baseline...');
+      // SAFE INITIALIZATION: Preserve any existing user or product data and seed reference master data only.
+      // (Destructive .clear() calls removed to prevent data loss on updates or restarts)
 
       // ── SYSTEM-LEVEL MASTER DATA ─────────────────────────────────────────────
       // These are platform-wide reference records, NOT tenant-specific.

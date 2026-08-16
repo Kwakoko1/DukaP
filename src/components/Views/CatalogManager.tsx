@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { db } from '../../db/dexie';
 import { useAuth } from '../../context/AuthContext';
 import { useLiveQuery } from 'dexie-react-hooks';
@@ -17,7 +17,7 @@ interface CatalogManagerProps {
 }
 
 export const CatalogManager: React.FC<CatalogManagerProps> = ({ onOpenProductEditor }) => {
-  const { currentTenant, currentBranch, currentIndustry } = useAuth();
+  const { currentTenant, currentBranch, currentIndustry, isSuperAdminView } = useAuth();
 
   // ── Form States ───────────────────────────────────────────────────────────
   const [catName, setCatName] = useState('');
@@ -88,22 +88,82 @@ export const CatalogManager: React.FC<CatalogManagerProps> = ({ onOpenProductEdi
     };
   }, [industryType]);
 
+  // ── Auto-Hydrate from Server on Load ─────────────────────────────────────
+  useEffect(() => {
+    const tid = currentTenant?.id;
+    (async () => {
+      try {
+        const queryTid = tid || '';
+        // 1. Fetch Categories
+        const catRes = await fetch(`/api/categories?tenantId=${encodeURIComponent(queryTid)}&_t=${Date.now()}`);
+        if (catRes.ok) {
+          const serverCats = await catRes.json();
+          if (Array.isArray(serverCats) && serverCats.length > 0) {
+            await db.categories.bulkPut(serverCats);
+          }
+        }
+
+        // 2. Fetch Brands
+        const brandRes = await fetch(`/api/brands?tenantId=${encodeURIComponent(queryTid)}&_t=${Date.now()}`);
+        if (brandRes.ok) {
+          const serverBrands = await brandRes.json();
+          if (Array.isArray(serverBrands) && serverBrands.length > 0) {
+            await db.brands.bulkPut(serverBrands);
+          }
+        }
+
+        // 3. Fetch Products
+        const prodRes = await fetch(`/api/products?tenantId=${encodeURIComponent(queryTid)}&_t=${Date.now()}`);
+        if (prodRes.ok) {
+          const serverProds = await prodRes.json();
+          if (Array.isArray(serverProds) && serverProds.length > 0) {
+            for (const sp of serverProds) {
+              await db.products.put({
+                ...sp,
+                buyingPrice: Number(sp.buying_price || sp.buyingPrice || 0),
+                sellingPrice: Number(sp.selling_price || sp.sellingPrice || sp.price || 0),
+                price: Number(sp.price || sp.selling_price || 0),
+                stock: Number(sp.stock || 0),
+                syncStatus: 'SYNCED'
+              });
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('[CatalogManager] Background sync warning:', e);
+      }
+    })();
+  }, [currentTenant?.id, isSuperAdminView]);
+
   // ── Live Queries for Products, Categories, Brands ────────────────────────
   const products = useLiveQuery(
-    () => db.products.where('tenant_id').equals(currentTenant?.id || '').toArray(),
-    [currentTenant?.id]
+    async () => {
+      if (isSuperAdminView) {
+        return await db.products.toArray();
+      }
+      if (!currentTenant?.id) return await db.products.toArray();
+      const local = await db.products.where('tenant_id').equals(currentTenant.id).toArray();
+      if (local.length === 0) {
+        return await db.products.toArray();
+      }
+      return local;
+    },
+    [currentTenant?.id, isSuperAdminView]
   ) || [];
 
   const allCategories = useLiveQuery(async () => {
-    if (!currentTenant?.id) return [];
     const catMap = new Map<string, number>();
 
     // Load registered categories
-    const registered = await db.categories.where('tenant_id').equals(currentTenant.id).toArray();
+    const registered = (isSuperAdminView || !currentTenant?.id)
+      ? await db.categories.toArray()
+      : await db.categories.where('tenant_id').equals(currentTenant.id).toArray();
     registered.forEach(c => catMap.set(c.name, 0));
 
     // Count product associations
-    const prods = await db.products.where('tenant_id').equals(currentTenant.id).toArray();
+    const prods = (isSuperAdminView || !currentTenant?.id)
+      ? await db.products.toArray()
+      : await db.products.where('tenant_id').equals(currentTenant.id).toArray();
     prods.forEach(p => {
       const cName = (p.category || 'General').trim();
       catMap.set(cName, (catMap.get(cName) || 0) + 1);
@@ -114,18 +174,21 @@ export const CatalogManager: React.FC<CatalogManagerProps> = ({ onOpenProductEdi
       count,
       record: registered.find(r => r.name.toLowerCase() === name.toLowerCase())
     }));
-  }, [currentTenant?.id]) || [];
+  }, [currentTenant?.id, isSuperAdminView]) || [];
 
   const allBrands = useLiveQuery(async () => {
-    if (!currentTenant?.id) return [];
     const brandMap = new Map<string, number>();
 
     // Load registered brands
-    const registered = await db.brands.where('tenant_id').equals(currentTenant.id).toArray();
+    const registered = (isSuperAdminView || !currentTenant?.id)
+      ? await db.brands.toArray()
+      : await db.brands.where('tenant_id').equals(currentTenant.id).toArray();
     registered.forEach(b => brandMap.set(b.name, 0));
 
     // Count product associations
-    const prods = await db.products.where('tenant_id').equals(currentTenant.id).toArray();
+    const prods = (isSuperAdminView || !currentTenant?.id)
+      ? await db.products.toArray()
+      : await db.products.where('tenant_id').equals(currentTenant.id).toArray();
     prods.forEach(p => {
       if (p.brand && p.brand.trim()) {
         const bName = p.brand.trim();
@@ -138,7 +201,7 @@ export const CatalogManager: React.FC<CatalogManagerProps> = ({ onOpenProductEdi
       count,
       record: registered.find(r => r.name.toLowerCase() === name.toLowerCase())
     }));
-  }, [currentTenant?.id]) || [];
+  }, [currentTenant?.id, isSuperAdminView]) || [];
 
   // ── Insights Metrics ──────────────────────────────────────────────────────
   const totalCatalogProducts = products.length;

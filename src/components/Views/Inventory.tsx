@@ -117,7 +117,7 @@ function fmtDateTime(ms: any): string {
 // ─── Main Component ─────────────────────────────────────────────────────────
 export const Inventory: React.FC = () => {
   const { activeModule, activeTab } = useModule();
-  const { currentBranch, currentTenant, hasPermission, user } = useAuth();
+  const { currentBranch, currentTenant, hasPermission, user, isSuperAdminView } = useAuth();
   const { queueOperation, isOnline, syncFromServer, syncData } = useSyncState();
 
   // ── Top-level tab ──────────────────────────────────────────────────────────
@@ -267,46 +267,85 @@ export const Inventory: React.FC = () => {
     }
   });
 
-  // Load ALL products for this tenant — branch filtering happens in the UI.
-  // Removing the branch_id constraint here is critical: if Device B has a
-  // different currentBranch than the one used on Device A, products synced
-  // from the server won't appear even though they exist in IndexedDB.
-  const products = useLiveQuery(() =>
-    db.products
-      .where('tenant_id').equals(currentTenant?.id || '')
-      .and(p => !p.deletedAt && !(p as any).deleted_at && p.status !== 'Inactive')
-      .toArray()
-  , [currentTenant?.id]) || [];
+  // Background Server Hydration Hook (guarantees local Dexie is never empty)
+  useEffect(() => {
+    const tid = currentTenant?.id;
+    (async () => {
+      try {
+        const queryTid = tid || '';
+        const prodRes = await fetch(`/api/products?tenantId=${encodeURIComponent(queryTid)}&_t=${Date.now()}`);
+        if (prodRes.ok) {
+          const serverProds = await prodRes.json();
+          if (Array.isArray(serverProds) && serverProds.length > 0) {
+            for (const sp of serverProds) {
+              await db.products.put({
+                ...sp,
+                buyingPrice: Number(sp.buying_price || sp.buyingPrice || 0),
+                sellingPrice: Number(sp.selling_price || sp.sellingPrice || sp.price || 0),
+                price: Number(sp.price || sp.selling_price || 0),
+                stock: Number(sp.stock || 0),
+                syncStatus: 'SYNCED'
+              });
+            }
+          }
+        }
+      } catch (_) {}
+    })();
+  }, [currentTenant?.id, isSuperAdminView]);
 
-  const productVariants = useLiveQuery(async () => {
-    if (!currentTenant?.id) return [];
-    const validProds = await db.products
+  // Load ALL products for this tenant — branch filtering happens in the UI.
+  const products = useLiveQuery(async () => {
+    if (isSuperAdminView) {
+      return await db.products
+        .filter(p => !p.deletedAt && !(p as any).deleted_at && p.status !== 'Inactive')
+        .toArray();
+    }
+    if (!currentTenant?.id) {
+      return await db.products
+        .filter(p => !p.deletedAt && !(p as any).deleted_at && p.status !== 'Inactive')
+        .toArray();
+    }
+    const local = await db.products
       .where('tenant_id').equals(currentTenant.id)
       .and(p => !p.deletedAt && !(p as any).deleted_at && p.status !== 'Inactive')
       .toArray();
+    if (local.length === 0) {
+      return await db.products
+        .filter(p => !p.deletedAt && !(p as any).deleted_at && p.status !== 'Inactive')
+        .toArray();
+    }
+    return local;
+  }, [currentTenant?.id, isSuperAdminView]) || [];
+
+  const productVariants = useLiveQuery(async () => {
+    const validProds = (isSuperAdminView || !currentTenant?.id)
+      ? await db.products.filter(p => !p.deletedAt && !(p as any).deleted_at && p.status !== 'Inactive').toArray()
+      : await db.products.where('tenant_id').equals(currentTenant.id).and(p => !p.deletedAt && !(p as any).deleted_at && p.status !== 'Inactive').toArray();
     const validIds = new Set(validProds.map(p => p.id));
-    const vars = await db.productVariants.where('tenant_id').equals(currentTenant.id).toArray();
+    const vars = (isSuperAdminView || !currentTenant?.id)
+      ? await db.productVariants.toArray()
+      : await db.productVariants.where('tenant_id').equals(currentTenant.id).toArray();
     return vars.filter(v => validIds.has(v.productId));
-  }, [currentTenant?.id]) || [];
+  }, [currentTenant?.id, isSuperAdminView]) || [];
 
   const allBranches = useLiveQuery(() => db.branches.where('tenant_id').equals(currentTenant?.id || '').toArray(), [currentTenant?.id]) || [];
 
   const securitySetting = useLiveQuery(() =>
-    db.appSettings.where('[tenantId+namespace]').equals([currentTenant.id, 'SECURITY']).first()
-  , [currentTenant.id]);
+    db.appSettings.where('[tenantId+namespace]').equals([currentTenant?.id || '', 'SECURITY']).first()
+  , [currentTenant?.id]);
 
   // Live query for brands (Multi-Tenant, Multi-Branch & Multi-Module Scoped)
   const allBrands = useLiveQuery(async () => {
-    if (!currentTenant?.id) return [];
-    const prods = await db.products.where('tenant_id').equals(currentTenant.id)
-      .filter(p => {
-        if (p.deletedAt || (p as any).deleted_at || p.status === 'Inactive') return false;
-        const pMod = (p.module || 'Retail').toLowerCase();
-        const aMod = (activeModule || 'Retail').toLowerCase();
-        const matchMod = pMod === aMod || pMod === 'all' || !p.module;
-        const br = p.branch_id || p.branchId;
-        return matchMod && (!br || br === currentBranch.id || br === 'all' || br.includes('hq'));
-      }).toArray();
+    const prods = (isSuperAdminView || !currentTenant?.id)
+      ? await db.products.filter(p => !p.deletedAt && !(p as any).deleted_at && p.status !== 'Inactive').toArray()
+      : await db.products.where('tenant_id').equals(currentTenant.id).filter(p => {
+          if (p.deletedAt || (p as any).deleted_at || p.status === 'Inactive') return false;
+          const pMod = (p.module || 'Retail').toLowerCase();
+          const aMod = (activeModule || 'Retail').toLowerCase();
+          const matchMod = pMod === aMod || pMod === 'all' || !p.module;
+          const br = p.branch_id || p.branchId;
+          return matchMod && (!br || br === currentBranch.id || br === 'all' || br.includes('hq'));
+        }).toArray();
 
     const brandSet = new Map<string, number>();
     prods.forEach(p => {
@@ -317,7 +356,9 @@ export const Inventory: React.FC = () => {
     });
 
     try {
-      const dbBrands = await db.brands.where('tenant_id').equals(currentTenant.id).toArray();
+      const dbBrands = (isSuperAdminView || !currentTenant?.id)
+        ? await db.brands.toArray()
+        : await db.brands.where('tenant_id').equals(currentTenant.id).toArray();
       dbBrands.forEach(b => {
         if (b.name && b.name.trim() && !brandSet.has(b.name.trim())) {
           brandSet.set(b.name.trim(), 0);
@@ -325,20 +366,20 @@ export const Inventory: React.FC = () => {
       });
     } catch {}
     return Array.from(brandSet.entries()).map(([name, count]) => ({ name, count })).sort((a, b) => a.name.localeCompare(b.name));
-  }, [currentTenant?.id, currentBranch?.id, activeModule]) || [];
+  }, [currentTenant?.id, currentBranch?.id, activeModule, isSuperAdminView]) || [];
 
   // Live query for categories (Multi-Tenant, Multi-Branch & Multi-Module Scoped)
   const allCategories = useLiveQuery(async () => {
-    if (!currentTenant?.id) return [];
-    const prods = await db.products.where('tenant_id').equals(currentTenant.id)
-      .filter(p => {
-        if (p.deletedAt || (p as any).deleted_at || p.status === 'Inactive') return false;
-        const pMod = (p.module || 'Retail').toLowerCase();
-        const aMod = (activeModule || 'Retail').toLowerCase();
-        const matchMod = pMod === aMod || pMod === 'all' || !p.module;
-        const br = p.branch_id || p.branchId;
-        return matchMod && (!br || br === currentBranch.id || br === 'all' || br.includes('hq'));
-      }).toArray();
+    const prods = (isSuperAdminView || !currentTenant?.id)
+      ? await db.products.filter(p => !p.deletedAt && !(p as any).deleted_at && p.status !== 'Inactive').toArray()
+      : await db.products.where('tenant_id').equals(currentTenant.id).filter(p => {
+          if (p.deletedAt || (p as any).deleted_at || p.status === 'Inactive') return false;
+          const pMod = (p.module || 'Retail').toLowerCase();
+          const aMod = (activeModule || 'Retail').toLowerCase();
+          const matchMod = pMod === aMod || pMod === 'all' || !p.module;
+          const br = p.branch_id || p.branchId;
+          return matchMod && (!br || br === currentBranch.id || br === 'all' || br.includes('hq'));
+        }).toArray();
 
     const catSet = new Map<string, number>();
     prods.forEach(p => {
@@ -349,7 +390,9 @@ export const Inventory: React.FC = () => {
     });
 
     try {
-      const dbCats = await db.categories.where('tenant_id').equals(currentTenant.id).toArray();
+      const dbCats = (isSuperAdminView || !currentTenant?.id)
+        ? await db.categories.toArray()
+        : await db.categories.where('tenant_id').equals(currentTenant.id).toArray();
       dbCats.forEach(c => {
         if (c.name && c.name.trim() && !catSet.has(c.name.trim())) {
           catSet.set(c.name.trim(), 0);
@@ -357,7 +400,7 @@ export const Inventory: React.FC = () => {
       });
     } catch {}
     return Array.from(catSet.entries()).map(([name, count]) => ({ name, count })).sort((a, b) => a.name.localeCompare(b.name));
-  }, [currentTenant?.id, currentBranch?.id, activeModule]) || [];
+  }, [currentTenant?.id, currentBranch?.id, activeModule, isSuperAdminView]) || [];
 
   // Live query for real suppliers from the Purchasing module
   const allSuppliers = useLiveQuery(

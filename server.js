@@ -2268,19 +2268,21 @@ const server = http.createServer(async (req, res) => {
       // 8. GET /api/products, POST /api/products, DELETE /api/products
       if (pathname === '/api/products' && req.method === 'GET') {
         const prodId = fullUrl.searchParams.get('id');
+        const filterTenantId = fullUrl.searchParams.get('tenantId') || fullUrl.searchParams.get('filterTenantId') || req.headers['x-tenant-id'];
+        const targetTenant = filterTenantId && filterTenantId !== 'tenant-admin-system' ? filterTenantId : (tenantId && tenantId !== 'tenant-admin-system' ? tenantId : null);
         let products = [];
         if (prodId) {
-          if (tenantId && tenantId !== 'tenant-admin-system') {
-            products = await sql`SELECT * FROM products WHERE id = ${prodId} AND tenant_id = ${tenantId} AND (deleted_at IS NULL)`;
+          if (targetTenant) {
+            products = await sql`SELECT * FROM products WHERE id = ${prodId} AND tenant_id = ${targetTenant} AND (deleted_at IS NULL)`;
           } else {
             products = await sql`SELECT * FROM products WHERE id = ${prodId} AND (deleted_at IS NULL)`;
           }
-        } else if (tenantId && tenantId !== 'tenant-admin-system') {
-          products = await sql`SELECT * FROM products WHERE tenant_id = ${tenantId} AND (deleted_at IS NULL)`;
+        } else if (targetTenant) {
+          products = await sql`SELECT * FROM products WHERE tenant_id = ${targetTenant} AND (deleted_at IS NULL) ORDER BY created_at DESC`;
         } else {
-          products = await sql`SELECT * FROM products WHERE (deleted_at IS NULL) LIMIT 300`;
+          products = await sql`SELECT * FROM products WHERE (deleted_at IS NULL) ORDER BY created_at DESC LIMIT 500`;
         }
-        res.writeHead(200);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(products));
         return;
       }
