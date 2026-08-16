@@ -377,6 +377,24 @@ export class ProductService {
     const mappedLocal = mapProductToLocal(updatedProd);
     await db.products.put(mappedLocal);
 
+    // Auto-seed Category if new or updated
+    if (updatedProd.category && updatedProd.category.trim()) {
+      const trimmedCat = updatedProd.category.trim();
+      const existingCat = await db.categories.where('tenant_id').equals(user.tenant_id).filter(c => c.name === trimmedCat).first();
+      if (!existingCat) {
+        await createCategory({ name: trimmedCat, tenant_id: user.tenant_id }).catch(() => {});
+      }
+    }
+
+    // Auto-seed Brand if new or updated
+    if (updatedProd.brand && updatedProd.brand.trim()) {
+      const trimmedBrand = updatedProd.brand.trim();
+      const existingBrand = await db.brands.where('tenant_id').equals(user.tenant_id).filter(b => b.name === trimmedBrand).first();
+      if (!existingBrand) {
+        await createBrand({ name: trimmedBrand, tenant_id: user.tenant_id }).catch(() => {});
+      }
+    }
+
     const auditAction = isPriceChanging ? 'PRODUCT_PRICE_CHANGED' : 'PRODUCT_UPDATED';
     await db.securityAuditLogs.put({
       id: `aud-${now}-${Math.random().toString(36).substring(2, 9)}`,
@@ -1029,9 +1047,68 @@ export async function deleteCategory(idOrName: string, tenantId?: string, reassi
 
 export async function fetchBrands(tenantId: string): Promise<Brand[]> {
   try {
-    return await db.brands.where('tenant_id').equals(tenantId).toArray();
+    const list = await db.brands.where('tenant_id').equals(tenantId).toArray();
+    if (list.length === 0) {
+      return await db.brands.toArray();
+    }
+    return list;
   } catch {
-    return [];
+    return await db.brands.toArray().catch(() => []);
+  }
+}
+
+export async function reconcileCategoriesAndBrands(tenantId?: string): Promise<{ categoriesAdded: number; brandsAdded: number }> {
+  try {
+    const prods = tenantId
+      ? await db.products.where('tenant_id').equals(tenantId).toArray()
+      : await db.products.toArray();
+
+    const existingCats = tenantId
+      ? await db.categories.where('tenant_id').equals(tenantId).toArray()
+      : await db.categories.toArray();
+
+    const existingBrands = tenantId
+      ? await db.brands.where('tenant_id').equals(tenantId).toArray()
+      : await db.brands.toArray();
+
+    const catNameSet = new Set(existingCats.map(c => (c.name || '').trim().toLowerCase()));
+    const brandNameSet = new Set(existingBrands.map(b => (b.name || '').trim().toLowerCase()));
+
+    let categoriesAdded = 0;
+    let brandsAdded = 0;
+
+    for (const p of prods) {
+      const cName = (p.category || '').trim();
+      if (cName && !catNameSet.has(cName.toLowerCase())) {
+        const tid = tenantId || p.tenant_id || (p as any).tenantId || 'tenant-101';
+        await db.categories.put({
+          id: `cat-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+          name: cName,
+          tenant_id: tid,
+          created_at: Date.now()
+        });
+        catNameSet.add(cName.toLowerCase());
+        categoriesAdded++;
+      }
+
+      const bName = (p.brand || '').trim();
+      if (bName && !brandNameSet.has(bName.toLowerCase())) {
+        const tid = tenantId || p.tenant_id || (p as any).tenantId || 'tenant-101';
+        await db.brands.put({
+          id: `brand-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+          name: bName,
+          tenant_id: tid,
+          created_at: Date.now()
+        });
+        brandNameSet.add(bName.toLowerCase());
+        brandsAdded++;
+      }
+    }
+
+    return { categoriesAdded, brandsAdded };
+  } catch (err) {
+    console.warn('[reconcileCategoriesAndBrands] Warning:', err);
+    return { categoriesAdded: 0, brandsAdded: 0 };
   }
 }
 

@@ -358,9 +358,12 @@ export const Inventory: React.FC = () => {
     });
 
     try {
-      const dbBrands = (isSuperAdminView || !currentTenant?.id)
+      let dbBrands = (isSuperAdminView || !currentTenant?.id)
         ? await db.brands.toArray()
         : await db.brands.where('tenant_id').equals(currentTenant.id).toArray();
+      if (dbBrands.length === 0 && currentTenant?.id) {
+        dbBrands = await db.brands.toArray();
+      }
       dbBrands.forEach(b => {
         if (b.name && b.name.trim() && !brandSet.has(b.name.trim())) {
           brandSet.set(b.name.trim(), 0);

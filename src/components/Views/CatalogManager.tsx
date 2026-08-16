@@ -5,7 +5,8 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import {
   createCategory, updateCategory, deleteCategory,
   createBrand, updateBrand, deleteBrand,
-  mergeDuplicateCategories, mergeDuplicateBrands
+  mergeDuplicateCategories, mergeDuplicateBrands,
+  reconcileCategoriesAndBrands
 } from '../../services/productService';
 import {
   Layers, Tag, Package, Search, Plus, Edit, Trash2,
@@ -129,6 +130,8 @@ export const CatalogManager: React.FC<CatalogManagerProps> = ({ onOpenProductEdi
             }
           }
         }
+        // 4. Auto-reconcile product categories and brands into Dexie tables
+        await reconcileCategoriesAndBrands(queryTid);
       } catch (e) {
         console.warn('[CatalogManager] Background sync warning:', e);
       }
@@ -154,16 +157,24 @@ export const CatalogManager: React.FC<CatalogManagerProps> = ({ onOpenProductEdi
   const allCategories = useLiveQuery(async () => {
     const catMap = new Map<string, number>();
 
-    // Load registered categories
-    const registered = (isSuperAdminView || !currentTenant?.id)
+    // Load registered categories with fallback
+    let registered = (isSuperAdminView || !currentTenant?.id)
       ? await db.categories.toArray()
       : await db.categories.where('tenant_id').equals(currentTenant.id).toArray();
-    registered.forEach(c => catMap.set(c.name, 0));
+    if (registered.length === 0 && currentTenant?.id) {
+      registered = await db.categories.toArray();
+    }
+    registered.forEach(c => {
+      if (c.name && c.name.trim()) catMap.set(c.name.trim(), 0);
+    });
 
-    // Count product associations
-    const prods = (isSuperAdminView || !currentTenant?.id)
+    // Count product associations with fallback
+    let prods = (isSuperAdminView || !currentTenant?.id)
       ? await db.products.toArray()
       : await db.products.where('tenant_id').equals(currentTenant.id).toArray();
+    if (prods.length === 0 && currentTenant?.id) {
+      prods = await db.products.toArray();
+    }
     prods.forEach(p => {
       const cName = (p.category || 'General').trim();
       catMap.set(cName, (catMap.get(cName) || 0) + 1);
@@ -179,16 +190,24 @@ export const CatalogManager: React.FC<CatalogManagerProps> = ({ onOpenProductEdi
   const allBrands = useLiveQuery(async () => {
     const brandMap = new Map<string, number>();
 
-    // Load registered brands
-    const registered = (isSuperAdminView || !currentTenant?.id)
+    // Load registered brands with fallback
+    let registered = (isSuperAdminView || !currentTenant?.id)
       ? await db.brands.toArray()
       : await db.brands.where('tenant_id').equals(currentTenant.id).toArray();
-    registered.forEach(b => brandMap.set(b.name, 0));
+    if (registered.length === 0 && currentTenant?.id) {
+      registered = await db.brands.toArray();
+    }
+    registered.forEach(b => {
+      if (b.name && b.name.trim()) brandMap.set(b.name.trim(), 0);
+    });
 
-    // Count product associations
-    const prods = (isSuperAdminView || !currentTenant?.id)
+    // Count product associations with fallback
+    let prods = (isSuperAdminView || !currentTenant?.id)
       ? await db.products.toArray()
       : await db.products.where('tenant_id').equals(currentTenant.id).toArray();
+    if (prods.length === 0 && currentTenant?.id) {
+      prods = await db.products.toArray();
+    }
     prods.forEach(p => {
       if (p.brand && p.brand.trim()) {
         const bName = p.brand.trim();

@@ -3291,6 +3291,33 @@ export async function reconcileAllParentProductStocks(): Promise<{
         fixedDiscrepancies++;
       }
     }
+
+    // Auto-reconcile category & brand entries in Dexie
+    const cName = (p.category || '').trim();
+    if (cName) {
+      const catExists = await db.categories.where('name').equals(cName).first().catch(() => null);
+      if (!catExists) {
+        await db.categories.put({
+          id: `cat-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+          name: cName,
+          tenant_id: p.tenant_id || (p as any).tenantId || 'tenant-101',
+          created_at: Date.now()
+        }).catch(() => {});
+      }
+    }
+
+    const bName = (p.brand || '').trim();
+    if (bName) {
+      const brandExists = await db.brands.where('name').equals(bName).first().catch(() => null);
+      if (!brandExists) {
+        await db.brands.put({
+          id: `brand-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+          name: bName,
+          tenant_id: p.tenant_id || (p as any).tenantId || 'tenant-101',
+          created_at: Date.now()
+        }).catch(() => {});
+      }
+    }
   }
 
   return { reconciledCount, fixedDiscrepancies };
