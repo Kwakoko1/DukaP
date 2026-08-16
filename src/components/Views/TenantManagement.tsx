@@ -29,6 +29,7 @@ type PanelMode = 'create' | 'edit' | 'subscription' | null;
 interface TenantFormState {
   businessName: string;
   email: string;
+  username: string;
   businessType: string;
   ownerFirstName: string;
   ownerLastName: string;
@@ -44,6 +45,7 @@ interface TenantFormState {
 const emptyForm: TenantFormState = {
   businessName: '',
   email: '',
+  username: '',
   businessType: 'Retail',
   ownerFirstName: '',
   ownerLastName: '',
@@ -536,6 +538,9 @@ export const TenantManagement: React.FC = () => {
         const branchId = `branch-${Date.now()}`;
         const fullName = `${form.ownerFirstName} ${form.ownerLastName}`.trim() || 'Tenant Owner';
         const slug = form.businessName.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+        const resolvedUsername = (form.username && form.username.trim())
+          ? form.username.trim().toLowerCase().replace(/[^a-z0-9_.-]/g, '')
+          : form.email.trim().toLowerCase().split('@')[0];
 
         // 1. Commit to PostgreSQL — authoritative tenant registry
         await fetch('/api/tenants', {
@@ -566,6 +571,7 @@ export const TenantManagement: React.FC = () => {
             id: `usr-${tenantId}`,
             tenant_id: tenantId,
             name: fullName,
+            username: resolvedUsername,
             email: form.email.trim(),
             role: 'Tenant Owner',
             password_hash: form.password
@@ -599,7 +605,7 @@ export const TenantManagement: React.FC = () => {
           branchId,
           form.businessName.trim(),
           form.businessType,
-          { email: form.email.trim(), fullName, password: form.password },
+          { email: form.email.trim(), username: resolvedUsername, fullName, password: form.password },
           { plan: form.planName as any, status: form.status === 'TRIAL' ? 'Trial' : 'Active', industry: form.businessType, branchName: form.branchName || 'Main HQ Branch' }
         );
 
@@ -964,11 +970,53 @@ export const TenantManagement: React.FC = () => {
                 <>
                   <div>
                     <label className="font-bold text-slate-700 dark:text-slate-300">Owner First Name *</label>
-                    <Input value={form.ownerFirstName} onChange={e => setForm(p => ({ ...p, ownerFirstName: e.target.value }))} required placeholder="Joseph" className="mt-1 h-9 text-xs" />
+                    <Input 
+                      value={form.ownerFirstName} 
+                      onChange={e => {
+                        const val = e.target.value;
+                        setForm(p => {
+                          const updated = { ...p, ownerFirstName: val };
+                          if (!p.username || p.username.startsWith(p.ownerFirstName.toLowerCase())) {
+                            const combined = `${val} ${p.ownerLastName}`.trim().toLowerCase().replace(/[^a-z0-9]/g, '.');
+                            updated.username = combined;
+                          }
+                          return updated;
+                        });
+                      }} 
+                      required 
+                      placeholder="Joseph" 
+                      className="mt-1 h-9 text-xs" 
+                    />
                   </div>
                   <div>
                     <label className="font-bold text-slate-700 dark:text-slate-300">Owner Last Name *</label>
-                    <Input value={form.ownerLastName} onChange={e => setForm(p => ({ ...p, ownerLastName: e.target.value }))} required placeholder="Mallya" className="mt-1 h-9 text-xs" />
+                    <Input 
+                      value={form.ownerLastName} 
+                      onChange={e => {
+                        const val = e.target.value;
+                        setForm(p => {
+                          const updated = { ...p, ownerLastName: val };
+                          if (!p.username || p.username.endsWith(p.ownerLastName.toLowerCase())) {
+                            const combined = `${p.ownerFirstName} ${val}`.trim().toLowerCase().replace(/[^a-z0-9]/g, '.');
+                            updated.username = combined;
+                          }
+                          return updated;
+                        });
+                      }} 
+                      required 
+                      placeholder="Mallya" 
+                      className="mt-1 h-9 text-xs" 
+                    />
+                  </div>
+                  <div>
+                    <label className="font-bold text-slate-700 dark:text-slate-300">Preferred Username *</label>
+                    <Input 
+                      value={form.username} 
+                      onChange={e => setForm(p => ({ ...p, username: e.target.value.toLowerCase().replace(/[^a-z0-9_.-]/g, '') }))} 
+                      required 
+                      placeholder="joseph.mallya" 
+                      className="mt-1 h-9 text-xs" 
+                    />
                   </div>
                   <div>
                     <label className="font-bold text-slate-700 dark:text-slate-300">Owner Password *</label>

@@ -637,6 +637,8 @@ export const AuthGateway: React.FC = () => {
   const [branchAddress, setBranchAddress] = useState('Posta Block A');
 
   const [fullName, setFullName] = useState('');
+  const [username, setUsername] = useState('');
+  const [isUsernameCustom, setIsUsernameCustom] = useState(false);
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
@@ -1279,6 +1281,7 @@ export const AuthGateway: React.FC = () => {
         (businessType as IndustryModule) || 'Retail',
         {
           email: (email || 'owner@newbusiness.com').trim().toLowerCase(),
+          username: (username.trim() || (email || 'owner@newbusiness.com').trim().split('@')[0]).toLowerCase().replace(/[^a-z0-9_.-]/g, ''),
           fullName: fullName || 'Business Owner',
           pin: '1234',
           password: password || 'owner123',
@@ -1318,9 +1321,11 @@ export const AuthGateway: React.FC = () => {
       } catch (_) {}
 
       // Setup user session
+      const resolvedUsername = (username.trim() || (email || 'owner@newbusiness.com').trim().split('@')[0]).toLowerCase().replace(/[^a-z0-9_.-]/g, '');
       const newUser: User = {
         id: ownerUserId,
         name: fullName || 'New Business Owner',
+        username: resolvedUsername,
         email: (email || 'owner@newbusiness.com').trim().toLowerCase(),
         phone: phone || '+255700000000',
         role: 'Business Owner',
@@ -2443,7 +2448,32 @@ export const AuthGateway: React.FC = () => {
               <div className="space-y-4 animate-in fade-in duration-200">
                 <h4 className="text-xs font-bold text-slate-800 dark:text-white uppercase tracking-wider">Step 2 — Business Owner Profile</h4>
                 
-                <Input label="Full Name *" placeholder="e.g. Juma Ally" value={fullName} onChange={(e) => setFullName(e.target.value)} required />
+                <Input 
+                  label="Full Name *" 
+                  placeholder="e.g. Juma Ally" 
+                  value={fullName} 
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setFullName(val);
+                    if (!isUsernameCustom && val.trim()) {
+                      setUsername(val.toLowerCase().trim().replace(/[^a-z0-9]/g, '.').replace(/\.+/g, '.'));
+                    }
+                  }} 
+                  required 
+                />
+                <div>
+                  <Input 
+                    label="Preferred Username *" 
+                    placeholder="e.g. juma.ally or jumaally" 
+                    value={username} 
+                    onChange={(e) => {
+                      setIsUsernameCustom(true);
+                      setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_.-]/g, ''));
+                    }} 
+                    required 
+                  />
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">Unique username used for login on POS terminals and mobile app.</p>
+                </div>
                 <Input label="Email Address *" placeholder="e.g. owner@dukapos.com" value={email} onChange={(e) => setEmail(e.target.value)} required />
                 <Input label="Phone Number *" placeholder="e.g. +255 712 345 678" value={phone} onChange={(e) => setPhone(e.target.value)} required />
                 <Input type="password" label="Account Password *" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} required />

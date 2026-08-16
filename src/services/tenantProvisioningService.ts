@@ -15,7 +15,7 @@ export const tenantProvisioningService = {
     branchId: string,
     companyName: string,
     businessType: string,
-    superAdminUser: { email: string; fullName: string; pin?: string; password?: string; phone?: string },
+    superAdminUser: { email: string; fullName: string; pin?: string; password?: string; phone?: string; username?: string },
     additionalMetadata: {
       regNumber?: string;
       taxNumber?: string;
@@ -354,11 +354,14 @@ export const tenantProvisioningService = {
       const ownerPin = (superAdminUser.pin || '1234').replace(/\D/g, '').slice(0, 4).padEnd(4, '0');
       const nameParts = superAdminUser.fullName.trim().split(' ');
       const userExists = await db.users.get(userId);
+      const chosenUsername = (superAdminUser.username && superAdminUser.username.trim())
+        ? superAdminUser.username.trim().toLowerCase().replace(/[^a-z0-9_.-]/g, '')
+        : superAdminUser.email.trim().toLowerCase().split('@')[0];
       if (!userExists) {
         await db.users.put({
           id: userId,
           email: superAdminUser.email.trim().toLowerCase(),
-          username: superAdminUser.email.trim().toLowerCase().split('@')[0],
+          username: chosenUsername,
           password_hash: superAdminUser.password || 'owner123',
           is_super_admin: false,
           tenant_id: tenantId,
@@ -523,6 +526,7 @@ export const tenantProvisioningService = {
           companyName,
           businessType,
           email: superAdminUser.email,
+          username: (superAdminUser.username && superAdminUser.username.trim()) ? superAdminUser.username.trim().toLowerCase().replace(/[^a-z0-9_.-]/g, '') : superAdminUser.email.trim().toLowerCase().split('@')[0],
           fullName: superAdminUser.fullName,
           password: superAdminUser.password,
           phone: superAdminUser.phone,
