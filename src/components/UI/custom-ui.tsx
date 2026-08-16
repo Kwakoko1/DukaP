@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { GripHorizontal } from 'lucide-react';
+import { GripHorizontal, RotateCcw, Eye, EyeOff } from 'lucide-react';
 
 // Reusable Button component
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
@@ -168,6 +168,7 @@ export const Dialog: React.FC<DialogProps> = ({
   const firstFocusableRef = useRef<HTMLButtonElement>(null);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
+  const [isPeeking, setIsPeeking] = useState(false);
   const dragStartRef = useRef<{ startX: number; startY: number; initialX: number; initialY: number } | null>(null);
 
   const onCloseRef = useRef(onClose);
@@ -177,6 +178,7 @@ export const Dialog: React.FC<DialogProps> = ({
   useEffect(() => {
     if (isOpen) {
       setPosition({ x: 0, y: 0 });
+      setIsPeeking(false);
     }
   }, [isOpen]);
 
@@ -282,7 +284,13 @@ export const Dialog: React.FC<DialogProps> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4">
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-sm animate-fade-in"
+        className={`absolute inset-0 transition-all duration-200 ${
+          isPeeking
+            ? 'bg-slate-900/10 backdrop-blur-none'
+            : isDragging || position.x !== 0 || position.y !== 0
+            ? 'bg-slate-900/30 dark:bg-slate-950/40 backdrop-blur-none'
+            : 'bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-sm'
+        }`}
         onClick={onClose}
       />
 
@@ -293,8 +301,12 @@ export const Dialog: React.FC<DialogProps> = ({
             ? { transform: `translate(${position.x}px, ${position.y}px)` }
             : undefined
         }
-        className={`relative flex flex-col w-full ${sizes[size]} max-h-[calc(100vh-32px)] rounded-2xl bg-white dark:bg-darkbg-card border border-slate-200 dark:border-darkbg-border shadow-2xl z-10 animate-scale-in overflow-hidden ${
-          isDragging ? 'opacity-95 shadow-indigo-500/40 ring-2 ring-indigo-500/30' : ''
+        className={`relative flex flex-col w-full ${sizes[size]} max-h-[calc(100vh-32px)] rounded-2xl bg-white dark:bg-darkbg-card border border-slate-200 dark:border-darkbg-border shadow-2xl z-10 animate-scale-in overflow-hidden transition-opacity duration-150 ${
+          isPeeking
+            ? 'opacity-20 select-none'
+            : isDragging
+            ? 'opacity-95 shadow-indigo-500/40 ring-2 ring-indigo-500/30'
+            : ''
         }`}
       >
         {/* ── Sticky Header (Draggable Handle) ── */}
@@ -314,21 +326,58 @@ export const Dialog: React.FC<DialogProps> = ({
           )}
 
           <div className="px-5 pt-2 pb-2.5 flex items-center justify-between">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 min-w-0">
               {draggable && (
                 <GripHorizontal size={14} className="text-slate-400 dark:text-slate-500 opacity-60 flex-shrink-0" />
               )}
-              <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">{title}</h3>
+              <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white truncate">{title}</h3>
             </div>
-            <button
-              ref={firstFocusableRef}
-              onClick={onClose}
-              className="rounded-lg p-1 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
-            >
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
+            
+            {/* Header Actions */}
+            <div className="flex items-center gap-1 shrink-0">
+              {/* Peek Mode Button */}
+              <button
+                type="button"
+                onClick={() => setIsPeeking(!isPeeking)}
+                onMouseDown={(e) => e.stopPropagation()}
+                className={`rounded-lg p-1.5 transition-colors text-xs flex items-center gap-1 ${
+                  isPeeking 
+                    ? 'bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300' 
+                    : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+                title={isPeeking ? 'Exit Peek Mode' : 'Peek Behind: Make modal transparent to view screen underneath'}
+              >
+                {isPeeking ? <EyeOff size={13} /> : <Eye size={13} />}
+                <span className="hidden sm:inline text-[10px] font-bold">Peek</span>
+              </button>
+
+              {/* Reset Position Button (if moved) */}
+              {(position.x !== 0 || position.y !== 0) && (
+                <button
+                  type="button"
+                  onClick={() => setPosition({ x: 0, y: 0 })}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  className="rounded-lg p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors text-xs flex items-center gap-1"
+                  title="Reset Modal Position to Center"
+                >
+                  <RotateCcw size={12} />
+                  <span className="hidden sm:inline text-[10px] font-bold">Center</span>
+                </button>
+              )}
+
+              {/* Close Button */}
+              <button
+                ref={firstFocusableRef}
+                onClick={onClose}
+                onMouseDown={(e) => e.stopPropagation()}
+                className="rounded-lg p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                title="Close (Esc)"
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
           </div>
           {description && (
             <p className="px-5 pb-2 text-xs text-slate-500 dark:text-slate-400">{description}</p>
