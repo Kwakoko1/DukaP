@@ -239,6 +239,16 @@ export const UsersRoles: React.FC = () => {
   // ── Maps ──────────────────────────────────────────────────────────────────
   const usersMap = useMemo(() => new Map(allUsers.map(u => [u.id, u])), [allUsers]);
   const rolesMap = useMemo(() => new Map(allRoles.map(r => [r.id, r])), [allRoles]);
+  const tenantsMap = useMemo(() => {
+    const map = new Map<string, any>();
+    for (const t of dbTenantsList) {
+      if (t.id) map.set(t.id, t);
+    }
+    for (const t of cloudTenantsList) {
+      if (t.id && !map.has(t.id)) map.set(t.id, t);
+    }
+    return map;
+  }, [dbTenantsList, cloudTenantsList]);
 
   // ── Audit Logger ──────────────────────────────────────────────────────────
   const logAudit = async (action: string, payload?: any) => {
@@ -1365,19 +1375,50 @@ export const UsersRoles: React.FC = () => {
                       </tr>
                     ) : filteredTenantUsers.map(tu => {
                       const dbUser = usersMap.get(tu.user_id);
-                      const isSuperAdminUser = isSuperAdminView || dbUser?.role === 'Super Admin' || (dbUser?.id || '').includes('super');
+                      const isSuperAdminAccount = dbUser?.is_super_admin === true || dbUser?.role === 'Super Admin' || dbUser?.id === 'usr-superadmin' || dbUser?.email === 'admin@kwakoko.co.tz' || dbUser?.tenant_id === 'tenant-admin-system';
+                      const userTenantId = dbUser?.tenant_id || tu.tenant_id;
+                      const tenantObj = tenantsMap.get(userTenantId);
+
                       const primaryAlloc = tenantUserBranches.find(tub => tub.user_id === tu.user_id && tub.is_primary) || tenantUserBranches.find(tub => tub.user_id === tu.user_id);
-                      const branchObj = dbBranches.find(b => b.id === primaryAlloc?.branch_id);
+                      const branchObj = dbBranches.find(b => b.id === (primaryAlloc?.branch_id || dbUser?.branch_id));
                       const roleObj = rolesMap.get(primaryAlloc?.role_id || 'role-cashier');
                       const initials = (dbUser?.name || '??').split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase();
 
-                      const branchName = (primaryAlloc && branchObj?.name)
-                        ? branchObj.name
-                        : (isSuperAdminUser ? 'HQ' : (dbBranches[0]?.name || 'Default HQ'));
+                      // Resolve Branch Name
+                      let branchName = 'Main HQ Branch';
+                      if (isSuperAdminAccount) {
+                        branchName = 'HQ';
+                      } else if (branchObj?.name) {
+                        branchName = branchObj.name;
+                      } else if (tenantObj?.business_name || tenantObj?.name) {
+                        branchName = `${tenantObj.business_name || tenantObj.name} HQ`;
+                      }
 
-                      const branchLocation = (primaryAlloc && branchObj?.location)
-                        ? branchObj.location
-                        : (isSuperAdminUser ? 'Platform Central HQ' : (dbBranches[0]?.location || 'Main Outlet'));
+                      // Resolve Location (Region / City / District / Custom Address)
+                      let branchLocation = 'Dar es Salaam, Tanzania';
+                      if (isSuperAdminAccount) {
+                        branchLocation = 'Platform Central HQ';
+                      } else if (branchObj?.location && !['HQ Office', 'Main Outlet', 'HQ'].includes(branchObj.location)) {
+                        branchLocation = branchObj.location;
+                      } else {
+                        // Extract Region / City / District from Tenant or Branch address
+                        const geoParts = [
+                          tenantObj?.district,
+                          tenantObj?.city,
+                          tenantObj?.region,
+                          tenantObj?.address
+                        ].filter(Boolean);
+
+                        if (geoParts.length > 0) {
+                          branchLocation = geoParts.filter((v, i, a) => a.indexOf(v) === i).slice(0, 2).join(', ');
+                        } else if (branchObj?.location) {
+                          branchLocation = branchObj.location;
+                        } else if (tenantObj?.country) {
+                          branchLocation = `${tenantObj.country}`;
+                        } else {
+                          branchLocation = 'Dar es Salaam';
+                        }
+                      }
 
                       const regDate = formatRegistrationDate(dbUser?.created_at || tu.joined_at);
                       const regSource = dbUser?.registration_source || 'SYSTEM_SEED';
