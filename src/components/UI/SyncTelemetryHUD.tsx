@@ -45,7 +45,7 @@ export const SyncTelemetryHUD: React.FC = () => {
     <>
       <div 
         onClick={() => setShowDiagnostics(true)}
-        className="fixed bottom-3 right-4 z-40 flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-900/90 dark:bg-slate-800/90 text-white shadow-xl backdrop-blur-md border border-slate-700/50 text-xs cursor-pointer hover:scale-105 transition-all select-none"
+        className="fixed bottom-16 md:bottom-3 right-4 z-40 flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-900/90 dark:bg-slate-800/90 text-white shadow-xl backdrop-blur-md border border-slate-700/50 text-xs cursor-pointer hover:scale-105 transition-all select-none"
         title="Click to open Edge Sync & Security Diagnostics"
       >
         {/* Network & Sync Pulse */}
