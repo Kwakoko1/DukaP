@@ -161,12 +161,63 @@ export const UsersRoles: React.FC = () => {
         }
       }
     }
+
+    // Always guarantee Super Admin Platform Account exists in Super Admin Console
+    if (isSuperAdminView && (!map.has('usr-superadmin') || map.get('usr-superadmin')?.email !== 'admin@kwakoko.co.tz')) {
+      map.set('usr-superadmin', {
+        id: 'usr-superadmin',
+        name: 'System Platform Owner',
+        first_name: 'System Platform',
+        last_name: 'Owner',
+        username: 'superadmin',
+        email: 'admin@kwakoko.co.tz',
+        phone: '+255713296319',
+        role: 'Super Admin',
+        job_title: 'Super Admin',
+        status: 'Active',
+        is_super_admin: true,
+        tenant_id: 'tenant-admin-system',
+        branch_id: 'branch-admin-main',
+        registration_source: 'PLATFORM_ADMIN',
+        created_by: 'SYSTEM_PROVISIONER',
+        verification_status: 'VERIFIED',
+        created_at: 1785181600000,
+        updated_at: Date.now()
+      });
+    }
+
     return Array.from(map.values());
   }, [cloudUsersList, localDbUsers, currentTenant?.id, isSuperAdminView, activeTenantIds]);
+
+  // Sync server users into Dexie whenever in Super Admin View
+  useEffect(() => {
+    if (!isSuperAdminView) return;
+    (async () => {
+      try {
+        const res = await fetch('/api/users');
+        if (res.ok) {
+          const serverUsers = await res.json();
+          if (Array.isArray(serverUsers)) {
+            for (const su of serverUsers) {
+              await db.users.put({
+                ...su,
+                first_name: su.first_name || su.name?.split(' ')[0] || '',
+                last_name: su.last_name || su.name?.split(' ').slice(1).join(' ') || '',
+                status: su.status || 'Active',
+                verification_status: su.verification_status || 'VERIFIED'
+              });
+            }
+          }
+        }
+      } catch (_) {}
+    })();
+  }, [isSuperAdminView]);
+
   const allRoles = useLiveQuery(async () => {
     const list = await db.roles.toArray();
+    if (isSuperAdminView) return list;
     return list.filter(r => r.tenant_id === null || r.tenant_id === currentTenant.id);
-  }) || [];
+  }, [isSuperAdminView, currentTenant?.id]) || [];
   const allPermissions = useLiveQuery(() => db.permissions.toArray()) || [];
   const allRolePermissions = useLiveQuery(() => db.rolePermissions.toArray()) || [];
   const tenantUserBranches = useLiveQuery(() =>
@@ -178,9 +229,12 @@ export const UsersRoles: React.FC = () => {
       .toArray();
     return logs.sort((a, b) => b.created_at - a.created_at).slice(0, 50);
   }) || [];
-  const dbBranches = useLiveQuery(() =>
-    db.branches.where('tenant_id').equals(currentTenant.id).toArray()
-  ) || [];
+  const dbBranches = useLiveQuery(async () => {
+    if (isSuperAdminView) {
+      return await db.branches.toArray();
+    }
+    return await db.branches.where('tenant_id').equals(currentTenant.id).toArray();
+  }, [isSuperAdminView, currentTenant?.id]) || [];
 
   // ── Maps ──────────────────────────────────────────────────────────────────
   const usersMap = useMemo(() => new Map(allUsers.map(u => [u.id, u])), [allUsers]);
@@ -922,19 +976,36 @@ export const UsersRoles: React.FC = () => {
 
   // ── Filtered Data ──────────────────────────────────────────────────────────
   const filteredTenantUsers = useMemo(() => {
-    // Reconcile: if tenantUsers is empty, dynamically construct from allUsers so users directory never displays 0 when users exist
-    let baseList: TenantUser[] = tenantUsers;
-    if (baseList.length === 0 && allUsers.length > 0) {
-      baseList = allUsers.map(u => ({
-        id: `tu-${currentTenant?.id || 'tenant'}-${u.id}`,
-        tenant_id: currentTenant?.id || u.tenant_id || '',
-        user_id: u.id,
-        employee_code: u.id.includes('owner') ? 'EMP-OWNER' : 'EMP-001',
-        job_title: (u as any).role || 'Tenant Owner',
-        department: 'Management',
-        status: u.status || 'Active',
-        joined_at: u.created_at || Date.now()
-      }));
+    let baseList: TenantUser[] = [];
+
+    if (isSuperAdminView) {
+      baseList = allUsers.map(u => {
+        const isSuper = u.is_super_admin || u.role === 'Super Admin' || u.id === 'usr-superadmin' || u.email === 'admin@kwakoko.co.tz';
+        return {
+          id: `tu-${u.tenant_id || (isSuper ? 'tenant-admin-system' : 'tenant')}-${u.id}`,
+          tenant_id: u.tenant_id || (isSuper ? 'tenant-admin-system' : currentTenant?.id || ''),
+          user_id: u.id,
+          employee_code: isSuper ? 'EMP-SUPERADMIN' : (u.id.includes('owner') ? 'EMP-OWNER' : 'EMP-001'),
+          job_title: isSuper ? 'Super Admin' : ((u as any).role || 'Tenant Owner'),
+          department: isSuper ? 'Platform Administration' : 'Management',
+          status: u.status || 'Active',
+          joined_at: u.created_at || Date.now()
+        };
+      });
+    } else {
+      baseList = tenantUsers;
+      if (baseList.length === 0 && allUsers.length > 0) {
+        baseList = allUsers.map(u => ({
+          id: `tu-${currentTenant?.id || 'tenant'}-${u.id}`,
+          tenant_id: currentTenant?.id || u.tenant_id || '',
+          user_id: u.id,
+          employee_code: u.id.includes('owner') ? 'EMP-OWNER' : 'EMP-001',
+          job_title: (u as any).role || 'Tenant Owner',
+          department: 'Management',
+          status: u.status || 'Active',
+          joined_at: u.created_at || Date.now()
+        }));
+      }
     }
 
     let result = baseList.filter(tu => {
@@ -945,8 +1016,8 @@ export const UsersRoles: React.FC = () => {
       if (userSearch.trim()) {
         const q = userSearch.toLowerCase();
         const matches = (
-          dbUser?.name.toLowerCase().includes(q) ||
-          dbUser?.email.toLowerCase().includes(q) ||
+          dbUser?.name?.toLowerCase().includes(q) ||
+          dbUser?.email?.toLowerCase().includes(q) ||
           tu.employee_code.toLowerCase().includes(q) ||
           tu.job_title.toLowerCase().includes(q) ||
           dbUser?.registration_source?.toLowerCase().includes(q) ||
@@ -992,10 +1063,10 @@ export const UsersRoles: React.FC = () => {
 
       // 5. Account Category Filter (Platform Staff vs Tenant Users)
       if (accountCategoryFilter === 'PLATFORM_STAFF') {
-        const isPlatform = dbUser?.is_super_admin || dbUser?.role === 'Super Admin' || tu.job_title === 'Super Admin' || tu.tenant_id === 'tenant-admin-system';
+        const isPlatform = dbUser?.is_super_admin || dbUser?.role === 'Super Admin' || tu.job_title === 'Super Admin' || tu.tenant_id === 'tenant-admin-system' || dbUser?.email === 'admin@kwakoko.co.tz' || tu.user_id === 'usr-superadmin';
         if (!isPlatform) return false;
       } else if (accountCategoryFilter === 'TENANT_USERS') {
-        const isPlatform = dbUser?.is_super_admin || dbUser?.role === 'Super Admin' || tu.job_title === 'Super Admin' || tu.tenant_id === 'tenant-admin-system';
+        const isPlatform = dbUser?.is_super_admin || dbUser?.role === 'Super Admin' || tu.job_title === 'Super Admin' || tu.tenant_id === 'tenant-admin-system' || dbUser?.email === 'admin@kwakoko.co.tz' || tu.user_id === 'usr-superadmin';
         if (isPlatform) return false;
       }
 
@@ -1010,7 +1081,7 @@ export const UsersRoles: React.FC = () => {
       const tsB = uB?.created_at || b.joined_at || 0;
       return sortDirection === 'DESC' ? tsB - tsA : tsA - tsB;
     });
-  }, [tenantUsers, allUsers, usersMap, userSearch, dateRangePreset, customStartDate, customEndDate, sourceFilter, verificationFilter, accountCategoryFilter, sortDirection, currentTenant?.id]);
+  }, [tenantUsers, allUsers, usersMap, userSearch, dateRangePreset, customStartDate, customEndDate, sourceFilter, verificationFilter, accountCategoryFilter, sortDirection, currentTenant?.id, isSuperAdminView]);
 
   const groupedPermissions = useMemo(() => {
     return allPermissions.reduce((acc, p) => {
