@@ -87,14 +87,25 @@ export class DataIntegrityManager {
         }
       };
 
-      const productCount = await getCount(db.products);
-      const variantCount = await getCount(db.productVariants);
-      const categoryCount = await getCount(db.categories);
-      const brandCount = await getCount(db.brands);
-      const customerCount = await getCount(db.customers);
-      const supplierCount = await getCount(db.suppliers);
-      const orderCount = await getCount(db.orders);
-      const stockLedgerCount = await getCount(db.stockLedger);
+      const [
+        productCount,
+        variantCount,
+        categoryCount,
+        brandCount,
+        customerCount,
+        supplierCount,
+        orderCount,
+        stockLedgerCount
+      ] = await Promise.all([
+        getCount(db.products),
+        getCount(db.productVariants),
+        getCount(db.categories),
+        getCount(db.brands),
+        getCount(db.customers),
+        getCount(db.suppliers),
+        getCount(db.orders),
+        getCount(db.stockLedger)
+      ]);
 
       // Rule: If tenant exists on server but local database has 0 products & 0 categories, recovery is required
       const needsBootstrap = productCount === 0 && categoryCount === 0;

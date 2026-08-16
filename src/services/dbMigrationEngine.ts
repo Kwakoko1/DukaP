@@ -65,20 +65,38 @@ export class DatabaseMigrationEngine {
       }
     };
 
-    return {
-      tenantId: tid,
-      deviceId,
-      databaseVersion: db.verno,
-      products: await countStore(db.products),
-      categories: await countStore(db.categories),
-      brands: await countStore(db.brands),
-      customers: await countStore(db.customers),
-      suppliers: await countStore(db.suppliers),
-      sales: await countStore(db.orders),
-      stockLedger: await countStore(db.stockLedger),
-      createdAt: new Date().toISOString(),
-    };
-  }
+      const [
+        products,
+        categories,
+        brands,
+        customers,
+        suppliers,
+        sales,
+        stockLedger
+      ] = await Promise.all([
+        countStore(db.products),
+        countStore(db.categories),
+        countStore(db.brands),
+        countStore(db.customers),
+        countStore(db.suppliers),
+        countStore(db.orders),
+        countStore(db.stockLedger)
+      ]);
+
+      return {
+        tenantId: tid,
+        deviceId,
+        databaseVersion: db.verno,
+        products,
+        categories,
+        brands,
+        customers,
+        suppliers,
+        sales,
+        stockLedger,
+        createdAt: new Date().toISOString(),
+      };
+    }
 
   /**
    * Executes database migration safely with multi-tab Web Lock coordination.
