@@ -95,7 +95,7 @@ function checkRateLimit(ip, route = 'auth') {
 }
 
 // ─── HYBRID SESSION MANAGEMENT & TOKEN CRYPTOGRAPHY ──────────────────────────
-const JWT_SECRET = process.env.JWT_SECRET || process.env.SESSION_SECRET || 'kwakopos-hybrid-session-signing-secret-2026';
+const JWT_SECRET = process.env.JWT_SECRET || process.env.VITE_JWT_SECRET || process.env.SESSION_SECRET || 'kwakopos-hybrid-session-signing-secret-2026';
 const ACCESS_TOKEN_TTL_SECONDS = parseInt(process.env.ACCESS_TOKEN_TTL || '1200', 10); // 20 minutes
 const REFRESH_TOKEN_TTL_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
 const ABSOLUTE_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
@@ -1143,18 +1143,7 @@ async function parseRequestBody(req) {
 
 // ─── ZERO-TRUST SECURITY ENGINE & REAL-TIME SSE BROADCAST ────────────────────
 
-const JWT_SECRET = process.env.VITE_JWT_SECRET || 'dukapos_saas_prod_jwt_super_secret_key_2026_x89f';
 const sseClients = new Set();
-
-function base64UrlEncode(str) {
-  return Buffer.from(str).toString('base64').replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
-}
-
-function base64UrlDecode(str) {
-  str = str.replace(/-/g, '+').replace(/_/g, '/');
-  while (str.length % 4) str += '=';
-  return Buffer.from(str, 'base64').toString('utf8');
-}
 
 function signJWT(payload, secret = JWT_SECRET, expiresInSec = 3600) {
   const header = { alg: 'HS256', typ: 'JWT' };
@@ -2685,8 +2674,6 @@ const server = http.createServer(async (req, res) => {
           expiresAt: sessionCheck[0].expires_at
         }));
         return;
-          return;
-        }
       }
 
       // 0.2 POST /api/billing/webhook — Payment Gateway Webhook Receiver (Selcom / AzamPay / DPO / Stripe)
