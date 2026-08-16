@@ -53,6 +53,19 @@ export class SyncTelemetryService {
     return () => this.listeners.delete(listener);
   }
 
+  public setNetworkStatus(isOnline: boolean): void {
+    if (this.metrics.isOnline !== isOnline) {
+      this.metrics.isOnline = isOnline;
+      if (!isOnline) {
+        this.metrics.syncStatus = 'OFFLINE';
+      } else if (this.metrics.syncStatus === 'OFFLINE') {
+        this.metrics.syncStatus = 'IDLE';
+      }
+      this.recalculateHealthScore();
+      this.notify();
+    }
+  }
+
   public recordSyncStart(): void {
     this.metrics.syncStatus = 'SYNCING';
     this.notify();

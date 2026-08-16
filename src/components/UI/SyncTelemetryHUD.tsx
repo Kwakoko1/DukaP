@@ -12,13 +12,15 @@
 import React, { useState, useEffect } from 'react';
 import { useSession } from '../../contexts/SessionContext';
 import { useAuth } from '../../context/AuthContext';
+import { useSyncState } from '../../context/SyncContext';
 import { syncTelemetryService, type SyncTelemetryMetrics } from '../../services/syncTelemetryService';
 import { Wifi, WifiOff, RefreshCw, ShieldCheck, Clock, Activity, HardDrive } from 'lucide-react';
 import { Dialog, Badge, Button } from './custom-ui';
 
 export const SyncTelemetryHUD: React.FC = () => {
-  const { status, context, isOnline: sessionIsOnline } = useSession();
+  const { status, context } = useSession();
   const { user, isSuperAdminView } = useAuth();
+  const { isOnline, isSyncing: syncIsSyncing, pendingCount: syncPendingCount } = useSyncState();
   const [metrics, setMetrics] = useState<SyncTelemetryMetrics>(syncTelemetryService.getMetrics());
   const [showDiagnostics, setShowDiagnostics] = useState(false);
 
@@ -30,8 +32,14 @@ export const SyncTelemetryHUD: React.FC = () => {
     return () => unsub();
   }, []);
 
-  const isOnline = sessionIsOnline || metrics.isOnline;
+  // Synchronize network state with telemetry service
+  useEffect(() => {
+    syncTelemetryService.setNetworkStatus(isOnline);
+  }, [isOnline]);
+
   const isOffline = !isOnline;
+  const isSyncing = syncIsSyncing || metrics.syncStatus === 'SYNCING';
+  const outboxCount = Math.max(metrics.pendingOutboxCount || 0, syncPendingCount || 0);
 
   // Format Offline Grace Countdown
   const graceRemainingText = React.useMemo(() => {
@@ -56,7 +64,7 @@ export const SyncTelemetryHUD: React.FC = () => {
       >
         {/* Network & Sync Pulse */}
         <div className="flex items-center gap-1.5">
-          {metrics.syncStatus === 'SYNCING' ? (
+          {isSyncing ? (
             <RefreshCw size={13} className="text-blue-400 animate-spin" />
           ) : isOnline ? (
             <span className="flex h-2 w-2 relative">
@@ -68,7 +76,7 @@ export const SyncTelemetryHUD: React.FC = () => {
           )}
 
           <span className="font-semibold">
-            {metrics.syncStatus === 'SYNCING'
+            {isSyncing
               ? 'Syncing...'
               : isOnline
               ? 'Cloud Sync'
@@ -77,9 +85,9 @@ export const SyncTelemetryHUD: React.FC = () => {
         </div>
 
         {/* Outbox Badge */}
-        {metrics.pendingOutboxCount > 0 && (
+        {outboxCount > 0 && (
           <span className="px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-bold text-[10px] border border-amber-500/30">
-            {metrics.pendingOutboxCount} queued
+            {outboxCount} queued
           </span>
         )}
 
@@ -118,7 +126,7 @@ export const SyncTelemetryHUD: React.FC = () => {
                 <span className="font-semibold">Outbox Queue</span>
               </div>
               <p className="text-sm font-bold text-slate-800 dark:text-white">
-                {metrics.pendingOutboxCount} Pending Mutation(s)
+                {outboxCount} Pending Mutation(s)
               </p>
             </div>
 
