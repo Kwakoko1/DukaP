@@ -121,12 +121,9 @@ export const Dashboard: React.FC = () => {
   const productVariants = useLiveQuery(() => {
     if (!tenantId) return [];
     return db.productVariants.where('tenant_id').equals(tenantId)
-      .and(v => {
-        if (v.status === 'Inactive') return false;
-        const vBranch = v.branch_id || (v as any).branchId;
-        return !vBranch || vBranch === branchId || vBranch === 'all' || vBranch.includes('hq') || vBranch === branchId;
-      }).toArray();
-  }, [tenantId, branchId]) || [];
+      .and(v => v.status !== 'Inactive' && !(v as any).deletedAt && !(v as any).deleted_at)
+      .toArray();
+  }, [tenantId]) || [];
 
   const orders = useLiveQuery(() => {
     if (!tenantId) return [];
