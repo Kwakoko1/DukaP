@@ -1,8 +1,35 @@
 import { db } from '../db/dexie';
 import { productionSyncEngine } from './productionSyncEngine';
+import { reconcileCategoriesAndBrands } from './productService';
 
 export const PWA_BUILD_HASH_KEY = 'kwakopos_build_hash';
-export const CURRENT_PWA_BUILD_VER = '2026.08.15.v2.1.0';
+export const CURRENT_PWA_BUILD_VER = '2026.08.16.v2.2.0';
+
+/**
+ * Ensures the browser marks this PWA's IndexedDB and CacheStorage as persistent,
+ * preventing storage eviction during low-disk or browser update events.
+ */
+export async function requestPersistentStorage(): Promise<boolean> {
+  if (typeof navigator !== 'undefined' && navigator.storage && navigator.storage.persist) {
+    try {
+      const isPersisted = await navigator.storage.persisted();
+      if (isPersisted) {
+        console.info('[StoragePersistence] IndexedDB storage is already persistent.');
+        return true;
+      }
+      const granted = await navigator.storage.persist();
+      if (granted) {
+        console.info('[StoragePersistence] Browser granted PERSISTENT storage. Local catalog & sync outbox are immune to eviction.');
+      } else {
+        console.warn('[StoragePersistence] Storage is best-effort. Browser may evict under extreme storage pressure.');
+      }
+      return granted;
+    } catch (err) {
+      console.warn('[StoragePersistence] Error requesting persistent storage:', err);
+    }
+  }
+  return false;
+}
 
 export interface StorageDiagnostics {
   buildVersion: string;
@@ -39,10 +66,13 @@ export async function syncStatePostUpdate(tenantId?: string): Promise<{
     console.warn('[PWARehydration] Error counting local products:', err);
   }
 
+  // Always ensure persistent storage lock
+  await requestPersistentStorage().catch(() => {});
+
   if (isNewBuild) {
     console.info(`[PWARehydration] New application build detected: ${installedVersion || 'none'} -> ${CURRENT_PWA_BUILD_VER}. Executing state reconciliation...`);
 
-    // 1. Verify IndexedDB schema integrity
+    // 1. Verify IndexedDB schema integrity & preserve local catalog
     try {
       if (!db.isOpen()) {
         await db.open();
@@ -53,8 +83,18 @@ export async function syncStatePostUpdate(tenantId?: string): Promise<{
       console.error('[PWARehydration] IndexedDB schema verification warning:', dbErr);
     }
 
-    // 2. Trigger background cloud sync pipeline to catch missing rows
+    // 2. Reconcile Products, Categories & Brands into IndexedDB (zero loss)
     const targetTenant = tenantId || localStorage.getItem('last_active_tenant') || 'tenant-101';
+    try {
+      const reconResult = await reconcileCategoriesAndBrands(targetTenant);
+      if (reconResult.brandsAdded > 0 || reconResult.categoriesAdded > 0) {
+        console.info(`[PWARehydration] Reconciled metadata: +${reconResult.brandsAdded} brands, +${reconResult.categoriesAdded} categories.`);
+      }
+    } catch (reconErr) {
+      console.warn('[PWARehydration] Metadata reconciliation deferred:', reconErr);
+    }
+
+    // 3. Trigger non-destructive background cloud delta pull (upsert only)
     try {
       await productionSyncEngine.pullChanges(targetTenant, 'branch-main');
       console.info(`[PWARehydration] Background cloud sync delta pull triggered successfully for ${targetTenant}.`);
@@ -62,7 +102,7 @@ export async function syncStatePostUpdate(tenantId?: string): Promise<{
       console.warn('[PWARehydration] Cloud sync pipeline deferred (offline or unreachable):', syncErr);
     }
 
-    // 3. Commit new version reference
+    // 4. Commit new version reference
     localStorage.setItem(PWA_BUILD_HASH_KEY, CURRENT_PWA_BUILD_VER);
     localStorage.setItem('kwakopos_last_rehydration_time', String(Date.now()));
   }
