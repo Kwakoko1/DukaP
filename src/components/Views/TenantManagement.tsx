@@ -1788,6 +1788,12 @@ function TenantNodeItem({
             {tenant.business_name || tenant.trade_name || tenant.company_name || tenant.name || 'Business'}
           </span>
 
+          {tenant.business_code && (
+            <span className="px-2 py-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 border border-indigo-200/60 dark:border-indigo-800/60 font-mono text-[10px] font-bold">
+              {tenant.business_code}
+            </span>
+          )}
+
           {/* Status Badge */}
           {isTrial && (
             <span className="bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 font-extrabold uppercase text-[10px] px-2.5 py-0.5 rounded-md tracking-wider">
