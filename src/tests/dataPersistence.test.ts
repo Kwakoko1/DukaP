@@ -9,7 +9,7 @@
  */
 
 import { db } from '../db/dexie';
-import { dbMigrationEngine, LocalDataSnapshot } from '../services/dbMigrationEngine';
+import { dbMigrationEngine } from '../services/dbMigrationEngine';
 import { dataIntegrityManager } from '../services/dataIntegrityManager';
 
 export async function runDataPersistenceTests(): Promise<{ passed: boolean; details: string[] }> {

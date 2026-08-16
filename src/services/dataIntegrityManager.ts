@@ -7,7 +7,7 @@
  */
 
 import { db, reconcileAllParentProductStocks } from '../db/dexie';
-import { dbMigrationEngine, type LocalDataSnapshot } from './dbMigrationEngine';
+import { dbMigrationEngine } from './dbMigrationEngine';
 import { bootstrapEngine } from './bootstrapEngine';
 
 export type StartupState =
