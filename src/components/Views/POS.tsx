@@ -253,12 +253,14 @@ export const POS: React.FC = () => {
   }, [products]);
 
   const filteredProducts = useMemo(() => {
+    const q = searchQuery.toLowerCase();
     return products.filter((p) => {
       const matchesCat = selectedCategory === 'All' || p.category === selectedCategory;
-      const matchesSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                            p.category.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                            (p.sku && p.sku.toLowerCase().includes(searchQuery.toLowerCase())) ||
-                            (p.barcode && p.barcode.toLowerCase().includes(searchQuery.toLowerCase()));
+      const matchesSearch = p.name.toLowerCase().includes(q) ||
+                            p.category.toLowerCase().includes(q) ||
+                            (p.brand && p.brand.toLowerCase().includes(q)) ||
+                            (p.sku && p.sku.toLowerCase().includes(q)) ||
+                            (p.barcode && p.barcode.toLowerCase().includes(q));
       return matchesCat && matchesSearch;
     });
   }, [products, selectedCategory, searchQuery]);

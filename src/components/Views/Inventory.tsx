@@ -1174,9 +1174,11 @@ export const Inventory: React.FC = () => {
     }
   }, [productReorderRule?.id]);
 
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState('all');
+  const [selectedBrandFilter, setSelectedBrandFilter] = useState('all');
+
   const filteredProducts = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
-    if (!q && filterType === 'all') return products;
     return products.filter((p) => {
       const matchSearch = !q || (
         p.name.toLowerCase().includes(q) ||
@@ -1187,9 +1189,11 @@ export const Inventory: React.FC = () => {
       );
       const isParent = isParentProduct(p, productVariants);
       const matchType = filterType === 'all' || (filterType === 'simple' && !isParent) || (filterType === 'variant' && isParent);
-      return matchSearch && matchType;
+      const matchCat = selectedCategoryFilter === 'all' || p.category === selectedCategoryFilter;
+      const matchBrand = selectedBrandFilter === 'all' || p.brand === selectedBrandFilter;
+      return matchSearch && matchType && matchCat && matchBrand;
     });
-  }, [products, productVariants, searchQuery, filterType]);
+  }, [products, productVariants, searchQuery, filterType, selectedCategoryFilter, selectedBrandFilter]);
 
   // Stable O(1) product lookup map — supports ID, SKU, barcode, and variant resolution
   const productMap = useMemo(() => {
@@ -2760,6 +2764,29 @@ export const Inventory: React.FC = () => {
               {f.charAt(0).toUpperCase() + f.slice(1)}
             </button>
           ))}
+        </div>
+        <div className="flex items-center gap-1.5">
+          <select
+            value={selectedCategoryFilter}
+            onChange={e => setSelectedCategoryFilter(e.target.value)}
+            className="h-8 rounded-lg border border-slate-200 bg-white dark:border-darkbg-border dark:bg-darkbg text-xs font-semibold px-2 focus:outline-none dark:text-white"
+          >
+            <option value="all">All Categories ({allCategories.length})</option>
+            {allCategories.map(c => (
+              <option key={c.name} value={c.name}>{c.name} ({c.count})</option>
+            ))}
+          </select>
+
+          <select
+            value={selectedBrandFilter}
+            onChange={e => setSelectedBrandFilter(e.target.value)}
+            className="h-8 rounded-lg border border-slate-200 bg-white dark:border-darkbg-border dark:bg-darkbg text-xs font-semibold px-2 focus:outline-none dark:text-white"
+          >
+            <option value="all">All Brands ({allBrands.length})</option>
+            {allBrands.map(b => (
+              <option key={b.name} value={b.name}>{b.name} ({b.count})</option>
+            ))}
+          </select>
         </div>
         <div className="inv-stats-mini">
           <span className="stat-chip total"><Package size={12}/> {stats.total}</span>

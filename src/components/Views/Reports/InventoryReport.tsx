@@ -11,7 +11,7 @@ export const InventoryReport: React.FC<ReportProps> = ({
     const data: any[] = [];
     products.filter(p => !isParentProduct(p, productVariants)).forEach(p => {
       data.push({
-        sku: p.sku || '—', name: p.name, details: 'Simple Product',
+        sku: p.sku || '—', name: p.name, brand: p.brand || '', details: 'Simple Product',
         stock: p.stock, reorderLevel: p.reorderLevel ?? 5,
         buyingPrice: p.buyingPrice, sellingPrice: p.sellingPrice || p.price,
         stockValue: p.stock * p.buyingPrice,
@@ -24,7 +24,7 @@ export const InventoryReport: React.FC<ReportProps> = ({
       const bp = v.buyingPrice !== undefined ? v.buyingPrice : parent.buyingPrice;
       const sp = v.sellingPrice !== undefined ? v.sellingPrice : (parent.sellingPrice || parent.price);
       data.push({
-        sku: v.sku || '—', name: parent.name,
+        sku: v.sku || '—', name: parent.name, brand: parent.brand || '',
         details: Object.entries(v.attributes || {}).map(([k, val]) => `${k}: ${val}`).join(' / '),
         stock: v.stock, reorderLevel: v.reorderLevel ?? 5,
         buyingPrice: bp, sellingPrice: sp,
@@ -37,7 +37,7 @@ export const InventoryReport: React.FC<ReportProps> = ({
   const filtered = useMemo(() => {
     if (!searchTerm.trim()) return inventoryData;
     const q = searchTerm.toLowerCase();
-    return inventoryData.filter(i => i.name.toLowerCase().includes(q) || i.sku.toLowerCase().includes(q));
+    return inventoryData.filter(i => i.name.toLowerCase().includes(q) || i.sku.toLowerCase().includes(q) || (i.brand && i.brand.toLowerCase().includes(q)));
   }, [inventoryData, searchTerm]);
 
   const totalValue = inventoryData.reduce((s, i) => s + i.stockValue, 0);
