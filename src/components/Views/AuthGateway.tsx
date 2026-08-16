@@ -692,115 +692,134 @@ export const AuthGateway: React.FC = () => {
     }
 
     try {
-      // 1. Resolve user by email, phone, or business code — search Cloud Database first to support multi-device/clean cache logins
+      // 1. Resolve user by email, phone, username, or business code — query Server Login API first for guaranteed PostgreSQL authentication
       const inputIdentifier = loginEmail.trim();
       const normalizedEmail = inputIdentifier.toLowerCase();
       let dbUser: any = null;
 
+      // Calculate SHA-256 hash of input password for hash comparisons
+      let sha256Input = '';
       try {
-        setMockAuthOverride({
-          tenant_id: 'tenant-admin-system',
-          user_id: 'usr-login-system',
-          user_name: 'Login System'
+        const msgBuffer = new TextEncoder().encode(loginPassword.trim());
+        const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+        sha256Input = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+      } catch (_) {}
+
+      // Attempt 1: Direct Server API Login (works across multi-device, fresh caches, and remote Cloud DB)
+      try {
+        const serverAuthRes = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ identifier: inputIdentifier, password: loginPassword })
         });
-
-        // Attempt cloud search by email or username first
-        const { data: cloudUsers, error: cloudErr } = await supabase.from('users').select().eq('email', normalizedEmail);
-        if (!cloudErr && cloudUsers && cloudUsers.length > 0) {
-          dbUser = cloudUsers[0];
-        } else {
-          const { data: cloudUsernames } = await supabase.from('users').select().eq('username', normalizedEmail);
-          if (cloudUsernames && cloudUsernames.length > 0) {
-            dbUser = cloudUsernames[0];
-          }
-        }
-
-        // If email lookup yielded no user, try server-side identifier search (phone, business_code, tenant ID)
-        if (!dbUser) {
-          const serverFound = await tenantRecoveryService.findTenantByIdentifier(inputIdentifier);
-          if (serverFound) {
-            if (serverFound.user) {
-              dbUser = serverFound.user;
-            } else {
-              // Retrieve users for found tenant
-              const { data: tenantUsers } = await supabase.from('users').select().eq('tenant_id', serverFound.tenant.id);
-              if (tenantUsers && tenantUsers.length > 0) {
-                dbUser = tenantUsers[0];
-              }
-            }
-          }
-        }
-
-        if (dbUser) {
-          dbUser.tenant_id = dbUser.tenant_id || dbUser.tenantId;
-          console.log('[Auth Login] User context resolved from Cloud. Rebuilding local IndexedDB cache...');
-          
-          const tenantId = dbUser.tenant_id;
-          if (tenantId) {
-            setMockAuthOverride({
-              tenant_id: tenantId,
-              user_id: dbUser.id,
-              user_name: dbUser.name
-            });
-            let tRes: any, bRes: any, ubrRes: any, mRes: any, sRes: any, fRes: any, secRes: any, tuRes: any, tubRes: any;
-            try {
-              [tRes, bRes, ubrRes, mRes, sRes, fRes, secRes, tuRes, tubRes] = await Promise.all([
-                supabase.from('tenants').select().eq('id', tenantId).catch(() => ({ data: [] })),
-                supabase.from('branches').select().eq('tenant_id', tenantId).catch(() => ({ data: [] })),
-                supabase.from('userBranchRoles').select().eq('tenant_id', tenantId).catch(() => ({ data: [] })),
-                supabase.from('tenantModules').select().eq('tenant_id', tenantId).catch(() => ({ data: [] })),
-                supabase.from('tenantSettings').select().eq('tenant_id', tenantId).catch(() => ({ data: [] })),
-                supabase.from('featureFlags').select().eq('tenant_id', tenantId).catch(() => ({ data: [] })),
-                supabase.from('userSecurity').select().eq('user_id', dbUser.id).catch(() => ({ data: [] })),
-                supabase.from('tenantUsers').select().eq('tenant_id', tenantId).catch(() => ({ data: [] })),
-                supabase.from('tenantUserBranches').select().eq('tenant_id', tenantId).catch(() => ({ data: [] }))
-              ]);
-            } finally {
-              setMockAuthOverride(null);
-            }
-
+        if (serverAuthRes.ok) {
+          const authData = await serverAuthRes.json();
+          if (authData.success && authData.user) {
+            dbUser = authData.user;
+            dbUser.tenant_id = dbUser.tenant_id || dbUser.tenantId;
+            
+            // Rehydrate local Dexie database cache with fresh server data
             await db.transaction('rw', [
-              db.tenants, db.branches, db.users, db.userBranchRoles,
-              db.tenantModules, db.tenantSettings, db.featureFlags, db.userSecurity,
-              db.tenantUsers, db.tenantUserBranches
+              db.users, db.tenants, db.branches, db.tenantUsers, db.userSecurity
             ], async () => {
-              if (tRes.data && tRes.data.length > 0) {
-                await db.tenants.put(tRes.data[0]);
-              }
-              if (bRes.data && bRes.data.length > 0) {
-                await db.branches.bulkPut(bRes.data);
-              }
-              if (ubrRes.data && ubrRes.data.length > 0) {
-                await db.userBranchRoles.bulkPut(ubrRes.data);
-              }
-              if (mRes.data && mRes.data.length > 0) {
-                await db.tenantModules.bulkPut(mRes.data);
-              }
-              if (sRes.data && sRes.data.length > 0) {
-                await db.tenantSettings.bulkPut(sRes.data);
-              }
-              if (fRes.data && fRes.data.length > 0) {
-                await db.featureFlags.bulkPut(fRes.data);
-              }
-              if (secRes.data && secRes.data.length > 0) {
-                await db.userSecurity.put(secRes.data[0]);
-              }
-              if (tuRes.data && tuRes.data.length > 0) {
-                await db.tenantUsers.bulkPut(tuRes.data);
-              }
-              if (tubRes.data && tubRes.data.length > 0) {
-                await db.tenantUserBranches.bulkPut(tubRes.data);
-              }
+              if (authData.tenant) await db.tenants.put(authData.tenant);
+              if (Array.isArray(authData.branches) && authData.branches.length > 0) await db.branches.bulkPut(authData.branches);
+              if (Array.isArray(authData.tenantUsers) && authData.tenantUsers.length > 0) await db.tenantUsers.bulkPut(authData.tenantUsers);
+              if (authData.userSecurity) await db.userSecurity.put(authData.userSecurity);
               await db.users.put(dbUser);
             });
-            console.log('[Auth Login] Local IndexedDB cache successfully rebuilt.');
+            console.log('[Auth Login] Authenticated via Server Engine. Local cache rehydrated.');
           }
         }
-      } catch (err) {
-        console.warn('[Auth Login] Cloud database lookup failed, falling back to local cache login:', err);
+      } catch (srvErr) {
+        console.warn('[Auth Login] Direct server login request failed, checking cloud/local caches:', srvErr);
       }
 
-      // Fallback: lookup in local Dexie if cloud lookup failed
+      // Attempt 2: Cloud / Supabase cache lookup if server endpoint didn't finish
+      if (!dbUser) {
+        try {
+          setMockAuthOverride({
+            tenant_id: 'tenant-admin-system',
+            user_id: 'usr-login-system',
+            user_name: 'Login System'
+          });
+
+          // Attempt cloud search by email or username
+          const { data: cloudUsers, error: cloudErr } = await supabase.from('users').select().eq('email', normalizedEmail);
+          if (!cloudErr && cloudUsers && cloudUsers.length > 0) {
+            dbUser = cloudUsers[0];
+          } else {
+            const { data: cloudUsernames } = await supabase.from('users').select().eq('username', normalizedEmail);
+            if (cloudUsernames && cloudUsernames.length > 0) {
+              dbUser = cloudUsernames[0];
+            }
+          }
+
+          // If email lookup yielded no user, try server-side identifier search (phone, business_code, tenant ID)
+          if (!dbUser) {
+            const serverFound = await tenantRecoveryService.findTenantByIdentifier(inputIdentifier);
+            if (serverFound) {
+              if (serverFound.user) {
+                dbUser = serverFound.user;
+              } else {
+                const { data: tenantUsers } = await supabase.from('users').select().eq('tenant_id', serverFound.tenant.id);
+                if (tenantUsers && tenantUsers.length > 0) {
+                  dbUser = tenantUsers[0];
+                }
+              }
+            }
+          }
+
+          if (dbUser) {
+            dbUser.tenant_id = dbUser.tenant_id || dbUser.tenantId;
+            const tenantId = dbUser.tenant_id;
+            if (tenantId) {
+              setMockAuthOverride({
+                tenant_id: tenantId,
+                user_id: dbUser.id,
+                user_name: dbUser.name
+              });
+              let tRes: any, bRes: any, ubrRes: any, mRes: any, sRes: any, fRes: any, secRes: any, tuRes: any, tubRes: any;
+              try {
+                [tRes, bRes, ubrRes, mRes, sRes, fRes, secRes, tuRes, tubRes] = await Promise.all([
+                  supabase.from('tenants').select().eq('id', tenantId).catch(() => ({ data: [] })),
+                  supabase.from('branches').select().eq('tenant_id', tenantId).catch(() => ({ data: [] })),
+                  supabase.from('userBranchRoles').select().eq('tenant_id', tenantId).catch(() => ({ data: [] })),
+                  supabase.from('tenantModules').select().eq('tenant_id', tenantId).catch(() => ({ data: [] })),
+                  supabase.from('tenantSettings').select().eq('tenant_id', tenantId).catch(() => ({ data: [] })),
+                  supabase.from('featureFlags').select().eq('tenant_id', tenantId).catch(() => ({ data: [] })),
+                  supabase.from('userSecurity').select().eq('user_id', dbUser.id).catch(() => ({ data: [] })),
+                  supabase.from('tenantUsers').select().eq('tenant_id', tenantId).catch(() => ({ data: [] })),
+                  supabase.from('tenantUserBranches').select().eq('tenant_id', tenantId).catch(() => ({ data: [] }))
+                ]);
+              } finally {
+                setMockAuthOverride(null);
+              }
+
+              await db.transaction('rw', [
+                db.tenants, db.branches, db.users, db.userBranchRoles,
+                db.tenantModules, db.tenantSettings, db.featureFlags, db.userSecurity,
+                db.tenantUsers, db.tenantUserBranches
+              ], async () => {
+                if (tRes?.data?.length > 0) await db.tenants.put(tRes.data[0]);
+                if (bRes?.data?.length > 0) await db.branches.bulkPut(bRes.data);
+                if (ubrRes?.data?.length > 0) await db.userBranchRoles.bulkPut(ubrRes.data);
+                if (mRes?.data?.length > 0) await db.tenantModules.bulkPut(mRes.data);
+                if (sRes?.data?.length > 0) await db.tenantSettings.bulkPut(sRes.data);
+                if (fRes?.data?.length > 0) await db.featureFlags.bulkPut(fRes.data);
+                if (secRes?.data?.length > 0) await db.userSecurity.put(secRes.data[0]);
+                if (tuRes?.data?.length > 0) await db.tenantUsers.bulkPut(tuRes.data);
+                if (tubRes?.data?.length > 0) await db.tenantUserBranches.bulkPut(tubRes.data);
+                await db.users.put(dbUser);
+              });
+            }
+          }
+        } catch (err) {
+          console.warn('[Auth Login] Cloud database lookup failed, falling back to local cache login:', err);
+        }
+      }
+
+      // Attempt 3: Local Dexie lookup fallback
       if (!dbUser) {
         try {
           dbUser = await db.users.where('email').equalsIgnoreCase(normalizedEmail).first()
@@ -818,9 +837,12 @@ export const AuthGateway: React.FC = () => {
         }
       }
 
+      // Password Validation Guard
       const passMatch = dbUser && (
         dbUser.password_hash === loginPassword || 
-        dbUser.password_hash === loginPassword.trim()
+        dbUser.password_hash === loginPassword.trim() ||
+        (dbUser.password_hash && sha256Input && dbUser.password_hash.toLowerCase() === sha256Input.toLowerCase()) ||
+        (dbUser.password_hash && loginPassword && dbUser.password_hash.toLowerCase() === loginPassword.trim().toLowerCase())
       );
 
       if (!dbUser || !passMatch) {

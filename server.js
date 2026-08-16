@@ -1745,6 +1745,89 @@ const server = http.createServer(async (req, res) => {
         }
       }
 
+      // 0.2 POST /api/auth/login — Multi-Tenant Cloud Database Authentication & Direct Hydration
+      if (pathname === '/api/auth/login' && req.method === 'POST') {
+        const payload = await parseRequestBody(req);
+        const identifier = (payload.identifier || payload.email || payload.username || '').trim();
+        const password = (payload.password || '').trim();
+
+        if (!identifier || !password) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, error: 'Identifier and password are required' }));
+          return;
+        }
+
+        try {
+          const lowerId = identifier.toLowerCase();
+          const cleanPhone = identifier.replace(/\D/g, '');
+
+          const userRows = await sql`
+            SELECT * FROM users 
+            WHERE (deleted_at IS NULL OR deleted_at = 0)
+              AND (
+                LOWER(email) = ${lowerId}
+                OR LOWER(username) = ${lowerId}
+                OR (length(${cleanPhone}) >= 8 AND REGEXP_REPLACE(phone, '[^0-9]', '', 'g') = ${cleanPhone})
+              )
+            LIMIT 1;
+          `;
+
+          if (userRows.length === 0) {
+            res.writeHead(401, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: false, error: 'Invalid credentials. User account not found.' }));
+            return;
+          }
+
+          const user = userRows[0];
+          const crypto = await import('crypto');
+          const sha256Pass = crypto.createHash('sha256').update(password).digest('hex');
+
+          const isPasswordValid = 
+            user.password_hash === password ||
+            user.password_hash === sha256Pass ||
+            (user.password_hash && user.password_hash.toLowerCase() === password.toLowerCase()) ||
+            (user.password_hash && user.password_hash.toLowerCase() === sha256Pass.toLowerCase());
+
+          if (!isPasswordValid) {
+            res.writeHead(401, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: false, error: 'Invalid password.' }));
+            return;
+          }
+
+          // Fetch associated tenant, branches, and roles
+          const tenantId = user.tenant_id;
+          let tenant = null;
+          let branches = [];
+          let tenantUsers = [];
+          let userSecurity = null;
+
+          if (tenantId) {
+            const tRows = await sql`SELECT * FROM tenants WHERE id = ${tenantId} LIMIT 1;`;
+            tenant = tRows[0] || null;
+            branches = await sql`SELECT * FROM branches WHERE tenant_id = ${tenantId};`;
+            tenantUsers = await sql`SELECT * FROM tenant_users WHERE tenant_id = ${tenantId};`;
+            const secRows = await sql`SELECT * FROM user_security WHERE user_id = ${user.id} LIMIT 1;`;
+            userSecurity = secRows[0] || null;
+          }
+
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            success: true,
+            user,
+            tenant,
+            branches,
+            tenantUsers,
+            userSecurity
+          }));
+          return;
+        } catch (err) {
+          console.error('[Auth Engine] Login verification error:', err);
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, error: 'Server authentication failed', details: err.message }));
+          return;
+        }
+      }
+
       // 0.2 POST /api/billing/webhook — Payment Gateway Webhook Receiver (Selcom / AzamPay / DPO / Stripe)
       if (pathname === '/api/billing/webhook' && req.method === 'POST') {
         const payload = await parseRequestBody(req);
