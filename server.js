@@ -27,8 +27,14 @@ if (fs.existsSync(envPath)) {
 const PORT = process.env.PORT || 8080;
 const DIST_DIR = path.join(__dirname, 'dist');
 
+const NEON_PROD_FALLBACK = 'postgresql://neondb_owner:npg_h1k4wASpWoGx@ep-polished-dawn-axwcu8hf-pooler.c-4.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require';
 const DEFAULT_LOCAL_PG_URL = 'postgresql://postgres:postgres@localhost:5432/kwakopos';
-const DATABASE_URL = process.env.DATABASE_URL || process.env.VITE_POSTGRES_URL || DEFAULT_LOCAL_PG_URL;
+
+// In cloud/container environments (AppHosting, Cloud Run, Heroku, etc.), ensure we connect to the Cloud database
+const isCloudHosting = Boolean(process.env.K_SERVICE || process.env.FIREBASE_CONFIG || process.env.GAE_ENV || process.env.NODE_ENV === 'production' || process.env.PORT);
+const defaultTarget = isCloudHosting ? NEON_PROD_FALLBACK : DEFAULT_LOCAL_PG_URL;
+
+const DATABASE_URL = process.env.DATABASE_URL || process.env.VITE_POSTGRES_URL || defaultTarget;
 const isSSLRequired = DATABASE_URL.includes('sslmode=require') || DATABASE_URL.includes('neon.tech');
 
 console.log(`[PostgreSQL Engine] Initializing database connection pool...`);
