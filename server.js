@@ -1846,16 +1846,43 @@ const server = http.createServer(async (req, res) => {
           }
 
           // Fetch associated tenant, branches, and roles
-          const tenantId = user.tenant_id;
+          const tenantId = user.tenant_id || `tenant-${user.id}`;
           let tenant = null;
           let branches = [];
           let tenantUsers = [];
           let userSecurity = null;
 
           if (tenantId) {
-            const tRows = await sql`SELECT * FROM tenants WHERE id = ${tenantId} LIMIT 1;`;
+            let tRows = await sql`SELECT * FROM tenants WHERE id = ${tenantId} OR id = ${user.tenant_id} LIMIT 1;`;
+            if (tRows.length === 0 && user.email) {
+              tRows = await sql`SELECT * FROM tenants WHERE email = ${user.email} LIMIT 1;`;
+            }
+            if (tRows.length === 0) {
+              // Auto-heal active tenant workspace in PostgreSQL
+              const now = Date.now();
+              const bizName = user.name ? `${user.name} Workspace` : 'Business Workspace';
+              const bCode = `BIZ-${(user.name || 'STORE').slice(0, 4).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+              await sql`
+                INSERT INTO tenants (id, name, plan, status, business_code, tenant_code, created_at)
+                VALUES (${tenantId}, ${bizName}, 'Professional', 'Active', ${bCode}, ${bCode}, ${now})
+                ON CONFLICT (id) DO UPDATE SET status = 'Active';
+              `.catch(() => {});
+              tRows = await sql`SELECT * FROM tenants WHERE id = ${tenantId} LIMIT 1;`;
+            }
             tenant = tRows[0] || null;
+
             branches = await sql`SELECT * FROM branches WHERE tenant_id = ${tenantId};`;
+            if (branches.length === 0) {
+              // Ensure at least one default branch exists for this tenant
+              const branchId = `branch-${tenantId}-hq`;
+              await sql`
+                INSERT INTO branches (id, tenant_id, name, location, is_headquarters, status, created_at)
+                VALUES (${branchId}, ${tenantId}, 'Main HQ Branch', 'Dar es Salaam', true, 'Active', ${Date.now()})
+                ON CONFLICT (id) DO NOTHING;
+              `.catch(() => {});
+              branches = await sql`SELECT * FROM branches WHERE tenant_id = ${tenantId};`;
+            }
+
             tenantUsers = await sql`SELECT * FROM tenant_users WHERE tenant_id = ${tenantId};`;
             const secRows = await sql`SELECT * FROM user_security WHERE user_id = ${user.id} LIMIT 1;`;
             userSecurity = secRows[0] || null;

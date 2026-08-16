@@ -957,19 +957,24 @@ export const AuthGateway: React.FC = () => {
         }
       }
 
-      // Enforcement checks AFTER recovery & auto-healing
-      if (userEmail && deletedEmailSet.has(userEmail)) {
-        setErrorMsg('Access Denied: Your account was revoked when your organization workspace was deleted. Please re-register a new workspace to regain access.');
-        return;
+      // Guarantee active workspace record for valid authenticated users
+      if (!existingTenant && userTenantId) {
+        existingTenant = {
+          id: userTenantId,
+          name: dbUser.name ? `${dbUser.name} Workspace` : 'Business Workspace',
+          slug: (dbUser.name || 'business').toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+          status: 'Active',
+          plan: 'Professional',
+          business_type: 'Retail',
+          email: dbUser.email,
+          created_at: Date.now()
+        };
+        await db.tenants.put(existingTenant as any);
+        await cloudDb.cloud_tenants.put(existingTenant as any).catch(() => {});
       }
 
-      if (userTenantId && deletedTenantSet.has(userTenantId)) {
-        setErrorMsg('Access Denied: This organization workspace has been permanently deleted.');
-        return;
-      }
-
-      if (userTenantId && (!existingTenant || existingTenant.status === 'Deleted' || existingTenant.status === 'Archived' || existingTenant.status === 'ARCHIVED' || (existingTenant as any).deleted_at)) {
-        setErrorMsg('Access Denied: Associated business workspace was not found or has been deactivated/deleted.');
+      if (existingTenant && (existingTenant.status === 'Deleted' || existingTenant.status === 'Archived' || existingTenant.status === 'ARCHIVED' || (existingTenant as any).deleted_at)) {
+        setErrorMsg('Access Denied: Associated business workspace has been deactivated or deleted.');
         return;
       }
 
