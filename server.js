@@ -94,6 +94,90 @@ function checkRateLimit(ip, route = 'auth') {
   return entry.count <= MAX_AUTH_ATTEMPTS_PER_MIN;
 }
 
+// ─── HYBRID SESSION MANAGEMENT & TOKEN CRYPTOGRAPHY ──────────────────────────
+const JWT_SECRET = process.env.JWT_SECRET || process.env.SESSION_SECRET || 'kwakopos-hybrid-session-signing-secret-2026';
+const ACCESS_TOKEN_TTL_SECONDS = parseInt(process.env.ACCESS_TOKEN_TTL || '1200', 10); // 20 minutes
+const REFRESH_TOKEN_TTL_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
+const ABSOLUTE_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+function base64UrlEncode(str) {
+  return Buffer.from(str)
+    .toString('base64')
+    .replace(/=/g, '')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_');
+}
+
+function base64UrlDecode(str) {
+  str = str.replace(/-/g, '+').replace(/_/g, '/');
+  while (str.length % 4) str += '=';
+  return Buffer.from(str, 'base64').toString();
+}
+
+function signJwt(payload, secret = JWT_SECRET, expiresInSeconds = ACCESS_TOKEN_TTL_SECONDS) {
+  const header = { alg: 'HS256', typ: 'JWT' };
+  const now = Math.floor(Date.now() / 1000);
+  const fullPayload = {
+    ...payload,
+    iat: now,
+    exp: now + expiresInSeconds
+  };
+  const encodedHeader = base64UrlEncode(JSON.stringify(header));
+  const encodedPayload = base64UrlEncode(JSON.stringify(fullPayload));
+  const signature = crypto
+    .createHmac('sha256', secret)
+    .update(`${encodedHeader}.${encodedPayload}`)
+    .digest('base64')
+    .replace(/=/g, '')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_');
+  return `${encodedHeader}.${encodedPayload}.${signature}`;
+}
+
+function verifyJwt(token, secret = JWT_SECRET) {
+  try {
+    if (!token || typeof token !== 'string') return null;
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const [encodedHeader, encodedPayload, signature] = parts;
+    const expectedSig = crypto
+      .createHmac('sha256', secret)
+      .update(`${encodedHeader}.${encodedPayload}`)
+      .digest('base64')
+      .replace(/=/g, '')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_');
+    if (signature !== expectedSig) return null;
+    const payload = JSON.parse(base64UrlDecode(encodedPayload));
+    const now = Math.floor(Date.now() / 1000);
+    if (payload.exp && payload.exp < now) return null;
+    return payload;
+  } catch (_) {
+    return null;
+  }
+}
+
+function hashToken(rawToken) {
+  return crypto.createHash('sha256').update(rawToken).digest('hex');
+}
+
+function generateSecureToken(length = 32) {
+  return crypto.randomBytes(length).toString('hex');
+}
+
+async function recordSessionAudit(event, { sessionId, userId, tenantId, branchId, deviceId, ip, userAgent, metadata = {} }) {
+  try {
+    const auditId = `sa-${Date.now()}-${generateSecureToken(4)}`;
+    await sql`
+      INSERT INTO session_audit_logs (id, session_id, user_id, tenant_id, branch_id, device_id, event, ip_address, user_agent, timestamp, metadata)
+      VALUES (${auditId}, ${sessionId || null}, ${userId || null}, ${tenantId || null}, ${branchId || null}, ${deviceId || null}, ${event}, ${ip || null}, ${userAgent || null}, ${Date.now()}, ${JSON.stringify(metadata)})
+      ON CONFLICT (id) DO NOTHING;
+    `.catch(() => {});
+  } catch (e) {
+    console.warn('[Session Audit] Failed to record session audit:', e.message);
+  }
+}
+
 // In-Memory Bootstrap Snapshot Cache Engine (Redis Fallback)
 const bootstrapCache = new Map();
 const BOOTSTRAP_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour TTL
@@ -286,7 +370,76 @@ async function initDatabaseSchema() {
     await sql`ALTER TABLE stock_ledger ADD COLUMN IF NOT EXISTS total_cost NUMERIC DEFAULT 0;`;
     await sql`ALTER TABLE stock_ledger ADD COLUMN IF NOT EXISTS user_id TEXT;`;
     await sql`ALTER TABLE stock_ledger ADD COLUMN IF NOT EXISTS device_id TEXT;`;
-    await sql`ALTER TABLE stock_ledger ADD COLUMN IF NOT EXISTS idempotency_key TEXT;`;
+    // ─── SESSIONS, DEVICES, & SESSION AUDIT SCHEMA ─────────────────────────────
+    await sql`
+      CREATE TABLE IF NOT EXISTS devices (
+        id TEXT PRIMARY KEY,
+        device_id TEXT UNIQUE NOT NULL,
+        tenant_id TEXT NOT NULL,
+        user_id TEXT,
+        name TEXT,
+        platform TEXT,
+        browser TEXT,
+        created_at BIGINT NOT NULL,
+        last_seen_at BIGINT NOT NULL,
+        last_sync_at BIGINT,
+        revoked_at BIGINT,
+        revoke_reason TEXT,
+        status TEXT DEFAULT 'ACTIVE'
+      );
+      CREATE INDEX IF NOT EXISTS idx_devices_device_id ON devices(device_id);
+      CREATE INDEX IF NOT EXISTS idx_devices_tenant_id ON devices(tenant_id);
+      CREATE INDEX IF NOT EXISTS idx_devices_user_id ON devices(user_id);
+      CREATE INDEX IF NOT EXISTS idx_devices_status ON devices(status);
+
+      CREATE TABLE IF NOT EXISTS sessions (
+        id TEXT PRIMARY KEY,
+        session_id TEXT UNIQUE NOT NULL,
+        user_id TEXT NOT NULL,
+        tenant_id TEXT NOT NULL,
+        branch_id TEXT,
+        device_id TEXT NOT NULL,
+        refresh_token_hash TEXT NOT NULL,
+        token_family_id TEXT NOT NULL,
+        created_at BIGINT NOT NULL,
+        last_activity_at BIGINT NOT NULL,
+        last_validated_at BIGINT NOT NULL,
+        expires_at BIGINT NOT NULL,
+        revoked_at BIGINT,
+        revoke_reason TEXT,
+        ip_address TEXT,
+        user_agent TEXT,
+        platform TEXT,
+        status TEXT DEFAULT 'ACTIVE',
+        permissions_version INT DEFAULT 1,
+        tenant_version INT DEFAULT 1,
+        metadata JSONB DEFAULT '{}'::jsonb
+      );
+      CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
+      CREATE INDEX IF NOT EXISTS idx_sessions_tenant_id ON sessions(tenant_id);
+      CREATE INDEX IF NOT EXISTS idx_sessions_device_id ON sessions(device_id);
+      CREATE INDEX IF NOT EXISTS idx_sessions_session_id ON sessions(session_id);
+      CREATE INDEX IF NOT EXISTS idx_sessions_token_family ON sessions(token_family_id);
+      CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
+      CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
+
+      CREATE TABLE IF NOT EXISTS session_audit_logs (
+        id TEXT PRIMARY KEY,
+        session_id TEXT,
+        user_id TEXT,
+        tenant_id TEXT,
+        branch_id TEXT,
+        device_id TEXT,
+        event TEXT NOT NULL,
+        ip_address TEXT,
+        user_agent TEXT,
+        timestamp BIGINT NOT NULL,
+        metadata JSONB DEFAULT '{}'::jsonb
+      );
+      CREATE INDEX IF NOT EXISTS idx_session_audit_tenant ON session_audit_logs(tenant_id, timestamp DESC);
+      CREATE INDEX IF NOT EXISTS idx_session_audit_user ON session_audit_logs(user_id, timestamp DESC);
+      CREATE INDEX IF NOT EXISTS idx_session_audit_session ON session_audit_logs(session_id);
+    `;
 
     // ─── CRITICAL SCHEMA RECONCILIATION FOR NEON POSTGRESQL ────────────────────
     // 1. Guarantee deleted_at column presence across all core tables
@@ -1824,8 +1977,9 @@ const server = http.createServer(async (req, res) => {
           `;
 
           if (userRows.length === 0) {
+            recordSessionAudit('SESSION_LOGIN_FAILED', { userId: null, tenantId: null, ip: clientIp, userAgent: req.headers['user-agent'], metadata: { identifier } });
             res.writeHead(401, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ success: false, error: 'Invalid credentials. User account not found.' }));
+            res.end(JSON.stringify({ success: false, code: 'AUTH_REQUIRED', error: 'Invalid credentials. User account not found.' }));
             return;
           }
 
@@ -1840,8 +1994,37 @@ const server = http.createServer(async (req, res) => {
             (user.password_hash && user.password_hash.toLowerCase() === sha256Pass.toLowerCase());
 
           if (!isPasswordValid) {
+            recordSessionAudit('SESSION_LOGIN_FAILED', { userId: user.id, tenantId: user.tenant_id, ip: clientIp, userAgent: req.headers['user-agent'], metadata: { reason: 'INVALID_PASSWORD' } });
             res.writeHead(401, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ success: false, error: 'Invalid password.' }));
+            res.end(JSON.stringify({ success: false, code: 'AUTH_REQUIRED', error: 'Invalid password.' }));
+            return;
+          }
+
+          // Device Identity Resolution
+          const deviceId = (payload.deviceId || req.headers['x-device-id'] || `dev-${generateSecureToken(16)}`).trim();
+          const deviceName = (payload.deviceName || req.headers['x-device-name'] || 'Web POS Register').trim();
+          const platform = (payload.platform || req.headers['x-client-platform'] || 'Web').trim();
+          const userAgentStr = req.headers['user-agent'] || 'Unknown Browser';
+
+          // Upsert Device Record
+          await sql`
+            INSERT INTO devices (id, device_id, tenant_id, user_id, name, platform, browser, created_at, last_seen_at, status)
+            VALUES (${`dev-rec-${deviceId}`}, ${deviceId}, ${user.tenant_id || 'tenant-default'}, ${user.id}, ${deviceName}, ${platform}, ${userAgentStr}, ${Date.now()}, ${Date.now()}, 'ACTIVE')
+            ON CONFLICT (device_id) DO UPDATE SET 
+              user_id = ${user.id},
+              last_seen_at = ${Date.now()},
+              name = EXCLUDED.name,
+              platform = EXCLUDED.platform,
+              browser = EXCLUDED.browser,
+              status = CASE WHEN devices.status = 'REVOKED' THEN 'REVOKED' ELSE 'ACTIVE' END;
+          `.catch(() => {});
+
+          // Check if device is revoked
+          const deviceRows = await sql`SELECT status, revoke_reason FROM devices WHERE device_id = ${deviceId} LIMIT 1;`.catch(() => []);
+          if (deviceRows.length > 0 && deviceRows[0].status === 'REVOKED') {
+            recordSessionAudit('SESSION_DEVICE_REVOKED', { userId: user.id, tenantId: user.tenant_id, deviceId, ip: clientIp, userAgent: userAgentStr });
+            res.writeHead(403, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: false, code: 'DEVICE_REVOKED', error: 'This device has been revoked by a security administrator.' }));
             return;
           }
 
@@ -1863,7 +2046,6 @@ const server = http.createServer(async (req, res) => {
               tRows = await sql`SELECT * FROM tenants WHERE email = ${user.email} LIMIT 1;`;
             }
             if (tRows.length === 0) {
-              // Auto-heal active tenant workspace in PostgreSQL
               const now = Date.now();
               const bizName = user.name ? `${user.name} Workspace` : 'Business Workspace';
               const bCode = `BIZ-${(user.name || 'STORE').slice(0, 4).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
@@ -1916,9 +2098,62 @@ const server = http.createServer(async (req, res) => {
             userSecurity = secRows[0] || null;
           }
 
+          // Session Generation & Token Family Provisioning
+          const now = Date.now();
+          const sessionId = `sess-${now}-${generateSecureToken(8)}`;
+          const tokenFamilyId = `tf-${now}-${generateSecureToken(8)}`;
+          const rawRefreshToken = `rt-${now}-${generateSecureToken(32)}`;
+          const refreshTokenHash = hashToken(rawRefreshToken);
+          const expiresAt = now + REFRESH_TOKEN_TTL_MS;
+          const primaryBranchId = branches[0]?.id || 'branch-default';
+
+          await sql`
+            INSERT INTO sessions (
+              id, session_id, user_id, tenant_id, branch_id, device_id,
+              refresh_token_hash, token_family_id, created_at, last_activity_at,
+              last_validated_at, expires_at, ip_address, user_agent, platform,
+              status, permissions_version, tenant_version
+            ) VALUES (
+              ${sessionId}, ${sessionId}, ${user.id}, ${tenantId}, ${primaryBranchId}, ${deviceId},
+              ${refreshTokenHash}, ${tokenFamilyId}, ${now}, ${now},
+              ${now}, ${expiresAt}, ${clientIp}, ${userAgentStr}, ${platform},
+              'ACTIVE', 1, 1
+            );
+          `.catch((err) => {
+            console.warn('[Session Engine] Session creation warning:', err.message);
+          });
+
+          // Generate In-Memory JWT Access Token (20-min lifetime)
+          const accessToken = signJwt({
+            sub: user.id,
+            sessionId,
+            tenantId,
+            branchId: primaryBranchId,
+            deviceId,
+            role: user.role || 'Staff',
+            permissionsVersion: 1
+          }, JWT_SECRET, ACCESS_TOKEN_TTL_SECONDS);
+
+          recordSessionAudit('SESSION_LOGIN', {
+            sessionId,
+            userId: user.id,
+            tenantId,
+            branchId: primaryBranchId,
+            deviceId,
+            ip: clientIp,
+            userAgent: userAgentStr,
+            metadata: { mechanism: 'PASSWORD_LOGIN', tokenFamilyId }
+          });
+
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({
             success: true,
+            accessToken,
+            refreshToken: rawRefreshToken,
+            sessionId,
+            deviceId,
+            expiresIn: ACCESS_TOKEN_TTL_SECONDS,
+            serverTime: now,
             user,
             tenant,
             branches,
@@ -1934,7 +2169,522 @@ const server = http.createServer(async (req, res) => {
         } catch (err) {
           console.error('[Auth Engine] Login verification error:', err);
           res.writeHead(500, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ success: false, error: 'Server authentication failed', details: err.message }));
+          res.end(JSON.stringify({ success: false, code: 'AUTH_REQUIRED', error: 'Server authentication failed', details: err.message }));
+          return;
+        }
+      }
+
+      // 0.3 POST /api/auth/refresh — Refresh Token Rotation with Token Family Reuse Detection
+      if (pathname === '/api/auth/refresh' && req.method === 'POST') {
+        applySecurityHeaders(res);
+        const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '0.0.0.0';
+        const payload = await parseRequestBody(req);
+        const rawRefreshToken = (payload.refreshToken || '').trim();
+        const deviceId = (payload.deviceId || req.headers['x-device-id'] || '').trim();
+
+        if (!rawRefreshToken) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, code: 'TOKEN_INVALID', error: 'Refresh token is required' }));
+          return;
+        }
+
+        try {
+          const providedHash = hashToken(rawRefreshToken);
+          const now = Date.now();
+
+          // 1. Search session matching provided refresh token hash
+          const sessionRows = await sql`
+            SELECT s.*, u.role as user_role, u.status as user_status, t.status as tenant_status
+            FROM sessions s
+            JOIN users u ON s.user_id = u.id
+            JOIN tenants t ON s.tenant_id = t.id
+            WHERE s.refresh_token_hash = ${providedHash}
+            LIMIT 1;
+          `;
+
+          if (sessionRows.length === 0) {
+            // Token Reuse Detection Guard: Check if this token was part of a token family that has since been rotated
+            const reuseCheckRows = await sql`
+              SELECT session_id, token_family_id, user_id, tenant_id, device_id 
+              FROM session_audit_logs 
+              WHERE event = 'SESSION_ROTATED' AND metadata->>'old_token_hash' = ${providedHash}
+              LIMIT 1;
+            `;
+
+            if (reuseCheckRows.length > 0) {
+              const compromised = reuseCheckRows[0];
+              console.error(`[Security Alert] Token reuse detected! Family: ${compromised.token_family_id}, User: ${compromised.user_id}`);
+
+              // Immediately revoke all sessions in this compromised token family
+              await sql`
+                UPDATE sessions 
+                SET status = 'REVOKED', revoked_at = ${now}, revoke_reason = 'TOKEN_REUSE_DETECTED'
+                WHERE token_family_id = ${compromised.token_family_id};
+              `;
+
+              recordSessionAudit('SESSION_TOKEN_REUSE', {
+                sessionId: compromised.session_id,
+                userId: compromised.user_id,
+                tenantId: compromised.tenant_id,
+                deviceId: compromised.device_id,
+                ip: clientIp,
+                userAgent: req.headers['user-agent'],
+                metadata: { tokenFamilyId: compromised.token_family_id }
+              });
+
+              res.writeHead(401, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({
+                success: false,
+                code: 'TOKEN_REUSE_DETECTED',
+                error: 'Security alert: Refresh token reuse detected. All associated sessions have been revoked. Please sign in again.'
+              }));
+              return;
+            }
+
+            res.writeHead(401, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: false, code: 'TOKEN_INVALID', error: 'Invalid or unrecognized refresh token' }));
+            return;
+          }
+
+          const session = sessionRows[0];
+
+          // 2. Status & Expiration checks
+          if (session.status === 'REVOKED') {
+            res.writeHead(401, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: false, code: 'SESSION_REVOKED', error: `Session has been revoked (${session.revoke_reason || 'REVOKED'})` }));
+            return;
+          }
+
+          if (session.status === 'LOGGED_OUT') {
+            res.writeHead(401, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: false, code: 'SESSION_EXPIRED', error: 'Session was logged out' }));
+            return;
+          }
+
+          if (Number(session.expires_at) < now) {
+            await sql`UPDATE sessions SET status = 'EXPIRED' WHERE id = ${session.id};`;
+            recordSessionAudit('SESSION_EXPIRED', { sessionId: session.session_id, userId: session.user_id, tenantId: session.tenant_id, deviceId: session.device_id, ip: clientIp });
+            res.writeHead(401, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: false, code: 'SESSION_EXPIRED', error: 'Refresh token has expired' }));
+            return;
+          }
+
+          // Absolute Session Lifetime Check (7 days max)
+          if (now - Number(session.created_at) > ABSOLUTE_SESSION_TTL_MS) {
+            await sql`UPDATE sessions SET status = 'EXPIRED', revoke_reason = 'ABSOLUTE_TIMEOUT_REACHED' WHERE id = ${session.id};`;
+            recordSessionAudit('SESSION_EXPIRED', { sessionId: session.session_id, userId: session.user_id, tenantId: session.tenant_id, deviceId: session.device_id, ip: clientIp, metadata: { reason: 'ABSOLUTE_TIMEOUT' } });
+            res.writeHead(401, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: false, code: 'SESSION_EXPIRED', error: 'Absolute session timeout reached (7 days). Please sign in again.' }));
+            return;
+          }
+
+          // Check device revocation
+          if (session.device_id) {
+            const devRows = await sql`SELECT status FROM devices WHERE device_id = ${session.device_id} LIMIT 1;`.catch(() => []);
+            if (devRows.length > 0 && devRows[0].status === 'REVOKED') {
+              res.writeHead(403, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ success: false, code: 'DEVICE_REVOKED', error: 'This device has been revoked' }));
+              return;
+            }
+          }
+
+          // 3. Rotate Refresh Token & Issue New Access Token
+          const newRawRefreshToken = `rt-${now}-${generateSecureToken(32)}`;
+          const newRefreshTokenHash = hashToken(newRawRefreshToken);
+          const newExpiresAt = now + REFRESH_TOKEN_TTL_MS;
+
+          await sql`
+            UPDATE sessions
+            SET refresh_token_hash = ${newRefreshTokenHash},
+                last_activity_at = ${now},
+                last_validated_at = ${now},
+                expires_at = ${newExpiresAt},
+                ip_address = ${clientIp}
+            WHERE id = ${session.id};
+          `;
+
+          const newAccessToken = signJwt({
+            sub: session.user_id,
+            sessionId: session.session_id,
+            tenantId: session.tenant_id,
+            branchId: session.branch_id || 'branch-default',
+            deviceId: session.device_id,
+            role: session.user_role || 'Staff',
+            permissionsVersion: session.permissions_version || 1
+          }, JWT_SECRET, ACCESS_TOKEN_TTL_SECONDS);
+
+          recordSessionAudit('SESSION_ROTATED', {
+            sessionId: session.session_id,
+            userId: session.user_id,
+            tenantId: session.tenant_id,
+            branchId: session.branch_id,
+            deviceId: session.device_id,
+            ip: clientIp,
+            userAgent: req.headers['user-agent'],
+            metadata: { old_token_hash: providedHash, tokenFamilyId: session.token_family_id }
+          });
+
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            success: true,
+            accessToken: newAccessToken,
+            refreshToken: newRawRefreshToken,
+            sessionId: session.session_id,
+            deviceId: session.device_id,
+            expiresIn: ACCESS_TOKEN_TTL_SECONDS,
+            serverTime: now,
+            permissionsVersion: session.permissions_version || 1,
+            tenantVersion: session.tenant_version || 1
+          }));
+          return;
+        } catch (err) {
+          console.error('[Session Engine] Token refresh error:', err);
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, code: 'AUTH_REQUIRED', error: err.message }));
+          return;
+        }
+      }
+
+      // 0.4 POST /api/auth/logout — Centralized Session Invalidation
+      if (pathname === '/api/auth/logout' && req.method === 'POST') {
+        applySecurityHeaders(res);
+        const payload = await parseRequestBody(req);
+        const authHeader = req.headers['authorization'] || '';
+        const token = authHeader.replace(/^Bearer\s+/i, '');
+        const decoded = verifyJwt(token);
+
+        const sessionId = payload.sessionId || decoded?.sessionId || req.headers['x-session-id'];
+        const now = Date.now();
+
+        if (sessionId) {
+          await sql`
+            UPDATE sessions 
+            SET status = 'LOGGED_OUT', revoked_at = ${now}, revoke_reason = 'USER_LOGOUT'
+            WHERE session_id = ${sessionId};
+          `.catch(() => {});
+
+          recordSessionAudit('SESSION_LOGOUT', {
+            sessionId,
+            userId: decoded?.sub || payload.userId,
+            tenantId: decoded?.tenantId || payload.tenantId,
+            ip: req.headers['x-forwarded-for'] || req.socket.remoteAddress,
+            userAgent: req.headers['user-agent']
+          });
+        }
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true, message: 'Session invalidated successfully' }));
+        return;
+      }
+
+      // 0.5 POST /api/auth/re-authenticate — Offline/Online Session Unlock
+      if (pathname === '/api/auth/re-authenticate' && req.method === 'POST') {
+        applySecurityHeaders(res);
+        const payload = await parseRequestBody(req);
+        const userId = (payload.userId || '').trim();
+        const password = (payload.password || '').trim();
+        const pin = (payload.pin || '').trim();
+        const sessionId = (payload.sessionId || '').trim();
+
+        if (!userId || (!password && !pin)) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, error: 'User ID and password/PIN required' }));
+          return;
+        }
+
+        try {
+          const userRows = await sql`SELECT * FROM users WHERE id = ${userId} AND (deleted_at IS NULL OR deleted_at = 0) LIMIT 1;`;
+          if (userRows.length === 0) {
+            res.writeHead(401, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: false, error: 'User account not found' }));
+            return;
+          }
+
+          const user = userRows[0];
+          const crypto = await import('crypto');
+          let isValid = false;
+
+          if (password) {
+            const sha256Pass = crypto.createHash('sha256').update(password).digest('hex');
+            isValid = user.password_hash === password || user.password_hash === sha256Pass;
+          }
+
+          if (!isValid && pin) {
+            const secRows = await sql`SELECT * FROM user_security WHERE user_id = ${userId} LIMIT 1;`.catch(() => []);
+            if (secRows.length > 0 && secRows[0].pin_hash) {
+              const sha256Pin = crypto.createHash('sha256').update(pin).digest('hex');
+              isValid = secRows[0].pin_hash === pin || secRows[0].pin_hash === sha256Pin;
+            }
+          }
+
+          if (!isValid) {
+            res.writeHead(401, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: false, error: 'Invalid authentication credentials' }));
+            return;
+          }
+
+          const now = Date.now();
+          if (sessionId) {
+            await sql`UPDATE sessions SET last_validated_at = ${now}, last_activity_at = ${now} WHERE session_id = ${sessionId};`.catch(() => {});
+          }
+
+          recordSessionAudit('SESSION_REAUTHENTICATED', {
+            sessionId,
+            userId: user.id,
+            tenantId: user.tenant_id,
+            ip: req.headers['x-forwarded-for'] || req.socket.remoteAddress,
+            userAgent: req.headers['user-agent'],
+            metadata: { mechanism: password ? 'PASSWORD' : 'PIN' }
+          });
+
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: true, validatedAt: now }));
+          return;
+        } catch (err) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, error: err.message }));
+          return;
+        }
+      }
+
+      // 0.6 GET /api/auth/session — Session Context Inspection
+      if (pathname === '/api/auth/session' && req.method === 'GET') {
+        applySecurityHeaders(res);
+        const authHeader = req.headers['authorization'] || '';
+        const token = authHeader.replace(/^Bearer\s+/i, '');
+        const decoded = verifyJwt(token);
+
+        if (!decoded) {
+          res.writeHead(401, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, code: 'AUTH_REQUIRED', error: 'Invalid or expired access token' }));
+          return;
+        }
+
+        const sessionRows = await sql`
+          SELECT s.*, u.name as user_name, u.email as user_email, u.role as user_role, t.name as tenant_name, t.plan as tenant_plan, t.status as tenant_status
+          FROM sessions s
+          JOIN users u ON s.user_id = u.id
+          JOIN tenants t ON s.tenant_id = t.id
+          WHERE s.session_id = ${decoded.sessionId}
+          LIMIT 1;
+        `;
+
+        if (sessionRows.length === 0 || sessionRows[0].status === 'REVOKED') {
+          res.writeHead(401, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, code: 'SESSION_REVOKED', error: 'Session is revoked or missing' }));
+          return;
+        }
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          success: true,
+          session: sessionRows[0],
+          serverTime: Date.now()
+        }));
+        return;
+      }
+
+      // 0.7 GET /api/auth/sessions — Multi-Device Session Listing
+      if (pathname === '/api/auth/sessions' && req.method === 'GET') {
+        applySecurityHeaders(res);
+        const authHeader = req.headers['authorization'] || '';
+        const token = authHeader.replace(/^Bearer\s+/i, '');
+        const decoded = verifyJwt(token);
+
+        if (!decoded) {
+          res.writeHead(401, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, code: 'AUTH_REQUIRED', error: 'Access token required' }));
+          return;
+        }
+
+        const sessions = await sql`
+          SELECT s.id, s.session_id, s.user_id, s.tenant_id, s.branch_id, s.device_id,
+                 s.created_at, s.last_activity_at, s.last_validated_at, s.expires_at,
+                 s.ip_address, s.platform, s.status, d.name as device_name, d.browser
+          FROM sessions s
+          LEFT JOIN devices d ON s.device_id = d.device_id
+          WHERE s.user_id = ${decoded.sub} AND s.tenant_id = ${decoded.tenantId} AND s.status = 'ACTIVE'
+          ORDER BY s.last_activity_at DESC;
+        `;
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true, sessions, currentSessionId: decoded.sessionId }));
+        return;
+      }
+
+      // 0.8 POST /api/auth/sessions/:id/revoke — Single Session Revocation
+      if (pathname.startsWith('/api/auth/sessions/') && pathname.endsWith('/revoke') && req.method === 'POST') {
+        applySecurityHeaders(res);
+        const targetSessionId = pathname.replace('/api/auth/sessions/', '').replace('/revoke', '').trim();
+        const authHeader = req.headers['authorization'] || '';
+        const token = authHeader.replace(/^Bearer\s+/i, '');
+        const decoded = verifyJwt(token);
+
+        if (!decoded) {
+          res.writeHead(401, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, code: 'AUTH_REQUIRED', error: 'Access token required' }));
+          return;
+        }
+
+        const now = Date.now();
+        await sql`
+          UPDATE sessions
+          SET status = 'REVOKED', revoked_at = ${now}, revoke_reason = 'ADMIN_OR_USER_REVOCATION'
+          WHERE (session_id = ${targetSessionId} OR id = ${targetSessionId}) AND tenant_id = ${decoded.tenantId};
+        `;
+
+        recordSessionAudit('SESSION_REVOKED', {
+          sessionId: targetSessionId,
+          userId: decoded.sub,
+          tenantId: decoded.tenantId,
+          ip: req.headers['x-forwarded-for'] || req.socket.remoteAddress,
+          userAgent: req.headers['user-agent']
+        });
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true, message: `Session ${targetSessionId} revoked successfully` }));
+        return;
+      }
+
+      // 0.9 POST /api/auth/sessions/revoke-all — Revoke All Other Sessions
+      if (pathname === '/api/auth/sessions/revoke-all' && req.method === 'POST') {
+        applySecurityHeaders(res);
+        const authHeader = req.headers['authorization'] || '';
+        const token = authHeader.replace(/^Bearer\s+/i, '');
+        const decoded = verifyJwt(token);
+
+        if (!decoded) {
+          res.writeHead(401, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, code: 'AUTH_REQUIRED', error: 'Access token required' }));
+          return;
+        }
+
+        const now = Date.now();
+        await sql`
+          UPDATE sessions
+          SET status = 'REVOKED', revoked_at = ${now}, revoke_reason = 'REVOKE_ALL_TRIGGERED'
+          WHERE user_id = ${decoded.sub} AND tenant_id = ${decoded.tenantId} AND session_id != ${decoded.sessionId};
+        `;
+
+        recordSessionAudit('SESSION_REVOKED', {
+          sessionId: decoded.sessionId,
+          userId: decoded.sub,
+          tenantId: decoded.tenantId,
+          ip: req.headers['x-forwarded-for'] || req.socket.remoteAddress,
+          userAgent: req.headers['user-agent'],
+          metadata: { action: 'REVOKE_ALL_OTHERS' }
+        });
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true, message: 'All other active sessions revoked' }));
+        return;
+      }
+
+      // 0.10 GET /api/auth/devices — List Registered Devices
+      if (pathname === '/api/auth/devices' && req.method === 'GET') {
+        applySecurityHeaders(res);
+        const authHeader = req.headers['authorization'] || '';
+        const token = authHeader.replace(/^Bearer\s+/i, '');
+        const decoded = verifyJwt(token);
+
+        if (!decoded) {
+          res.writeHead(401, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, code: 'AUTH_REQUIRED', error: 'Access token required' }));
+          return;
+        }
+
+        const devices = await sql`
+          SELECT * FROM devices 
+          WHERE tenant_id = ${decoded.tenantId} 
+          ORDER BY last_seen_at DESC;
+        `;
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true, devices }));
+        return;
+      }
+
+      // 0.11 POST /api/auth/devices/:id/revoke — Revoke Device
+      if (pathname.startsWith('/api/auth/devices/') && pathname.endsWith('/revoke') && req.method === 'POST') {
+        applySecurityHeaders(res);
+        const targetDeviceId = pathname.replace('/api/auth/devices/', '').replace('/revoke', '').trim();
+        const authHeader = req.headers['authorization'] || '';
+        const token = authHeader.replace(/^Bearer\s+/i, '');
+        const decoded = verifyJwt(token);
+
+        if (!decoded) {
+          res.writeHead(401, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, code: 'AUTH_REQUIRED', error: 'Access token required' }));
+          return;
+        }
+
+        const now = Date.now();
+        await sql`
+          UPDATE devices
+          SET status = 'REVOKED', revoked_at = ${now}, revoke_reason = 'SECURITY_ADMIN_REVOCATION'
+          WHERE (device_id = ${targetDeviceId} OR id = ${targetDeviceId}) AND tenant_id = ${decoded.tenantId};
+        `;
+
+        // Also revoke any sessions attached to this device
+        await sql`
+          UPDATE sessions
+          SET status = 'REVOKED', revoked_at = ${now}, revoke_reason = 'DEVICE_REVOKED'
+          WHERE device_id = ${targetDeviceId} AND tenant_id = ${decoded.tenantId};
+        `;
+
+        recordSessionAudit('SESSION_DEVICE_REVOKED', {
+          deviceId: targetDeviceId,
+          userId: decoded.sub,
+          tenantId: decoded.tenantId,
+          ip: req.headers['x-forwarded-for'] || req.socket.remoteAddress,
+          userAgent: req.headers['user-agent']
+        });
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true, message: `Device ${targetDeviceId} revoked successfully` }));
+        return;
+      }
+
+      // 0.12 GET /api/auth/session/validate — Heartbeat & Clock Offset Check
+      if (pathname === '/api/auth/session/validate' && req.method === 'GET') {
+        applySecurityHeaders(res);
+        const authHeader = req.headers['authorization'] || '';
+        const token = authHeader.replace(/^Bearer\s+/i, '');
+        const decoded = verifyJwt(token);
+        const now = Date.now();
+
+        if (!decoded) {
+          res.writeHead(401, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, code: 'TOKEN_EXPIRED', error: 'Token expired', serverTime: now }));
+          return;
+        }
+
+        const sessionCheck = await sql`
+          SELECT status, permissions_version, tenant_version, expires_at 
+          FROM sessions 
+          WHERE session_id = ${decoded.sessionId} 
+          LIMIT 1;
+        `.catch(() => []);
+
+        if (sessionCheck.length === 0 || sessionCheck[0].status === 'REVOKED') {
+          res.writeHead(401, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, code: 'SESSION_REVOKED', error: 'Session is revoked', serverTime: now }));
+          return;
+        }
+
+        // Update last validated timestamp
+        await sql`UPDATE sessions SET last_validated_at = ${now}, last_activity_at = ${now} WHERE session_id = ${decoded.sessionId};`.catch(() => {});
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          success: true,
+          status: sessionCheck[0].status,
+          serverTime: now,
+          permissionsVersion: sessionCheck[0].permissions_version,
+          tenantVersion: sessionCheck[0].tenant_version,
+          expiresAt: sessionCheck[0].expires_at
+        }));
+        return;
           return;
         }
       }

@@ -22,6 +22,7 @@ import { notificationDispatcher } from '../../services/notificationDispatcher';
 import { versionMetadata } from '../../config/versionMetadata';
 import { Html5Qrcode } from 'html5-qrcode';
 import { LegalPolicyModal, type LegalTab } from '../Legal/LegalPolicyModal';
+import { sessionManager } from '../../services/session/sessionManager';
 
 export type LoginInterfaceMode = 'split-hero' | 'sleek-portal' | 'pos-kiosk' | 'workspace-launcher';
 type AuthMode = 'select' | 'tenant-login' | 'admin-login' | 'context-selection' | 'register-wizard';
@@ -734,6 +735,20 @@ export const AuthGateway: React.FC = () => {
               if (authData.userSecurity) await db.userSecurity.put(authData.userSecurity);
               await db.users.put(dbUser);
             });
+
+            if (authData.accessToken && authData.sessionId) {
+              await sessionManager.setAuthenticatedSession({
+                accessToken: authData.accessToken,
+                refreshToken: authData.refreshToken,
+                sessionId: authData.sessionId,
+                deviceId: authData.deviceId,
+                serverTime: authData.serverTime,
+                user: dbUser,
+                tenant: authData.tenant,
+                branches: authData.branches || []
+              });
+            }
+
             console.log('[Auth Login] Authenticated via Server Engine. Local cache rehydrated.');
           }
         }

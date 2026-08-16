@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo, Suspense } from 'react';
 import { safeLazy } from './utils/safeLazy';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { SessionProvider } from './contexts/SessionContext';
 import { ModuleProvider, useModule } from './context/ModuleContext';
 import { SyncProvider, useSyncState } from './context/SyncContext';
 import { initProductionDatabase, db } from './db/dexie';
@@ -980,13 +981,15 @@ const DukaPosAppContent: React.FC = () => {
 function App() {
   return (
     <ToastProvider>
-      <AuthProvider>
-        <ModuleProvider>
-          <SyncProvider>
-            <DukaPosAppContent />
-          </SyncProvider>
-        </ModuleProvider>
-      </AuthProvider>
+      <SessionProvider>
+        <AuthProvider>
+          <ModuleProvider>
+            <SyncProvider>
+              <DukaPosAppContent />
+            </SyncProvider>
+          </ModuleProvider>
+        </AuthProvider>
+      </SessionProvider>
     </ToastProvider>
   );
 }
