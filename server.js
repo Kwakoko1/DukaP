@@ -319,7 +319,13 @@ async function initDatabaseSchema() {
       await sql`
         INSERT INTO tenants (id, name, plan, status, business_code, tenant_code, created_at)
         VALUES ('tenant-admin-system', 'System Platform Administration', 'Enterprise', 'Active', 'SYS-ADMIN-0000', 'SYS-ADMIN-0000', ${Date.now()})
-        ON CONFLICT (id) DO NOTHING;
+        ON CONFLICT (id) DO UPDATE SET business_code = 'SYS-ADMIN-0000', tenant_code = 'SYS-ADMIN-0000';
+
+        -- Auto-generate human-readable business codes for any existing tenant records
+        UPDATE tenants
+        SET business_code = COALESCE(NULLIF(business_code, ''), 'BIZ-' || UPPER(SUBSTRING(REGEXP_REPLACE(name, '[^a-zA-Z]', '', 'g') FROM 1 FOR 6)) || '-' || UPPER(SUBSTRING(MD5(id::text) FROM 1 FOR 4))),
+            tenant_code = COALESCE(NULLIF(tenant_code, ''), 'TZ-RET-' || UPPER(SUBSTRING(REGEXP_REPLACE(name, '[^a-zA-Z]', '', 'g') FROM 1 FOR 6)) || '-' || UPPER(SUBSTRING(MD5(id::text) FROM 1 FOR 4)))
+        WHERE business_code IS NULL OR length(trim(business_code)) = 0;
       `;
 
       // B. Purge any orphan records from products, variants, categories, branches with invalid/empty tenant_id

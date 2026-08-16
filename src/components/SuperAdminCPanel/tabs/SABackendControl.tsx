@@ -163,23 +163,39 @@ export const SABackendControl: React.FC = () => {
 
     // Load tenants dictionary for human-readable ID resolution
     try {
-      const tRes = await SuperAdminBackendService.getTableData('tenants', 200, 0);
-      if (tRes.success && tRes.rows) {
-        const dict: Record<string, { name: string; code: string }> = {};
+      const [tRes, tApiRes] = await Promise.all([
+        SuperAdminBackendService.getTableData('tenants', 500, 0),
+        fetch('/api/tenants', { headers: { 'x-tenant-id': 'tenant-admin-system' } }).then(r => r.ok ? r.json() : []).catch(() => [])
+      ]);
+      const dict: Record<string, { name: string; code: string }> = {
+        'tenant-admin-system': { name: 'System Platform', code: 'SYS-ADMIN-0000' },
+        'tenant-system-platform': { name: 'System Platform', code: 'SYS-ADMIN-0000' }
+      };
+      if (tRes?.success && Array.isArray(tRes.rows)) {
         tRes.rows.forEach((t: any) => {
-          dict[t.id] = { name: t.name || 'Tenant', code: t.business_code || t.tenant_code || t.id };
+          dict[t.id] = { name: t.name || t.company_name || 'Tenant', code: t.business_code || t.tenant_code || `BIZ-${String(t.id).slice(0, 6).toUpperCase()}` };
         });
-        setTenantsDict(dict);
       }
+      if (Array.isArray(tApiRes)) {
+        tApiRes.forEach((t: any) => {
+          if (!dict[t.id] || dict[t.id].name === 'Tenant') {
+            dict[t.id] = { name: t.name || t.company_name || 'Tenant', code: t.business_code || t.tenant_code || `BIZ-${String(t.id).slice(0, 6).toUpperCase()}` };
+          }
+        });
+      }
+      setTenantsDict(dict);
     } catch (_) {}
 
     // Load branches dictionary for human-readable branch resolution
     try {
-      const bRes = await SuperAdminBackendService.getTableData('branches', 200, 0);
+      const bRes = await SuperAdminBackendService.getTableData('branches', 500, 0);
       if (bRes.success && bRes.rows) {
-        const bdict: Record<string, { name: string; code: string }> = {};
+        const bdict: Record<string, { name: string; code: string }> = {
+          'branch-admin-main': { name: 'Main HQ Branch', code: 'HQ-01' },
+          'branch-main': { name: 'Main HQ Branch', code: 'HQ-01' }
+        };
         bRes.rows.forEach((b: any) => {
-          bdict[b.id] = { name: b.name || 'Branch', code: b.branch_code || b.id };
+          bdict[b.id] = { name: b.name || 'Branch', code: b.branch_code || `BR-${String(b.id).slice(0, 6).toUpperCase()}` };
         });
         setBranchesDict(bdict);
       }
@@ -196,6 +212,13 @@ export const SABackendControl: React.FC = () => {
     // 1. Resolve tenant_id
     if (field === 'tenant_id') {
       const strVal = String(val);
+      if (strVal === 'tenant-admin-system' || strVal === 'tenant-system-platform') {
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-300 font-sans font-bold text-[11px]">
+            <span>🛡️</span> System Platform (SYS-ADMIN-0000)
+          </span>
+        );
+      }
       const tenantInfo = tenantsDict[strVal];
       if (tenantInfo) {
         return (
@@ -209,18 +232,31 @@ export const SABackendControl: React.FC = () => {
           </span>
         );
       }
-      if (strVal === 'tenant-admin-system') {
-        return (
-          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-300 font-sans font-bold text-[11px]">
-            <span>🛡️</span> System Platform (SYS-ADMIN-0000)
-          </span>
-        );
-      }
+      // Guaranteed human-readable fallback for un-indexed tenant UUIDs
+      const shortCode = strVal.length >= 8 ? `BIZ-${strVal.slice(0, 6).toUpperCase()}` : strVal;
+      const displayName = row.tenant_name || row.company_name || row.business_name || `Tenant • ${strVal.slice(0, 8).toUpperCase()}`;
+      return (
+        <span
+          className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 font-sans font-bold text-[11px]"
+          title={`Tenant UUID: ${strVal}`}
+        >
+          <span>🏢</span>
+          <span>{displayName}</span>
+          <span className="text-[10px] font-mono text-indigo-400/80">({shortCode})</span>
+        </span>
+      );
     }
 
     // 2. Resolve branch_id
     if (field === 'branch_id') {
       const strVal = String(val);
+      if (strVal === 'branch-admin-main' || strVal === 'branch-main') {
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 font-sans font-bold text-[11px]">
+            <span>📍</span> Main HQ Branch
+          </span>
+        );
+      }
       const branchInfo = branchesDict[strVal];
       if (branchInfo) {
         return (
@@ -233,16 +269,19 @@ export const SABackendControl: React.FC = () => {
           </span>
         );
       }
-      if (strVal === 'branch-admin-main' || strVal === 'branch-main') {
-        return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-800 text-slate-300 font-sans font-bold text-[11px]">
-            <span>📍</span> Main HQ Branch
-          </span>
-        );
-      }
+      const branchLabel = row.branch_name || `Branch • ${strVal.slice(0, 6).toUpperCase()}`;
+      return (
+        <span
+          className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 font-sans font-bold text-[11px]"
+          title={`Branch UUID: ${strVal}`}
+        >
+          <span>📍</span>
+          <span>{branchLabel}</span>
+        </span>
+      );
     }
 
-    // 3. Resolve user id
+    // 3. Resolve user id with Business Name
     if (field === 'id' && typeof val === 'string') {
       if (val === 'usr-superadmin') {
         return (
@@ -251,7 +290,26 @@ export const SABackendControl: React.FC = () => {
           </span>
         );
       }
-      if (val.startsWith('usr-') && val.endsWith('-owner')) {
+      if (val.startsWith('usr-')) {
+        // Resolve associated business name from row.tenant_id, tenantsDict, or row data
+        const rowTenantId = row?.tenant_id;
+        const tenantInfo = rowTenantId ? tenantsDict[rowTenantId] : null;
+        const businessName = tenantInfo?.name || row?.business_name || row?.company_name || row?.tenant_name;
+        
+        const isOwner = val.endsWith('-owner') || row?.role === 'Tenant Owner';
+        const roleLabel = isOwner ? 'Owner' : (row?.role || 'Staff');
+        
+        if (businessName && businessName !== 'Tenant') {
+          return (
+            <span
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-indigo-500/20 text-indigo-300 font-mono font-bold text-[11px]"
+              title={`Full User ID: ${val} (Tenant: ${rowTenantId || 'N/A'})`}
+            >
+              USR • {businessName} ({roleLabel})
+            </span>
+          );
+        }
+
         const parts = val.split('-');
         const shortHex = parts[1]?.slice(0, 8).toUpperCase();
         return (
@@ -259,7 +317,7 @@ export const SABackendControl: React.FC = () => {
             className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-indigo-500/20 text-indigo-300 font-mono font-bold text-[11px]"
             title={`Full User ID: ${val}`}
           >
-            USR • {shortHex || 'OWNER'} (Owner)
+            USR • {shortHex || 'USER'} ({roleLabel})
           </span>
         );
       }
@@ -306,6 +364,56 @@ export const SABackendControl: React.FC = () => {
       );
     }
 
+    // 7. Date & Timestamp formatting in DD/MM/YYYY HH:mm
+    const isDateField = 
+      field.endsWith('_at') || 
+      field.endsWith('_date') || 
+      field.includes('timestamp') || 
+      field === 'date' || 
+      field === 'trial_ends_at' || 
+      field === 'created_at' || 
+      field === 'updated_at' || 
+      field === 'deleted_at' ||
+      field === 'joined_at' ||
+      field === 'assigned_at' ||
+      field === 'installed_at' ||
+      field === 'enabled_at';
+
+    if (isDateField && val !== null && val !== undefined) {
+      let ms: number | null = null;
+      if (typeof val === 'number') {
+        ms = val > 10000000000 ? val : val * 1000;
+      } else if (typeof val === 'string' && /^\d+$/.test(val)) {
+        const num = Number(val);
+        ms = num > 10000000000 ? num : num * 1000;
+      } else if (typeof val === 'string' && (val.includes('T') || val.includes('-') || val.includes('/'))) {
+        const parsed = Date.parse(val);
+        if (!isNaN(parsed)) ms = parsed;
+      }
+
+      if (ms && !isNaN(ms) && ms > 0) {
+        const d = new Date(ms);
+        const day = String(d.getDate()).padStart(2, '0');
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const year = d.getFullYear();
+        const hours = String(d.getHours()).padStart(2, '0');
+        const mins = String(d.getMinutes()).padStart(2, '0');
+        const formattedDate = `${day}/${month}/${year}`;
+        const formattedTime = `${hours}:${mins}`;
+
+        return (
+          <span
+            className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-slate-800/80 border border-slate-700/60 text-slate-300 font-mono text-[11px]"
+            title={`Timestamp: ${val} (ISO: ${d.toISOString()})`}
+          >
+            <span className="text-slate-400">📅</span>
+            <span className="font-bold text-slate-200">{formattedDate}</span>
+            <span className="text-[10px] text-slate-400 font-normal">{formattedTime}</span>
+          </span>
+        );
+      }
+    }
+
     if (typeof val === 'object') {
       return JSON.stringify(val);
     }
@@ -330,6 +438,23 @@ export const SABackendControl: React.FC = () => {
       setTableFields(res.fields || []);
       setTableTotalRows(res.totalCount || 0);
       setTablePage(page);
+
+      // Lazy hydrate tenants dictionary for any newly discovered tenant_ids
+      const missingTenantIds = (res.rows || [])
+        .map((r: any) => r.tenant_id)
+        .filter((tid: any) => tid && tid !== 'tenant-admin-system' && !tenantsDict[tid]);
+
+      if (missingTenantIds.length > 0) {
+        SuperAdminBackendService.getTableData('tenants', 500, 0).then(tRes => {
+          if (tRes?.success && Array.isArray(tRes.rows)) {
+            const updated = { ...tenantsDict };
+            tRes.rows.forEach((t: any) => {
+              updated[t.id] = { name: t.name || t.company_name || 'Tenant', code: t.business_code || t.tenant_code || `BIZ-${String(t.id).slice(0, 6).toUpperCase()}` };
+            });
+            setTenantsDict(updated);
+          }
+        }).catch(() => {});
+      }
     }
     setLoadingTableData(false);
   };
