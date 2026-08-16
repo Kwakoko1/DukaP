@@ -125,16 +125,24 @@ class ProductionReadinessVerifier {
       timestamp: NOW
     });
 
-    // 6. Offline-First Sync Engine
+    // 6. Offline-First Sync Engine & Data Persistence Test Suite
     const syncStatus = await productionSyncEngine.getStatus();
+    let dataPersistenceRes = { passed: true, details: ['Data persistence verification active'] };
+    try {
+      const { runDataPersistenceTests } = await import('../tests/dataPersistence.test');
+      dataPersistenceRes = await runDataPersistenceTests();
+    } catch (e: any) {
+      dataPersistenceRes = { passed: false, details: [`Test suite error: ${e?.message || e}`] };
+    }
+
     results.push({
       id: 6,
       pillar: 'Pillar 6',
-      name: 'Offline-First Sync Engine',
+      name: 'Offline-First Sync Engine & Data Persistence',
       category: 'OFFLINE_SYNC',
-      passed: true,
-      status: 'OPTIMAL',
-      details: `Delta sync, vector clocks & Last-Write-Wins (LWW) conflict resolver operational (Pending queue: ${syncStatus.pendingSyncCount}).`,
+      passed: dataPersistenceRes.passed,
+      status: dataPersistenceRes.passed ? 'OPTIMAL' : 'FAILED',
+      details: `Delta sync, vector clocks, atomic outbox & local data persistence verified (Pending queue: ${syncStatus.pendingSyncCount}). Tests: ${dataPersistenceRes.details.join(' | ')}`,
       timestamp: NOW
     });
 
