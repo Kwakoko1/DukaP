@@ -156,6 +156,139 @@ function normalizeClientTimestamp(clientTimestamp, serverNow) {
   return clientTimestamp;
 }
 
+// ─── CANONICAL REPLICA CHECKSUM V1 (SHA-256) ──────────────────────────────────
+const CHECKSUM_VERSION = 1;
+
+function canonicalizeValue(value) {
+  if (value === undefined || value === null) return null;
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) return null;
+    return value;
+  }
+  if (typeof value === 'string' || typeof value === 'boolean') return value;
+  if (Array.isArray(value)) return value.map(canonicalizeValue);
+  if (typeof value === 'object') {
+    return Object.keys(value)
+      .sort()
+      .reduce((res, k) => {
+        res[k] = canonicalizeValue(value[k]);
+        return res;
+      }, {});
+  }
+  return String(value);
+}
+
+function canonicalProduct(record) {
+  return {
+    id: String(record.id || ''),
+    tenant_id: String(record.tenant_id || record.tenantId || ''),
+    branch_id: record.branch_id || record.branchId ? String(record.branch_id || record.branchId) : null,
+    name: String(record.name || '').trim(),
+    sku: record.sku ? String(record.sku).trim() : null,
+    barcode: record.barcode ? String(record.barcode).trim() : null,
+    category: record.category ? String(record.category).trim() : null,
+    categoryId: record.categoryId || record.category_id ? String(record.categoryId || record.category_id) : null,
+    brand: record.brand ? String(record.brand).trim() : null,
+    brandId: record.brandId || record.brand_id ? String(record.brandId || record.brand_id) : null,
+    buyingPrice: Number(record.buyingPrice ?? record.buying_price ?? 0),
+    sellingPrice: Number(record.sellingPrice ?? record.selling_price ?? record.price ?? 0),
+    price: Number(record.price ?? record.selling_price ?? record.sellingPrice ?? 0),
+    costPrice: Number(record.costPrice ?? record.cost_price ?? 0),
+    wholesalePrice: Number(record.wholesalePrice ?? record.wholesale_price ?? 0),
+    vipPrice: Number(record.vipPrice ?? record.vip_price ?? 0),
+    onlinePrice: Number(record.onlinePrice ?? record.online_price ?? 0),
+    hasVariants: Boolean(record.hasVariants ?? record.has_variants ?? false),
+    status: record.status ? String(record.status) : 'Active',
+    version: Number(record.version ?? 1),
+    deletedAt: record.deletedAt ?? record.deleted_at ?? null,
+  };
+}
+
+function canonicalVariant(record) {
+  return {
+    id: String(record.id || ''),
+    productId: String(record.productId || record.product_id || ''),
+    tenant_id: String(record.tenant_id || record.tenantId || ''),
+    branch_id: record.branch_id || record.branchId ? String(record.branch_id || record.branchId) : null,
+    sku: record.sku ? String(record.sku).trim() : null,
+    barcode: record.barcode ? String(record.barcode).trim() : null,
+    buyingPrice: Number(record.buyingPrice ?? record.buying_price ?? 0),
+    sellingPrice: Number(record.sellingPrice ?? record.selling_price ?? record.price ?? 0),
+    wholesalePrice: Number(record.wholesalePrice ?? record.wholesale_price ?? 0),
+    vipPrice: Number(record.vipPrice ?? record.vip_price ?? 0),
+    onlinePrice: Number(record.onlinePrice ?? record.online_price ?? 0),
+    stock: Number(record.stock ?? 0),
+    reservedStock: Number(record.reservedStock ?? record.reserved_stock ?? 0),
+    reorderLevel: Number(record.reorderLevel ?? record.reorder_level ?? 0),
+    status: record.status ? String(record.status) : 'Active',
+    attributes: record.attributes ? canonicalizeValue(record.attributes) : {},
+    version: Number(record.version ?? 1),
+    deletedAt: record.deletedAt ?? record.deleted_at ?? null,
+  };
+}
+
+function canonicalCategory(record) {
+  return {
+    id: String(record.id || ''),
+    tenant_id: String(record.tenant_id || record.tenantId || ''),
+    branch_id: record.branch_id || record.branchId ? String(record.branch_id || record.branchId) : null,
+    name: String(record.name || '').trim(),
+    code: record.code ? String(record.code).trim() : null,
+    description: record.description ? String(record.description).trim() : null,
+    parent_id: record.parent_id || record.parentId ? String(record.parent_id || record.parentId) : null,
+    status: record.status ? String(record.status) : 'Active',
+    sync_version: Number(record.sync_version ?? record.syncVersion ?? 0),
+    deletedAt: record.deletedAt ?? record.deleted_at ?? null,
+  };
+}
+
+function canonicalBrand(record) {
+  return {
+    id: String(record.id || ''),
+    tenant_id: String(record.tenant_id || record.tenantId || ''),
+    branch_id: record.branch_id || record.branchId ? String(record.branch_id || record.branchId) : null,
+    name: String(record.name || '').trim(),
+    code: record.code ? String(record.code).trim() : null,
+    description: record.description ? String(record.description).trim() : null,
+    status: record.status ? String(record.status) : 'Active',
+    sync_version: Number(record.sync_version ?? record.syncVersion ?? 0),
+    deletedAt: record.deletedAt ?? record.deleted_at ?? null,
+  };
+}
+
+async function calculateServerTenantChecksum(sqlClient, targetTenant, schemaVer = 8) {
+  const [prods, vars, cats, brds] = await Promise.all([
+    sqlClient`SELECT * FROM products WHERE tenant_id = ${targetTenant}`.catch(() => []),
+    sqlClient`SELECT * FROM product_variants WHERE tenant_id = ${targetTenant}`.catch(() => []),
+    sqlClient`SELECT * FROM categories WHERE tenant_id = ${targetTenant}`.catch(() => []),
+    sqlClient`SELECT * FROM brands WHERE tenant_id = ${targetTenant}`.catch(() => []),
+  ]);
+
+  const records = [
+    ...prods.map((r) => ({ entity: 'products', id: String(r.id), data: canonicalProduct(r) })),
+    ...vars.map((r) => ({ entity: 'productVariants', id: String(r.id), data: canonicalVariant(r) })),
+    ...cats.map((r) => ({ entity: 'categories', id: String(r.id), data: canonicalCategory(r) })),
+    ...brds.map((r) => ({ entity: 'brands', id: String(r.id), data: canonicalBrand(r) })),
+  ];
+
+  records.sort((a, b) => `${a.entity}:${a.id}`.localeCompare(`${b.entity}:${b.id}`));
+
+  const canonicalPayload = {
+    checksumVersion: CHECKSUM_VERSION,
+    tenantId: String(targetTenant),
+    schemaVersion: Number(schemaVer),
+    records: records.map((r) => ({ entity: r.entity, id: r.id, data: canonicalizeValue(r.data) })),
+  };
+
+  const serialized = JSON.stringify(canonicalizeValue(canonicalPayload));
+  const hex = crypto.createHash('sha256').update(serialized, 'utf8').digest('hex');
+  return {
+    checksum: `sha256:${hex}`,
+    checksumVersion: CHECKSUM_VERSION,
+    recordCount: records.length,
+  };
+}
+
 // ─── HYBRID SESSION MANAGEMENT & TOKEN CRYPTOGRAPHY ──────────────────────────
 let JWT_SECRET = process.env.JWT_SECRET || process.env.SESSION_SECRET;
 if (!JWT_SECRET) {
@@ -2727,6 +2860,21 @@ const server = http.createServer(async (req, res) => {
             orders: ords
           }
         }));
+        return;
+      }
+
+      // 17.0 GET /api/sync/checksum (Deterministic Content-Based SHA-256 Replica Checksum)
+      if (pathname === '/api/sync/checksum' && req.method === 'GET') {
+        const targetTenant = tenantId || fullUrl.searchParams.get('tenantId') || 'tenant-101';
+        const schemaVer = parseInt(fullUrl.searchParams.get('schemaVersion') || '8', 10);
+        try {
+          const result = await calculateServerTenantChecksum(sql, targetTenant, schemaVer);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: true, tenantId: targetTenant, ...result }));
+        } catch (err) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, error: err.message }));
+        }
         return;
       }
 

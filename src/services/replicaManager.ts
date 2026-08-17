@@ -185,6 +185,46 @@ export class ReplicaManager {
       issues,
     };
   }
+
+  /**
+   * Compares local replica checksum against server authoritative checksum.
+   * If diverged, flags replica as QUARANTINED without wiping local state or outbox.
+   */
+  public async verifyReplicaChecksum(
+    tenantId: string,
+    serverExpectedChecksum: string
+  ): Promise<{ status: 'MATCH' | 'DIVERGED'; localChecksum: string; serverExpectedChecksum: string }> {
+    const localResult = await integrityValidator.calculateTenantChecksum(tenantId);
+    const matches = localResult.checksum === serverExpectedChecksum;
+
+    if (!matches) {
+      console.warn(`[ReplicaManager] Checksum divergence detected for tenant ${tenantId}. Local: ${localResult.checksum}, Server: ${serverExpectedChecksum}`);
+      await this.quarantineReplica(tenantId, `Checksum mismatch: expected ${serverExpectedChecksum}, got ${localResult.checksum}`);
+      return { status: 'DIVERGED', localChecksum: localResult.checksum, serverExpectedChecksum };
+    }
+
+    return { status: 'MATCH', localChecksum: localResult.checksum, serverExpectedChecksum };
+  }
+
+  /**
+   * Moves replica to QUARANTINED state:
+   * Stops destructive writes, preserves local outbox, and logs diagnostic event.
+   */
+  public async quarantineReplica(tenantId: string, reason: string): Promise<void> {
+    console.error(`[ReplicaManager] REPLICA QUARANTINED for tenant ${tenantId}: ${reason}`);
+    try {
+      await db.syncMetadata.put({
+        key: `replica_status_${tenantId}`,
+        value: 'QUARANTINED',
+        updatedAt: Date.now(),
+      });
+      await db.syncMetadata.put({
+        key: `quarantine_reason_${tenantId}`,
+        value: reason,
+        updatedAt: Date.now(),
+      });
+    } catch (_) {}
+  }
 }
 
 export const replicaManager = ReplicaManager.getInstance();

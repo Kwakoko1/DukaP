@@ -7,6 +7,7 @@
  */
 
 import { db } from '../db/dexie';
+import { integrityValidator } from '../db/persistence/integrityValidator';
 
 export type ReplicaHealthStatus =
   | 'PRISTINE'          // Fresh, clean, synchronized state
@@ -42,19 +43,6 @@ export interface ReplicaManifest {
   healthStatus: ReplicaHealthStatus;
   integrityChecksum: string;
   generatedAt: number;
-}
-
-/**
- * Calculates a simple fast 32-bit hash string for replica integrity verification
- */
-function computeChecksum(data: string): string {
-  let hash = 0;
-  for (let i = 0; i < data.length; i++) {
-    const char = data.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash |= 0; // Convert to 32bit integer
-  }
-  return `chk-${Math.abs(hash).toString(16)}-${data.length}`;
 }
 
 /**
@@ -149,9 +137,13 @@ export async function buildReplicaManifest(
     healthStatus = 'PRISTINE';
   }
 
-  // 5. Deterministic Checksum
-  const stateSummary = `${tenantId}:${schemaVersion}:${lastSyncVersion}:${productsCount}:${variantsCount}:${categoriesCount}:${brandsCount}:${stockLedgerCount}:${pendingOutboxCount}`;
-  const integrityChecksum = computeChecksum(stateSummary);
+  // 5. Deterministic SHA-256 Content Checksum
+  const integrityResult = await integrityValidator.checkTenantIntegrity(tenantId);
+  const integrityChecksum = integrityResult.checksum || 'sha256:unknown';
+
+  if (!integrityResult.passed && healthStatus !== 'CORRUPTED') {
+    healthStatus = 'CORRUPTED';
+  }
 
   return {
     manifestVersion: 1,
