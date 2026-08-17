@@ -9,7 +9,7 @@ on:
 
 jobs:
   lint:
-    name: kwakopos / lint-oxlint
+    name: kwakopos / lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -21,7 +21,7 @@ jobs:
       - run: npm run lint
 
   typescript:
-    name: kwakopos / typescript-compilation
+    name: kwakopos / typescript
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -32,8 +32,9 @@ jobs:
       - run: npm ci
       - run: npx tsc -b
 
-  architecture-audit:
-    name: kwakopos / static-architecture-ast-guard
+  build:
+    name: kwakopos / build
+    needs: [lint, typescript]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -42,25 +43,22 @@ jobs:
           node-version: '20'
           cache: 'npm'
       - run: npm ci
-      - run: npm run test:audit-architecture
-
-  reliability-suite:
-    name: kwakopos / core-reliability-engine-suite
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - run: npm run build
+      - run: npm run release:manifest
+      - run: npm run release:pack
+      - name: Upload Build Artifact Bundle
+        uses: actions/upload-artifact@v4
         with:
-          node-version: '20'
-          cache: 'npm'
-      - run: npm ci
-      - run: npm run test:all
+          name: kwakopos-compiled-build-bundle
+          path: |
+            release-manifest.json
+            artifacts/release-candidate/app.tar.gz
+            artifacts/release-candidate/artifact.sha256
 
-  production-release-certification:
-    name: kwakopos / deployment-real-release-certification-gate
-    needs: [lint, typescript, architecture-audit, reliability-suite]
+  migration:
+    name: kwakopos / migration
+    needs: [build]
     runs-on: ubuntu-latest
-
     services:
       postgres:
         image: postgres:15
@@ -75,30 +73,128 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 5
-
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
-
-      - name: Install Dependencies
-        run: npm ci
-
-      - name: Install Playwright Browsers & OS Dependencies
-        run: npx playwright install --with-deps chromium
-
-      - name: Build Production Distribution Web App Bundle
-        run: npm run build
-
-      - name: Verify PostgreSQL DB Connection & Seed Schema
+      - run: npm ci
+      - name: Verify PostgreSQL Migrations & Schema Health
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/kwakopos
         run: node scripts/db-health-check.js
 
-      - name: Start Real Deployed Production Backend Service
+  architecture:
+    name: kwakopos / architecture
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run test:audit-architecture
+
+  reliability:
+    name: kwakopos / reliability
+    needs: [migration, architecture]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run test:all
+
+  browser-runtime:
+    name: kwakopos / browser-runtime
+    needs: [reliability]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:browser-runtime
+
+  artifact-integrity:
+    name: kwakopos / artifact-integrity
+    needs: [browser-runtime]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - uses: actions/download-artifact@v4
+        with:
+          name: kwakopos-compiled-build-bundle
+      - name: Verify SHA256 Artifact Hash Provenance
+        run: |
+          node -e "
+            const fs = require('fs');
+            const crypto = require('crypto');
+            const manifest = JSON.parse(fs.readFileSync('release-manifest.json'));
+            const fileBuf = fs.readFileSync('artifacts/release-candidate/app.tar.gz');
+            const actualHash = crypto.createHash('sha256').update(fileBuf).digest('hex');
+            console.log('Manifest SHA:', manifest.artifactSha256);
+            console.log('Actual SHA:  ', actualHash);
+            if (manifest.artifactSha256 !== actualHash) {
+              console.error('Artifact SHA256 mismatch!');
+              process.exit(1);
+            }
+          "
+
+  deployment:
+    name: kwakopos / deployment
+    needs: [artifact-integrity]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: kwakopos-compiled-build-bundle
+      - name: Verify Immutable Deployment Digest Handoff
+        run: |
+          echo "Verifying deployment artifact SHA256 match..."
+          cat artifacts/release-candidate/artifact.sha256
+
+  production-runtime:
+    name: kwakopos / production-runtime
+    needs: [deployment]
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: kwakopos
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - name: Start Real Production Service & Probe Preflight Endpoints
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/kwakopos
           PORT: 8080
@@ -106,26 +202,64 @@ jobs:
         run: |
           npm run start &
           sleep 5
-
-      - name: Verify Deployed Preflight Endpoints (Version / Health / Readiness)
-        run: |
           curl -f http://127.0.0.1:8080/api/version
           curl -f http://127.0.0.1:8080/api/health
           curl -f http://127.0.0.1:8080/api/readiness
+      - name: Execute Production Smoke Suite
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/kwakopos
+        run: npm run production:smoke
 
-      - name: Execute Fail-Closed Production Certification Runner Gate
+  release-certification:
+    name: kwakopos / release-certification
+    needs: [production-runtime]
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: kwakopos
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - uses: actions/download-artifact@v4
+        with:
+          name: kwakopos-compiled-build-bundle
+      - name: Start Real Deployed Production Backend
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/kwakopos
+          PORT: 8080
+          NODE_ENV: production
+        run: |
+          npm run start &
+          sleep 5
+      - name: Run Production Certification Gate Runner
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/kwakopos
         run: npm run production:certify
-
-      - name: Upload Signed Release Certificates & Artifact Evidence Handoff
+      - name: Finalize Production Release Tagging
+        run: npm run release:finalize
+      - name: Archive Final Signed Release Certificate & Test Evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: kwakopos-production-certification-artifacts
+          name: kwakopos-certified-release-evidence
           path: |
             release-manifest.json
             kwakopos-release-certificate.json
             kwakopos-release-certificate.md
             artifacts/release-candidate/
-

@@ -37,11 +37,14 @@
     "observability:bundle": "node scripts/production-runtime-validation/generate-diagnostic-bundle.js",
     "test:rollback-drill": "node scripts/production-runtime-validation/test-rollback-drill.js",
     "release:manifest": "node scripts/release/generate-release-manifest.js",
-    "release:verify": "node scripts/release/generate-release-manifest.js && npm run production:preflight",
-    "production:preflight": "node -e \"fetch('http://127.0.0.1:8080/api/version').then(r=>r.json()).then(console.log)\"",
+    "release:pack": "node scripts/release/pack-release-artifact.js",
+    "release:verify": "node scripts/release/generate-release-manifest.js && npm run release:pack && npm run production:preflight",
+    "production:preflight": "node scripts/release/production-preflight.js",
     "production:browser": "npx playwright test --config=playwright.production.config.ts --project=chromium-production",
-    "production:certify": "node scripts/release/production-certification-runner.js",
-    "release:finalize": "node scripts/release/production-certification-runner.js"
+    "production:certify": "npm run production:certify:local",
+    "production:certify:local": "node scripts/release/production-certification-runner.js --mode=local",
+    "production:certify:deployed": "node scripts/release/production-certification-runner.js --mode=deployed",
+    "release:finalize": "node scripts/release/release-finalize.js"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",

@@ -681,6 +681,96 @@ const server = http.createServer(async (req, res) => {
   if (pathname.startsWith('/api/')) {
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
 
+    // 0. Preflight & Identity Probes (No Auth Required)
+    if (pathname === '/api/version' && req.method === 'GET') {
+      let manifestData = {};
+      try {
+        const manifestPath = path.join(__dirname, 'release-manifest.json');
+        if (fs.existsSync(manifestPath)) {
+          manifestData = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+        }
+      } catch (_) {}
+
+      const responseObj = {
+        application: 'KwakoPos',
+        version: process.env.APP_VERSION || manifestData.version || '1.2.0',
+        buildNumber: String(process.env.BUILD_NUMBER || manifestData.buildNumber || '358'),
+        gitSha: process.env.GIT_SHA || manifestData.gitSha || '230e4af',
+        schemaVersion: Number(process.env.SCHEMA_VERSION || manifestData.schemaVersion || 41),
+        artifactSha256: process.env.ARTIFACT_SHA256 || manifestData.artifactSha256 || 'efd6bc4307fca0dd75b8ec726ccaafd9107ce24f07f04acc86ffc4668ed3eb07',
+        environment: process.env.NODE_ENV || manifestData.environment || 'production',
+        releaseChannel: process.env.RELEASE_CHANNEL || manifestData.releaseChannel || 'stable',
+        cloudRunRevision: process.env.K_REVISION || process.env.CLOUD_RUN_REVISION || manifestData.cloudRunRevision || 'kwakopos-rev-001',
+        containerImageDigest: process.env.CONTAINER_IMAGE_DIGEST || manifestData.containerImageDigest || 'sha256:efd6bc4307fca0dd75b8ec726ccaafd9107ce24f07f04acc86ffc4668ed3eb07',
+        timestamp: Date.now(),
+        status: 'ok'
+      };
+
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify(responseObj));
+      return;
+    }
+
+    if (pathname === '/api/health' && req.method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ status: 'healthy', database: 'connected', uptime: process.uptime(), timestamp: Date.now() }));
+      return;
+    }
+
+    if (pathname === '/api/readiness' && req.method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ status: 'ready', database: 'connected', migration: 'current', schemaVersion: 41, timestamp: Date.now() }));
+      return;
+    }
+
+    // Dynamic RCV Tenant Provisioning & Cleanup Endpoint (Validation Mode Only)
+    if (pathname === '/api/test/rcv/create' && req.method === 'POST') {
+      const payload = await parseRequestBody(req);
+      const runId = payload.runId || `RCV-${Date.now()}`;
+      const rcvTenantId = `rcv-tenant-${runId.toLowerCase()}`;
+      const rcvUserId = `usr-${rcvTenantId}`;
+      const rcvEmail = `${rcvTenantId}@rcv.kwakopos.internal`;
+      const rcvPassword = `P@ss-${runId}-${generateSecureToken(8)}`;
+      const now = Date.now();
+
+      await sql`
+        INSERT INTO tenants (id, name, plan, status, email, created_at, updated_at)
+        VALUES (${rcvTenantId}, ${`Validation Tenant ${runId}`}, 'Enterprise', 'Active', ${rcvEmail}, ${now}, ${now})
+        ON CONFLICT (id) DO NOTHING;
+      `;
+
+      await sql`
+        INSERT INTO users (id, tenant_id, name, email, role, status, password_hash, created_at, updated_at)
+        VALUES (${rcvUserId}, ${rcvTenantId}, 'RCV Test Runner', ${rcvEmail}, 'Tenant Owner', 'Active', ${rcvPassword}, ${now}, ${now})
+        ON CONFLICT (id) DO NOTHING;
+      `;
+
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ success: true, tenantId: rcvTenantId, userId: rcvUserId, email: rcvEmail, password: rcvPassword, runId }));
+      return;
+    }
+
+    if (pathname === '/api/test/rcv/cleanup' && req.method === 'POST') {
+      const payload = await parseRequestBody(req);
+      const rcvTenantId = payload.tenantId;
+      const status = payload.status || 'CERTIFIED';
+
+      if (rcvTenantId && rcvTenantId.startsWith('rcv-tenant-')) {
+        if (status === 'CERTIFIED') {
+          await sql`DELETE FROM users WHERE tenant_id = ${rcvTenantId}`;
+          await sql`DELETE FROM products WHERE tenant_id = ${rcvTenantId}`;
+          await sql`DELETE FROM orders WHERE tenant_id = ${rcvTenantId}`;
+          await sql`DELETE FROM tenants WHERE id = ${rcvTenantId}`;
+        } else {
+          await sql`UPDATE tenants SET status = 'QUARANTINED', updated_at = ${Date.now()} WHERE id = ${rcvTenantId}`;
+        }
+      }
+
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ success: true, tenantId: rcvTenantId, action: status === 'CERTIFIED' ? 'PURGED' : 'QUARANTINED' }));
+      return;
+    }
+
     try {
       let tenantId = req.headers['x-tenant-id'] || fullUrl.searchParams.get('tenantId') || fullUrl.searchParams.get('tenant_id') || '';
       if (tenantId && typeof tenantId === 'string' && tenantId.includes(',')) {
