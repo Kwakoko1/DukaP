@@ -10,7 +10,8 @@
  * 5. Monotonic Incremental Sync — Version sequence tracking with background processing and backoff.
  */
 
-import { db, safeGet, syncParentStock, reconcileAllParentProductStocks, type StockLedgerEntry, type ProductBranchStock } from '../db/dexie';
+import { db, safeGet, syncParentStock, type StockLedgerEntry, type ProductBranchStock } from '../db/dexie';
+import { derivedProjectionRepository } from '../db/persistence/derivedProjectionRepository';
 
 export interface SyncEngineDiagnostics {
   totalLedgerEvents: number;
@@ -308,7 +309,7 @@ export const stockLedgerSyncEngine = {
       recalculatedCount++;
     }
 
-    await reconcileAllParentProductStocks().catch(() => {});
+    await derivedProjectionRepository.reconcileParentVariantStock(tenantId).catch(() => {});
 
     console.info(`[StockLedgerSyncEngine] Successfully rebuilt ${recalculatedCount} product balances from ${events.length} events for ${activeProductIds.size} active products.`);
     return { productsRecalculated: recalculatedCount, totalEventsReplayed: events.length };

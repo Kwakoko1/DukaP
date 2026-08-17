@@ -2,14 +2,15 @@
  * KwakoPOS SaaS — Replica Manager Coordination Layer
  * 
  * Central state-management and coordination layer for local IndexedDB replica.
- * Consolidates local integrity validation, outbox safety guards, checkpoint advancement,
+ * Consolidates local integrity validation, outbox safety guards, atomic checkpoint advancement,
  * and variant stock derivation without creating competing synchronization engines.
  */
 
-import { db, reconcileAllParentProductStocks } from '../db/dexie';
+import { db } from '../db/dexie';
 import { buildReplicaManifest, type ReplicaManifest } from './replicaManifest';
 import { checkpointRepository } from '../db/sync/checkpointRepository';
 import { integrityValidator, type IntegrityCheckSummary } from '../db/persistence/integrityValidator';
+import { derivedProjectionRepository } from '../db/persistence/derivedProjectionRepository';
 
 export interface CatalogStockConsistencyReport {
   passed: boolean;
@@ -24,6 +25,8 @@ export interface CatalogStockConsistencyReport {
 export class ReplicaManager {
   private static instance: ReplicaManager;
 
+  private constructor() {}
+
   public static getInstance(): ReplicaManager {
     if (!ReplicaManager.instance) {
       ReplicaManager.instance = new ReplicaManager();
@@ -32,7 +35,7 @@ export class ReplicaManager {
   }
 
   /**
-   * Generates a deterministic ReplicaManifest for the active tenant
+   * Diagnostic inspection of local replica state without mutating business data
    */
   public async inspectReplica(
     tenantId: string,
@@ -43,88 +46,59 @@ export class ReplicaManager {
   }
 
   /**
-   * Pre-Bootstrap Safety Guard:
-   * Asserts whether a bootstrap snapshot can be safely applied without overwriting
-   * un-synchronized local outbox mutations.
+   * Evaluates if local replica has zero business records and no pending outbox mutations
    */
-  public async canSafelyBootstrap(tenantId: string): Promise<{
-    allowed: boolean;
-    reason?: string;
-    pendingOutboxCount: number;
-  }> {
-    if (!db.isOpen()) {
-      await db.open();
-    }
-
-    const outboxItems = await db.syncQueue
-      .where('tenant_id')
-      .equals(tenantId)
-      .toArray()
-      .catch(() => []);
-
-    const pendingCount = outboxItems.filter((item) => {
-      const status = String(item.status || '').toUpperCase();
-      return status === 'PENDING' || status === 'PROCESSING';
-    }).length;
-
-    if (pendingCount > 0) {
-      return {
-        allowed: false,
-        reason: `Replica has ${pendingCount} pending un-synced outbox mutations. Flush outbox before full snapshot restoration to prevent data loss.`,
-        pendingOutboxCount: pendingCount,
-      };
-    }
-
-    return {
-      allowed: true,
-      pendingOutboxCount: 0,
-    };
+  public async isReplicaEmpty(tenantId: string): Promise<boolean> {
+    const manifest = await this.inspectReplica(tenantId);
+    const totalCoreEntities =
+      manifest.entityCounts.products +
+      manifest.entityCounts.categories +
+      manifest.entityCounts.brands;
+    
+    return totalCoreEntities === 0 && manifest.pendingOutboxCount === 0;
   }
 
   /**
-   * Reconciles catalog taxonomy references and derives parent product stocks from variants.
-   * Ensures Variant-First Stock integrity across the entire local replica.
+   * Evaluates if replica has un-synchronized local mutations
    */
-  public async reconcileCatalogAndStock(tenantId: string): Promise<CatalogStockConsistencyReport> {
-    const issues: string[] = [];
+  public async isOutboxDirty(tenantId: string): Promise<boolean> {
+    const manifest = await this.inspectReplica(tenantId);
+    return manifest.pendingOutboxCount > 0;
+  }
 
-    // 1. Run fail-closed foreign-key integrity validation
+  /**
+   * Evaluates if replica exhibits signs of structural or cryptographic corruption
+   */
+  public async isReplicaCorrupted(tenantId: string): Promise<boolean> {
+    const manifest = await this.inspectReplica(tenantId);
+    return manifest.healthStatus === 'CORRUPTED';
+  }
+
+  /**
+   * Validates foreign-key consistency across Catalog, Products, and Variants.
+   * Reconciles parent-level stock balances using canonical derivedProjectionRepository.
+   */
+  public async validateCatalogAndStockConsistency(tenantId: string): Promise<CatalogStockConsistencyReport> {
+    const issues: string[] = [];
+    
+    // 1. Run foreign-key integrity validation
     const integrity: IntegrityCheckSummary = await integrityValidator.checkTenantIntegrity(tenantId);
     if (!integrity.passed) {
-      issues.push(`Found ${integrity.orphanedVariants} orphaned product variants without parent products.`);
+      if (integrity.orphanedVariants > 0) {
+        issues.push(`Found ${integrity.orphanedVariants} orphaned variants without parent products.`);
+      }
+      if (integrity.unmappedCategories > 0) {
+        issues.push(`Found ${integrity.unmappedCategories} products referencing unknown categories.`);
+      }
+      if (integrity.unmappedBrands > 0) {
+        issues.push(`Found ${integrity.unmappedBrands} products referencing unknown brands.`);
+      }
     }
 
-    // 2. Reconcile parent product stock sums from child variants
+    // 2. Reconcile parent product stock sums from child variants via canonical derived projection repository
     let reconciledCount = 0;
     try {
-      if (!db.isOpen()) await db.open();
-      
-      const parentProducts = await db.products
-        .where('tenant_id')
-        .equals(tenantId)
-        .filter((p) => Boolean(p.hasVariants || (p as any).has_variants))
-        .toArray();
-
-      for (const parent of parentProducts) {
-        const variants = await db.productVariants
-          .where('productId')
-          .equals(parent.id)
-          .toArray();
-
-        if (variants.length > 0) {
-          const derivedStock = variants.reduce((sum, v) => sum + (Number(v.stock) || 0), 0);
-          if (parent.stock !== derivedStock) {
-            await db.products.update(parent.id, {
-              stock: derivedStock,
-              updatedAt: Date.now(),
-            });
-            reconciledCount++;
-          }
-        }
-      }
-
-      // Also invoke Dexie's built-in reconcile helper
-      await reconcileAllParentProductStocks().catch(() => {});
+      reconciledCount = await derivedProjectionRepository.reconcileParentVariantStock(tenantId);
     } catch (err: any) {
       issues.push(`Stock reconciliation error: ${err?.message || err}`);
     }
@@ -141,9 +115,9 @@ export class ReplicaManager {
   }
 
   /**
-   * Safe Checkpoint Advancement:
-   * Guarantees that local watermarks (sinceVersion) only advance AFTER all incoming
-   * delta entities are committed in a Dexie transactional block.
+   * Atomic Delta Application & Checkpoint Advancement:
+   * Guarantees that delta mutation application and checkpoint watermark progression
+   * occur in ONE atomic Dexie transaction. If delta or checkpoint fails, the entire transaction rolls back.
    */
   public async advanceCheckpointSafely(
     tenantId: string,
@@ -155,17 +129,45 @@ export class ReplicaManager {
       return { success: false, committedVersion: 0 };
     }
 
-    try {
-      // 1. Transactionally apply all deltas first
-      await applyDeltaCallback();
+    if (!db.isOpen()) {
+      await db.open();
+    }
 
-      // 2. Advance checkpoint watermark only upon successful application
-      await checkpointRepository.updateCheckpoint(tenantId, deviceId, newServerVersion);
+    const dbAny = db as any;
+    const syncTables: any[] = [
+      db.syncMetadata,
+      db.products,
+      db.productVariants,
+      db.categories,
+      db.brands,
+      db.stockLedger,
+      db.orders,
+      db.customers,
+      db.suppliers,
+      db.syncQueue,
+    ];
+
+    if (dbAny.serverCheckpoints) {
+      syncTables.push(dbAny.serverCheckpoints);
+    }
+
+    try {
+      await db.transaction('rw', syncTables, async () => {
+        // 1. Transactionally apply all incoming delta records
+        await applyDeltaCallback();
+
+        // 2. Transactionally update checkpoint watermark inside the same transaction
+        await checkpointRepository.putCheckpointInCurrentTransaction(
+          tenantId,
+          deviceId,
+          newServerVersion
+        );
+      });
 
       return { success: true, committedVersion: newServerVersion };
     } catch (err) {
-      console.error('[ReplicaManager] Checkpoint advancement aborted due to delta commit failure:', err);
-      throw err;
+      console.error('[ReplicaManager] Atomic delta/checkpoint transaction rolled back:', err);
+      return { success: false, committedVersion: 0 };
     }
   }
 

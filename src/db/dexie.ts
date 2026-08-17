@@ -3170,15 +3170,13 @@ export async function syncParentStock(parentProductId: string): Promise<void> {
           .sort();
         const earliestExpiry = validExpiries[0] || parent.expiryDate;
 
-        // 4. Update Parent Product Container
+        // 4. Update Parent Product Container (Derived Projection: Do NOT alter updatedAt or syncStatus)
         const hasVariantsFlag = parent.hasVariants || variants.length > 0;
         const updatedProd: Product = {
           ...parent,
           hasVariants: hasVariantsFlag,
           stock: totalStock,
           expiryDate: earliestExpiry,
-          updatedAt: Date.now(),
-          syncStatus: 'PENDING' as const,
         };
 
         (updatedProd as any).minPrice = minPrice;

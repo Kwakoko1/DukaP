@@ -6,7 +6,8 @@
  * and automatic server bootstrap recovery when local storage is empty/missing.
  */
 
-import { db, reconcileAllParentProductStocks } from '../db/dexie';
+import { db } from '../db/dexie';
+import { derivedProjectionRepository } from '../db/persistence/derivedProjectionRepository';
 import { dbMigrationEngine } from './dbMigrationEngine';
 import { bootstrapEngine } from './bootstrapEngine';
 
@@ -187,7 +188,7 @@ export class DataIntegrityManager {
 
       // Stage 6: VALIDATING_DATABASE
       this.setState('VALIDATING_DATABASE');
-      await reconcileAllParentProductStocks();
+      await derivedProjectionRepository.reconcileParentVariantStock(tenantId);
       const report = await this.validateLocalDataIntegrity(tenantId);
 
       // Stage 7: BOOTSTRAPPING (if local data is missing or incomplete)

@@ -1,0 +1,89 @@
+/**
+ * KwakoPOS SaaS — Derived Projection Repository
+ * 
+ * Owns local materialized/derived state that is calculated from authoritative domain data
+ * and must NOT create business outbox mutations or alter business metadata (such as updatedAt).
+ * 
+ * Invariants:
+ * - Deterministic, tenant-scoped, and rebuildable from authoritative domain tables.
+ * - Stock Ledger = authoritative history
+ * - Variant stock = materialized inventory state
+ * - Parent product stock = derived projection
+ */
+
+import { db } from '../dexie';
+
+export const derivedProjectionRepository = {
+  /**
+   * Reconciles parent product stock projections by summing up active child variant stocks.
+   * Runs in a single read-write Dexie transaction.
+   * Does NOT alter updatedAt or emit outbox sync mutations.
+   */
+  async reconcileParentVariantStock(tenantId: string): Promise<number> {
+    if (!db.isOpen()) {
+      await db.open();
+    }
+
+    let updatedCount = 0;
+
+    await db.transaction('rw', db.products, db.productVariants, async () => {
+      const parents = await db.products
+        .where('tenant_id')
+        .equals(tenantId)
+        .filter((product) => Boolean(product.hasVariants || (product as any).has_variants))
+        .toArray();
+
+      for (const parent of parents) {
+        const variants = await db.productVariants
+          .where('productId')
+          .equals(parent.id)
+          .toArray();
+
+        if (variants.length === 0) {
+          continue;
+        }
+
+        const activeVariants = variants.filter(
+          (v) => (v.status as any) !== 'Inactive' && !(v as any).deletedAt && !(v as any).deleted_at
+        );
+
+        const derivedStock = activeVariants.reduce(
+          (sum, variant) => sum + (Number(variant.stock) || 0),
+          0
+        );
+
+        if (Number(parent.stock) !== derivedStock) {
+          await db.products.update(parent.id, {
+            stock: derivedStock,
+          });
+          updatedCount++;
+        }
+      }
+    });
+
+    return updatedCount;
+  },
+
+  /**
+   * Global audit & reconciliation across all tenants.
+   * Delegates strictly to tenant-scoped reconciliation logic.
+   */
+  async reconcileAllTenants(): Promise<number> {
+    if (!db.isOpen()) {
+      await db.open();
+    }
+
+    const distinctTenants = await db.products
+      .orderBy('tenant_id')
+      .uniqueKeys();
+
+    let totalUpdated = 0;
+    for (const tenantKey of distinctTenants) {
+      const tenantId = String(tenantKey);
+      if (tenantId) {
+        totalUpdated += await this.reconcileParentVariantStock(tenantId);
+      }
+    }
+    return totalUpdated;
+  },
+};
