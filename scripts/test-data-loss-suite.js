@@ -265,13 +265,17 @@ async function runDataLossTestSuite() {
   // Step 18 to 23: Open Second Device / Browser (Device B) & Bootstrap
   console.log('\n[Step 18-23] Multi-Browser / Device B Bootstrap Verification...');
   const loginResB = await makeRequest({ path: '/api/auth/login', method: 'POST' }, {
+    email: 'yannick@kwakoko.co.tz',
     identifier: 'yannick@kwakoko.co.tz',
     password: 'Kwakoko@2026',
     deviceId: deviceB,
     deviceName: 'Firefox POS Kiosk Beta'
   });
-  assert(loginResB.status === 200 && loginResB.data?.accessToken, 'Device B logged in successfully');
-  tokenB = loginResB.data.accessToken;
+  if (loginResB.status !== 200 || !loginResB.data?.accessToken) {
+    console.error('loginResB failed:', loginResB.status, loginResB.data);
+  }
+  assert(loginResB.status === 200 && (loginResB.data?.accessToken || loginResB.data?.token), 'Device B logged in successfully');
+  tokenB = loginResB.data?.accessToken || loginResB.data?.token;
 
   const bootstrapResB = await makeRequest({
     path: '/api/bootstrap',

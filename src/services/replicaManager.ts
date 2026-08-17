@@ -59,6 +59,17 @@ export class ReplicaManager {
   }
 
   /**
+   * Pre-Bootstrap safety check ensuring uncommitted outbox mutations are not wiped
+   */
+  public async canSafelyBootstrap(tenantId: string): Promise<{ allowed: boolean; pendingOutboxCount: number }> {
+    const manifest = await this.inspectReplica(tenantId);
+    return {
+      allowed: manifest.pendingOutboxCount === 0,
+      pendingOutboxCount: manifest.pendingOutboxCount,
+    };
+  }
+
+  /**
    * Evaluates if replica has un-synchronized local mutations
    */
   public async isOutboxDirty(tenantId: string): Promise<boolean> {

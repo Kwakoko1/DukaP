@@ -807,14 +807,20 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenSearch }) => {
                     </div>
                   </div>
                 ) : (
-                  pendingCount > 0 && isOnline && (
+                  isOnline && (
                     <button
-                      onClick={() => syncData()}
+                      onClick={() => syncData(true)}
                       disabled={isSyncing}
-                      className="mt-3 flex w-full items-center justify-center space-x-1 rounded-lg bg-primary py-2 text-xs font-semibold text-white disabled:opacity-50"
+                      className="mt-3 flex w-full items-center justify-center space-x-1.5 rounded-lg bg-primary py-2 text-xs font-semibold text-white disabled:opacity-50 hover:bg-primary/90 transition shadow-sm"
                     >
-                      <RefreshCw className={`h-3 w-3 ${isSyncing ? 'animate-spin' : ''}`} />
-                      <span>{isSyncing ? 'Synchronizing...' : 'Trigger Manual Sync'}</span>
+                      <RefreshCw className={`h-3.5 w-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                      <span>
+                        {isSyncing
+                          ? 'Synchronizing Cloud...'
+                          : pendingCount > 0
+                          ? `Push ${pendingCount} Pending & Sync`
+                          : 'Trigger Manual Sync Probe'}
+                      </span>
                     </button>
                   )
                 )}

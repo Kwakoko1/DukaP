@@ -86,7 +86,9 @@ export class SyncTelemetryService {
 
   public async refreshOutboxCount(): Promise<number> {
     try {
-      const count = await db.syncQueue.count();
+      const qCount = await db.syncQueue.where('status').anyOf(['Pending', 'PENDING', 'Processing', 'PROCESSING']).count().catch(() => 0);
+      const obCount = await db.syncOutbox.where('status').anyOf(['PENDING', 'Pending', 'PROCESSING', 'Processing']).count().catch(() => 0);
+      const count = Math.max(qCount, obCount);
       this.metrics.pendingOutboxCount = count;
       this.metrics.currentHlc = hlcEngine.now();
       this.metrics.isOnline = typeof navigator !== 'undefined' && navigator.onLine;

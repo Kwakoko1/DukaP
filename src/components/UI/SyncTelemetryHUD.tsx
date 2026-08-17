@@ -7,14 +7,16 @@
  * - HLC Monotonic Clock display
  * - Offline Grace window countdown
  * - Hardware WebCrypto vault status
- * - Diagnostics inspector dialog
+ * - Diagnostics inspector dialog with unified Version & Build metadata
  */
 import React, { useState, useEffect } from 'react';
 import { useSession } from '../../contexts/SessionContext';
 import { useAuth } from '../../context/AuthContext';
 import { useSyncState } from '../../context/SyncContext';
 import { syncTelemetryService, type SyncTelemetryMetrics } from '../../services/syncTelemetryService';
-import { Wifi, WifiOff, RefreshCw, ShieldCheck, Clock, Activity, HardDrive } from 'lucide-react';
+import { versionMetadata } from '../../config/versionMetadata';
+import { db } from '../../db/dexie';
+import { Wifi, WifiOff, RefreshCw, ShieldCheck, Clock, Activity, HardDrive, CheckCircle2 } from 'lucide-react';
 import { Dialog, Badge, Button } from './custom-ui';
 
 export const SyncTelemetryHUD: React.FC = () => {
@@ -23,6 +25,7 @@ export const SyncTelemetryHUD: React.FC = () => {
   const { isOnline, isSyncing: syncIsSyncing, pendingCount: syncPendingCount, toggleOfflineSimulation, syncData } = useSyncState();
   const [metrics, setMetrics] = useState<SyncTelemetryMetrics>(syncTelemetryService.getMetrics());
   const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
 
   useEffect(() => {
     const unsub = syncTelemetryService.subscribe((newMetrics) => {
@@ -54,6 +57,19 @@ export const SyncTelemetryHUD: React.FC = () => {
   if (!user && !isSuperAdminView && status === 'LOGGED_OUT') {
     return null;
   }
+
+  const handleForceProbe = async () => {
+    setFeedbackMsg('Probing cloud sync...');
+    try {
+      await syncData(true);
+      await syncTelemetryService.refreshOutboxCount();
+      setFeedbackMsg('✓ Cloud edge sync probe completed successfully');
+      setTimeout(() => setFeedbackMsg(null), 4000);
+    } catch (e: any) {
+      setFeedbackMsg('✗ Sync failed: ' + (e?.message || 'Network error'));
+      setTimeout(() => setFeedbackMsg(null), 4000);
+    }
+  };
 
   return (
     <>
@@ -154,11 +170,13 @@ export const SyncTelemetryHUD: React.FC = () => {
           <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 space-y-2">
             <div className="flex items-center justify-between">
               <span className="font-semibold text-slate-600 dark:text-slate-400">Database Schema Version</span>
-              <Badge variant="info">KwakoPosDB v27 (Schema IDB)</Badge>
+              <Badge variant="info">{`KwakoPosDB v${db.verno || 41} (Schema IDB)`}</Badge>
             </div>
             <div className="flex items-center justify-between">
               <span className="font-semibold text-slate-600 dark:text-slate-400">PWA Build & Release</span>
-              <span className="font-mono text-[11px] text-slate-700 dark:text-slate-300">v1.2.5 (Build 20260816.01)</span>
+              <span className="font-mono text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+                {`v${versionMetadata.version} (Build ${versionMetadata.buildNumber})`}
+              </span>
             </div>
             <div className="flex items-center justify-between">
               <span className="font-semibold text-slate-600 dark:text-slate-400">Hardware Data Vault</span>
@@ -174,6 +192,13 @@ export const SyncTelemetryHUD: React.FC = () => {
             </div>
           </div>
 
+          {feedbackMsg && (
+            <div className="p-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 text-center font-medium animate-in fade-in flex items-center justify-center gap-1.5">
+              <CheckCircle2 size={14} className="text-emerald-500" />
+              <span>{feedbackMsg}</span>
+            </div>
+          )}
+
           <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-slate-700">
             <Button
               variant="outline"
@@ -188,13 +213,11 @@ export const SyncTelemetryHUD: React.FC = () => {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={async () => {
-                  await syncData(true);
-                  await syncTelemetryService.refreshOutboxCount();
-                }}
+                disabled={isSyncing}
+                onClick={handleForceProbe}
               >
-                <RefreshCw size={13} className="mr-1" />
-                Force Edge Sync Probe
+                <RefreshCw size={13} className={`mr-1 ${isSyncing ? 'animate-spin' : ''}`} />
+                <span>{isSyncing ? 'Probing Cloud...' : 'Force Edge Sync Probe'}</span>
               </Button>
               <Button size="sm" onClick={() => setShowDiagnostics(false)}>
                 Close

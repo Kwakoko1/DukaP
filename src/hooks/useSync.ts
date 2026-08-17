@@ -7,6 +7,7 @@ import { productionSyncEngine } from '../services/productionSyncEngine';
 import { stockLedgerSyncEngine } from '../services/stockLedgerSyncEngine';
 import { isLeaderTab } from '../services/tabLeaderElectionService';
 import { getActiveSessionRaw } from '../utils/sessionStorage';
+import { syncTelemetryService } from '../services/syncTelemetryService';
 
 export interface SyncProgress {
   current: number;
@@ -36,9 +37,11 @@ export function useSync() {
   useEffect(() => { isSimulatedRef.current = isSimulated; }, [isSimulated]);
   useEffect(() => { isOnlineRef.current = isOnline; }, [isOnline]);
 
-  // Live query to track pending sync count
+  // Live query to track pending sync count across both syncQueue and outbox
   const pendingCount = useLiveQuery(async () => {
-    return await db.syncQueue.where('status').equals('Pending').count();
+    const qCount = await db.syncQueue.where('status').anyOf(['Pending', 'PENDING', 'Processing', 'PROCESSING']).count().catch(() => 0);
+    const obCount = await db.syncOutbox.where('status').anyOf(['PENDING', 'Pending', 'PROCESSING', 'Processing']).count().catch(() => 0);
+    return Math.max(qCount, obCount);
   }) || 0;
 
   // Logger helper
@@ -77,7 +80,7 @@ export function useSync() {
   useEffect(() => {
     const recoverInterruptedSyncs = async () => {
       try {
-        const restored = await db.syncQueue.where('status').equals('Processing').modify({ status: 'Pending' });
+        const restored = await db.syncQueue.where('status').anyOf(['Processing', 'PROCESSING']).modify({ status: 'Pending' });
         if (restored > 0) {
           addLog(`Checkpoint Recovery: Restored ${restored} interrupted sync queue items to Pending.`);
         }
@@ -364,13 +367,13 @@ export function useSync() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingCount, isOnline]);
 
-  // Main synchronization engine — delegates queue processing to productionSyncEngine
+  // Main synchronization engine — delegates queue processing to productionSyncEngine and pulls latest delta
   const syncData = async (isManual = false) => {
     if (isSyncingRef.current) return;
 
-    // Minimum 3-second spacing between automatic sync executions
+    // Minimum 2-second spacing between automatic sync executions
     const now = Date.now();
-    if (!isManual && now - lastSyncTimeRef.current < 3000) {
+    if (!isManual && now - lastSyncTimeRef.current < 2000) {
       return;
     }
     lastSyncTimeRef.current = now;
@@ -384,14 +387,9 @@ export function useSync() {
 
     if (!isReallyOnline) {
       addLog('Offline: Sync postponed.');
+      syncTelemetryService.setNetworkStatus(false);
       return;
     }
-
-    const pendingCount = await db.syncQueue.where('status').equals('Pending').count();
-    const failedCount = await db.syncQueue.where('status').equals('Failed').count();
-    const totalCount = pendingCount + failedCount;
-
-    if (totalCount === 0) return;
 
     if (!acquireSyncLock()) {
       addLog('Sync postponed: Another browser tab is syncing.');
@@ -400,34 +398,68 @@ export function useSync() {
 
     setIsSyncing(true);
     isSyncingRef.current = true;
-    setSyncProgress({ current: 0, total: totalCount, percentage: 0 });
-    addLog(`↑ Production Sync Engine processing ${totalCount} operation(s)...`);
+    syncTelemetryService.recordSyncStart();
+    const startTime = Date.now();
 
     let currentTenantId: string | undefined;
+    let currentBranchId: string | undefined;
     const session = getActiveSessionRaw();
     if (session) {
       try {
         const parsed = JSON.parse(session);
         currentTenantId = parsed?.user?.tenant_id || parsed?.user?.tenantId;
+        currentBranchId = parsed?.user?.branch_id || parsed?.user?.branchId;
       } catch {}
     }
 
     try {
+      // 1. Check pending mutations from syncQueue and outbox
+      const pendingQueue = await db.syncQueue.where('status').anyOf(['Pending', 'PENDING', 'Failed', 'FAILED', 'Processing', 'PROCESSING']).count().catch(() => 0);
+      const pendingOutbox = await db.syncOutbox.where('status').anyOf(['PENDING', 'Pending', 'FAILED', 'Failed']).count().catch(() => 0);
+      const totalPending = pendingQueue + pendingOutbox;
+
+      if (totalPending > 0) {
+        setSyncProgress({ current: 0, total: totalPending, percentage: 0 });
+        addLog(`↑ Production Sync Engine processing ${totalPending} operation(s)...`);
+      } else {
+        addLog(`⚡ Edge Sync Probe active: verifying authoritative consistency...`);
+      }
+
+      // Flush local outbox mutations to server
       const result = await productionSyncEngine.processQueue(currentTenantId);
       if (result.syncedItems > 0) {
-        addLog(`✓ Production Sync Engine synced ${result.syncedItems} item(s).`);
+        addLog(`✓ Production Sync Engine pushed ${result.syncedItems} item(s).`);
       }
       if (result.failedItems > 0) {
         addLog(`✗ ${result.failedItems} item(s) failed. Will retry with exponential backoff.`);
       }
+
+      // Flush pending stock ledger events
+      if (currentTenantId && currentBranchId) {
+        await stockLedgerSyncEngine.syncPendingEvents(currentTenantId, currentBranchId).catch(() => {});
+      }
+
+      // 2. Pull authoritative delta updates from server
+      const pulledCount = await syncFromServer(currentTenantId);
+
+      const durationMs = Date.now() - startTime;
+      syncTelemetryService.recordSyncComplete(durationMs, true);
+      await syncTelemetryService.refreshOutboxCount();
+
+      if (totalPending === 0 && pulledCount === 0) {
+        addLog(`✓ Edge Sync Probe: All local records are in full sync with cloud.`);
+      } else {
+        addLog(`✓ Sync cycle complete (${result.syncedItems} pushed, ${pulledCount} pulled in ${durationMs}ms).`);
+      }
     } catch (err: any) {
+      const durationMs = Date.now() - startTime;
+      syncTelemetryService.recordSyncComplete(durationMs, false);
       addLog(`Sync processing error: ${err.message || 'Unknown error'}`);
     } finally {
       releaseSyncLock();
       setIsSyncing(false);
       isSyncingRef.current = false;
       setSyncProgress(null);
-      addLog('Sync cycle complete.');
     }
   };
 
