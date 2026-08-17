@@ -245,6 +245,7 @@ async function handleNewVersionDetected(latestInfo?: AppVersionInfo) {
   const pendingSync = await getPendingSyncCount();
 
   currentState = {
+    ...currentState,
     isUpdateAvailable: true,
     latestVersionInfo: latestInfo || {
       version: currentVersionInfo.version,

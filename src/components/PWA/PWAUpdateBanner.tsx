@@ -6,7 +6,7 @@ import {
   getCurrentVersion, 
   type PWAUpdateState 
 } from '../../services/pwaUpdateService';
-import { RefreshCw, Sparkles, AlertCircle, Clock, X, ShieldCheck, Download, HardDrive, CheckCircle2 } from 'lucide-react';
+import { RefreshCw, Sparkles, AlertCircle, Clock, X, ShieldCheck, Download, HardDrive } from 'lucide-react';
 import { Badge } from '../UI/custom-ui';
 
 export const PWAUpdateBanner: React.FC = () => {
