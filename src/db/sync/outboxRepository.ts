@@ -12,6 +12,17 @@ export const outboxRepository = {
   async getPendingMutations(tenantId: string): Promise<SyncOutboxRecord[]> {
     try {
       if (!db.isOpen()) await db.open();
+      if (tenantId) {
+        try {
+          const [pendingRows, processingRows] = await Promise.all([
+            db.syncQueue.where('[tenant_id+status]').equals([tenantId, 'PENDING']).toArray(),
+            db.syncQueue.where('[tenant_id+status]').equals([tenantId, 'PROCESSING']).toArray(),
+          ]);
+          return ([...pendingRows, ...processingRows] as unknown) as SyncOutboxRecord[];
+        } catch {
+          // Fallback to in-memory filter if compound index is pending upgrade
+        }
+      }
       const records = await db.syncQueue.toArray();
       return (records as any[]).filter((r) => {
         const matchesTenant = !tenantId || r.tenant_id === tenantId || r.tenantId === tenantId;
@@ -36,6 +47,22 @@ export const outboxRepository = {
       await tx.table('syncQueue').put(recordToSave);
     } else {
       await db.syncQueue.put(recordToSave as any);
+    }
+  },
+
+  async bulkEnqueueMutations(mutations: SyncOutboxRecord[], tx?: any): Promise<void> {
+    if (mutations.length === 0) return;
+    const recordsToSave = mutations.map((mutation) => ({
+      ...mutation,
+      tenant_id: mutation.tenantId,
+      status: 'PENDING',
+      createdAt: mutation.createdAt || Date.now(),
+    }));
+
+    if (tx) {
+      await tx.table('syncQueue').bulkPut(recordsToSave);
+    } else {
+      await db.syncQueue.bulkPut(recordsToSave as any);
     }
   },
 

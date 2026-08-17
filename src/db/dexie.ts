@@ -2829,6 +2829,15 @@ class DukaPosDatabase extends Dexie {
       tenantModules: 'id, tenant_id, module_key, installed, enabled, status, version, updated_at, [tenant_id+module_key]'
     });
 
+    // Version 41: Query Performance & Checksum Index Optimization
+    this.version(41).stores({
+      syncQueue: '++id, tenant_id, branch_id, entity, entity_id, operation, status, priority, created_at, last_attempt, sync_token, device_id, user_id, actionType, entityName, timestamp, [tenant_id+status], [tenant_id+created_at]',
+      products: 'id, name, category, module, tenant_id, branch_id, hasVariants, syncStatus, isSynced, origin, deletedAt, [tenant_id+category], [tenant_id+brand]',
+      productVariants: 'id, productId, sku, barcode, tenant_id, branch_id, syncStatus, isSynced, origin, [tenant_id+productId]',
+      categories: 'id, tenant_id, name, parent_id, [tenant_id+name]',
+      brands: 'id, tenant_id, name, [tenant_id+name]'
+    });
+
     const tablesWithOrigin = [
       'products', 'productVariants', 'customers', 'orders',
       'stockLedger', 'invoices', 'payments', 'suppliers',

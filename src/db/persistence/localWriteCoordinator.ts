@@ -139,9 +139,7 @@ export const localWriteCoordinator = {
     await db.transaction('rw', [tableName, 'syncQueue'], async (tx) => {
       const table = tx.table(tableName);
       await table.bulkPut(entitiesToSave);
-      for (const outboxRec of outboxRecords) {
-        await outboxRepository.enqueueMutation(outboxRec, tx);
-      }
+      await outboxRepository.bulkEnqueueMutations(outboxRecords, tx);
     });
 
     return items.map((i) => i.entity);
