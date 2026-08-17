@@ -1,0 +1,617 @@
+{
+  "config": {
+    "argv": [
+      "C:\\Program Files\\nodejs\\node.exe",
+      "C:\\Users\\Administrator\\Desktop\\Project\\node_modules\\@playwright\\test\\cli.js",
+      "test",
+      "--config=playwright.production.config.ts",
+      "--project=chromium-production"
+    ],
+    "configFile": "C:\\Users\\Administrator\\Desktop\\Project\\playwright.production.config.ts",
+    "rootDir": "C:/Users/Administrator/Desktop/Project/tests/browser-runtime-production",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "C:/Users/Administrator/Desktop/Project/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "chromium-production",
+        "name": "chromium-production",
+        "testDir": "C:/Users/Administrator/Desktop/Project/tests/browser-runtime-production",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 120000
+      },
+      {
+        "outputDir": "C:/Users/Administrator/Desktop/Project/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "firefox-production",
+        "name": "firefox-production",
+        "testDir": "C:/Users/Administrator/Desktop/Project/tests/browser-runtime-production",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 120000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "html",
+        {
+          "outputFolder": "artifacts/release-candidate/browser-report",
+          "open": "never"
+        }
+      ],
+      [
+        "json",
+        {
+          "outputFile": "artifacts/release-candidate/production-browser-results.json"
+        }
+      ],
+      [
+        "list",
+        null
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.62.1",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "01-preflight-identity.spec.ts",
+      "file": "01-preflight-identity.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "Production Runtime Validation — 01. Preflight Identity & Endpoints",
+          "file": "01-preflight-identity.spec.ts",
+          "line": 3,
+          "column": 6,
+          "specs": [
+            {
+              "title": "PREFLIGHT-001 GET /api/version exposes deterministic build identity (Section 1 & 5)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-production",
+                  "projectName": "chromium-production",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 272,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-08-17T20:11:37.231Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "trace",
+                          "contentType": "application/zip",
+                          "path": "C:\\Users\\Administrator\\Desktop\\Project\\test-results\\01-preflight-identity-Prod-b4139-build-identity-Section-1-5--chromium-production\\trace.zip"
+                        }
+                      ]
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "257b2e8c10d837787889-27f44654ce3c212899a2",
+              "file": "01-preflight-identity.spec.ts",
+              "line": 5,
+              "column": 3
+            },
+            {
+              "title": "PREFLIGHT-002 GET /api/health returns 200 liveness status (Section 6)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-production",
+                  "projectName": "chromium-production",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 71,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-08-17T20:11:37.725Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "trace",
+                          "contentType": "application/zip",
+                          "path": "C:\\Users\\Administrator\\Desktop\\Project\\test-results\\01-preflight-identity-Prod-d96d7--liveness-status-Section-6--chromium-production\\trace.zip"
+                        }
+                      ]
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "257b2e8c10d837787889-d8c7dc00005768f0c86a",
+              "file": "01-preflight-identity.spec.ts",
+              "line": 20,
+              "column": 3
+            },
+            {
+              "title": "PREFLIGHT-003 GET /api/readiness returns 200 readiness & migration status (Section 6)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-production",
+                  "projectName": "chromium-production",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 68,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-08-17T20:11:37.915Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "trace",
+                          "contentType": "application/zip",
+                          "path": "C:\\Users\\Administrator\\Desktop\\Project\\test-results\\01-preflight-identity-Prod-bdde3-migration-status-Section-6--chromium-production\\trace.zip"
+                        }
+                      ]
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "257b2e8c10d837787889-d533f58b87f7beff758d",
+              "file": "01-preflight-identity.spec.ts",
+              "line": 28,
+              "column": 3
+            },
+            {
+              "title": "PREFLIGHT-004 Static PWA assets, manifest, and icons are accessible",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-production",
+                  "projectName": "chromium-production",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 5835,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-08-17T20:11:38.030Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "C:\\Users\\Administrator\\Desktop\\Project\\test-results\\01-preflight-identity-Prod-66da9-st-and-icons-are-accessible-chromium-production\\test-finished-1.png"
+                        },
+                        {
+                          "name": "trace",
+                          "contentType": "application/zip",
+                          "path": "C:\\Users\\Administrator\\Desktop\\Project\\test-results\\01-preflight-identity-Prod-66da9-st-and-icons-are-accessible-chromium-production\\trace.zip"
+                        }
+                      ]
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "257b2e8c10d837787889-e9fa3e251e5a282e48e6",
+              "file": "01-preflight-identity.spec.ts",
+              "line": 38,
+              "column": 3
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "02-auth-session-lifecycle.spec.ts",
+      "file": "02-auth-session-lifecycle.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "Production Runtime Validation — 02. Authentication & Session Lifecycle",
+          "file": "02-auth-session-lifecycle.spec.ts",
+          "line": 4,
+          "column": 6,
+          "specs": [
+            {
+              "title": "AUTH-001 Real authentication login, session token rotation, and refresh token (Section 9)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-production",
+                  "projectName": "chromium-production",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 11854,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-08-17T20:11:44.303Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "C:\\Users\\Administrator\\Desktop\\Project\\test-results\\02-auth-session-lifecycle--5ec0b-nd-refresh-token-Section-9--chromium-production\\test-finished-1.png"
+                        },
+                        {
+                          "name": "trace",
+                          "contentType": "application/zip",
+                          "path": "C:\\Users\\Administrator\\Desktop\\Project\\test-results\\02-auth-session-lifecycle--5ec0b-nd-refresh-token-Section-9--chromium-production\\trace.zip"
+                        }
+                      ]
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "cf2d4703beb7b8736b0c-af6acad8228d935ba5e3",
+              "file": "02-auth-session-lifecycle.spec.ts",
+              "line": 6,
+              "column": 3
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "03-offline-sync-worker.spec.ts",
+      "file": "03-offline-sync-worker.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "Production Runtime Validation — 03. Offline & Production Sync Worker (Section 11 & 12)",
+          "file": "03-offline-sync-worker.spec.ts",
+          "line": 4,
+          "column": 6,
+          "specs": [
+            {
+              "title": "OFFLINE-001 Real offline operation and automated sync worker push without manual shortcuts",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-production",
+                  "projectName": "chromium-production",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 12203,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-08-17T20:11:56.990Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "C:\\Users\\Administrator\\Desktop\\Project\\test-results\\03-offline-sync-worker-Pro-ff978-sh-without-manual-shortcuts-chromium-production\\test-finished-1.png"
+                        },
+                        {
+                          "name": "trace",
+                          "contentType": "application/zip",
+                          "path": "C:\\Users\\Administrator\\Desktop\\Project\\test-results\\03-offline-sync-worker-Pro-ff978-sh-without-manual-shortcuts-chromium-production\\trace.zip"
+                        }
+                      ]
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "218199eb18868827584a-6b7e693a96e610518056",
+              "file": "03-offline-sync-worker.spec.ts",
+              "line": 6,
+              "column": 3
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "04-pos-atomicity-tenant-isolation.spec.ts",
+      "file": "04-pos-atomicity-tenant-isolation.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "Production Runtime Validation — 04. POS Atomicity & Tenant Isolation (Section 15, 16 & 20)",
+          "file": "04-pos-atomicity-tenant-isolation.spec.ts",
+          "line": 4,
+          "column": 6,
+          "specs": [
+            {
+              "title": "POS-001 Real sale transaction atomicity: sale + items + stock ledger commit atomically in PostgreSQL (Section 16)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-production",
+                  "projectName": "chromium-production",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 8565,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-08-17T20:12:09.800Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "C:\\Users\\Administrator\\Desktop\\Project\\test-results\\04-pos-atomicity-tenant-is-26a62-y-in-PostgreSQL-Section-16--chromium-production\\test-finished-1.png"
+                        },
+                        {
+                          "name": "trace",
+                          "contentType": "application/zip",
+                          "path": "C:\\Users\\Administrator\\Desktop\\Project\\test-results\\04-pos-atomicity-tenant-is-26a62-y-in-PostgreSQL-Section-16--chromium-production\\trace.zip"
+                        }
+                      ]
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "423c6368b741d4b3ae69-25eb010f50d0d9743511",
+              "file": "04-pos-atomicity-tenant-isolation.spec.ts",
+              "line": 6,
+              "column": 3
+            },
+            {
+              "title": "TENANT-001 Multi-tenant RLS isolation probe prevents Tenant A read/write leakage to Tenant B (Section 20)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-production",
+                  "projectName": "chromium-production",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 228,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-08-17T20:12:19.135Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "trace",
+                          "contentType": "application/zip",
+                          "path": "C:\\Users\\Administrator\\Desktop\\Project\\test-results\\04-pos-atomicity-tenant-is-1cfd0-age-to-Tenant-B-Section-20--chromium-production\\trace.zip"
+                        }
+                      ]
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "423c6368b741d4b3ae69-82d41f5b4756c42be593",
+              "file": "04-pos-atomicity-tenant-isolation.spec.ts",
+              "line": 69,
+              "column": 3
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "05-pwa-upgrade-checksum-recovery.spec.ts",
+      "file": "05-pwa-upgrade-checksum-recovery.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "Production Runtime Validation — 05. PWA Upgrade, Checksum & Performance SLAs (Section 18, 21, 22 & 23)",
+          "file": "05-pwa-upgrade-checksum-recovery.spec.ts",
+          "line": 4,
+          "column": 6,
+          "specs": [
+            {
+              "title": "PWA-001 Release Candidate N -> N+1 PWA upgrade preserves pending outbox queue and local storage (Section 18)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-production",
+                  "projectName": "chromium-production",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 10954,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-08-17T20:12:19.434Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "C:\\Users\\Administrator\\Desktop\\Project\\test-results\\05-pwa-upgrade-checksum-re-289a8-d-local-storage-Section-18--chromium-production\\test-finished-1.png"
+                        },
+                        {
+                          "name": "trace",
+                          "contentType": "application/zip",
+                          "path": "C:\\Users\\Administrator\\Desktop\\Project\\test-results\\05-pwa-upgrade-checksum-re-289a8-d-local-storage-Section-18--chromium-production\\trace.zip"
+                        }
+                      ]
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "152948afb997715d615a-9633e2eed2066cfd07ad",
+              "file": "05-pwa-upgrade-checksum-recovery.spec.ts",
+              "line": 6,
+              "column": 3
+            },
+            {
+              "title": "CHECKSUM-001 Canonical SHA-256 checksum convergence SLA < 5,000ms (Section 21 & 23)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-production",
+                  "projectName": "chromium-production",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 6343,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-08-17T20:12:30.990Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "C:\\Users\\Administrator\\Desktop\\Project\\test-results\\05-pwa-upgrade-checksum-re-d40b2--SLA-5-000ms-Section-21-23--chromium-production\\test-finished-1.png"
+                        },
+                        {
+                          "name": "trace",
+                          "contentType": "application/zip",
+                          "path": "C:\\Users\\Administrator\\Desktop\\Project\\test-results\\05-pwa-upgrade-checksum-re-d40b2--SLA-5-000ms-Section-21-23--chromium-production\\trace.zip"
+                        }
+                      ]
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "152948afb997715d615a-820a321bd08f18a722a8",
+              "file": "05-pwa-upgrade-checksum-recovery.spec.ts",
+              "line": 68,
+              "column": 3
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-08-17T20:11:35.601Z",
+    "duration": 62298.533,
+    "expected": 10,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

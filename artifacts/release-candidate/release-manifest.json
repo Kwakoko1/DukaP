@@ -1,0 +1,14 @@
+{
+  "application": "KwakoPos",
+  "version": "1.2.0",
+  "buildNumber": 358,
+  "gitSha": "559a0d65ab1c81e716ab09102fb1f64a80d00863",
+  "gitBranch": "main",
+  "schemaVersion": 41,
+  "artifactSha256": "fdc4752bec45cd29923083e43d2a453ee899410d7431a9f13e1cf7cee03c0080",
+  "buildTimestamp": "2026-08-17T20:11:19.218Z",
+  "nodeVersion": "v26.4.0",
+  "packageLockSha256": "da72b3642e3587bc768a1ab1dbb9d7020ebbf3edfce5599a5c81fc1110fcfafd",
+  "environment": "production",
+  "releaseChannel": "stable"
+}

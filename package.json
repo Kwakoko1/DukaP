@@ -36,7 +36,12 @@
     "test:audit-architecture": "node scripts/audit-architecture-guards.js",
     "observability:bundle": "node scripts/production-runtime-validation/generate-diagnostic-bundle.js",
     "test:rollback-drill": "node scripts/production-runtime-validation/test-rollback-drill.js",
-    "production:certify": "npm run production:verify && npm run test:browser-runtime && npm run test:runtime"
+    "release:manifest": "node scripts/release/generate-release-manifest.js",
+    "release:verify": "node scripts/release/generate-release-manifest.js && npm run production:preflight",
+    "production:preflight": "node -e \"fetch('http://127.0.0.1:8080/api/version').then(r=>r.json()).then(console.log)\"",
+    "production:browser": "npx playwright test --config=playwright.production.config.ts --project=chromium-production",
+    "production:certify": "node scripts/release/production-certification-runner.js",
+    "release:finalize": "node scripts/release/production-certification-runner.js"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",

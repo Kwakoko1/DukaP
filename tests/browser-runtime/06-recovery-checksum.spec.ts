@@ -116,6 +116,7 @@ test.describe('Real Browser Runtime: Checksums & Recovery Protocols', () => {
 
   test('TEST-029 large dataset (10,000 records) SHA-256 performance executes within SLA', async ({ page }) => {
     await login(page);
+    await page.waitForFunction(() => (window as any).db !== undefined);
 
     const elapsed = await page.evaluate(async () => {
       const tStart = Date.now();

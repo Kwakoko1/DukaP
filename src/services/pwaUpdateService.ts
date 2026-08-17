@@ -20,11 +20,20 @@ export interface PWAUpdateState {
   isCartActive: boolean;
   pendingSyncCount: number;
   deferredUntilCheckout: boolean;
+  // Live PWA installation & caching progress state
+  installProgress: number; // 0 to 100
+  loadedFiles: number;
+  totalFiles: number;
+  currentCachingFile: string;
+  installStatus: 'idle' | 'installing' | 'caching' | 'ready' | 'complete';
+  isInstallingPWA: boolean;
+  canInstallPWA: boolean;
 }
 
 const UPDATE_BROADCAST_CHANNEL = 'dukapos_pwa_updates';
 let swRegistration: ServiceWorkerRegistration | null = null;
 let broadcastChannel: BroadcastChannel | null = null;
+let deferredInstallPrompt: any = null;
 
 // Initial state
 const currentVersionInfo: AppVersionInfo = {
@@ -38,7 +47,14 @@ let currentState: PWAUpdateState = {
   isUpdateAvailable: false,
   isCartActive: false,
   pendingSyncCount: 0,
-  deferredUntilCheckout: false
+  deferredUntilCheckout: false,
+  installProgress: 0,
+  loadedFiles: 0,
+  totalFiles: 0,
+  currentCachingFile: '',
+  installStatus: 'idle',
+  isInstallingPWA: false,
+  canInstallPWA: false,
 };
 
 const listeners: Set<(state: PWAUpdateState) => void> = new Set();
@@ -95,6 +111,14 @@ export async function getPendingSyncCount(): Promise<number> {
 export function initPWAUpdateService(): void {
   if (typeof window === 'undefined') return;
 
+  // Capture native browser installation prompt event
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredInstallPrompt = e;
+    currentState = { ...currentState, canInstallPWA: true };
+    notifyListeners();
+  });
+
   // 1. Initialize Cross-Tab Broadcast Channel
   if ('BroadcastChannel' in window) {
     try {
@@ -109,6 +133,23 @@ export function initPWAUpdateService(): void {
 
   // 2. Register Service Worker listeners if available
   if ('serviceWorker' in navigator) {
+    // Listen for live asset caching progress messages from Service Worker
+    navigator.serviceWorker.addEventListener('message', (event) => {
+      if (event.data && event.data.type === 'SW_INSTALL_PROGRESS') {
+        const { loaded, total, percentage, currentFile, status } = event.data;
+        currentState = {
+          ...currentState,
+          installProgress: percentage,
+          loadedFiles: loaded,
+          totalFiles: total,
+          currentCachingFile: currentFile,
+          installStatus: status === 'ready' ? 'ready' : 'caching',
+          isInstallingPWA: status !== 'ready'
+        };
+        notifyListeners();
+      }
+    });
+
     navigator.serviceWorker.ready.then((reg) => {
       swRegistration = reg;
 
@@ -287,4 +328,42 @@ export async function executeSafePWAUpdate(): Promise<void> {
 
   // Clean application reload
   window.location.reload();
+}
+
+/**
+ * Manually trigger PWA Installation & Live Asset Precaching
+ */
+export async function triggerPWAInstall(): Promise<boolean> {
+  currentState = {
+    ...currentState,
+    isInstallingPWA: true,
+    installProgress: 0,
+    installStatus: 'installing',
+    currentCachingFile: 'Initializing static bundle cache...'
+  };
+  notifyListeners();
+
+  // Send message to Service Worker to force asset precaching with live progress
+  if (swRegistration && swRegistration.active) {
+    swRegistration.active.postMessage({ type: 'START_PWA_INSTALL' });
+  } else if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+    navigator.serviceWorker.controller.postMessage({ type: 'START_PWA_INSTALL' });
+  }
+
+  if (deferredInstallPrompt) {
+    try {
+      deferredInstallPrompt.prompt();
+      const choice = await deferredInstallPrompt.userChoice;
+      if (choice.outcome === 'accepted') {
+        deferredInstallPrompt = null;
+        currentState = { ...currentState, canInstallPWA: false };
+        notifyListeners();
+        return true;
+      }
+    } catch (e) {
+      console.warn('[PWAInstallPrompt Warning]:', e);
+    }
+  }
+
+  return false;
 }

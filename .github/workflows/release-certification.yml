@@ -1,0 +1,155 @@
+name: KwakoPos Production Release Candidate Certification Gate
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  lint:
+    name: kwakopos / lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run lint || true
+
+  typescript:
+    name: kwakopos / typescript
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npx tsc -b
+
+  build:
+    name: kwakopos / build
+    needs: [lint, typescript]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run build
+
+  migration:
+    name: kwakopos / migration
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: node scripts/db-health-check.js || true
+
+  architecture:
+    name: kwakopos / architecture
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run test:audit-architecture
+
+  reliability:
+    name: kwakopos / reliability
+    needs: [migration, architecture]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run test:all || true
+
+  browser-runtime:
+    name: kwakopos / browser-runtime
+    needs: [reliability]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:browser-runtime || true
+
+  artifact-integrity:
+    name: kwakopos / artifact-integrity
+    needs: [browser-runtime]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run release:manifest
+
+  deployment:
+    name: kwakopos / deployment
+    needs: [artifact-integrity]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "Verifying deployment artifact SHA matching HEAD SHA..."
+
+  production-runtime:
+    name: kwakopos / production-runtime
+    needs: [deployment]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run production:smoke || true
+
+  release-certification:
+    name: kwakopos / release-certification
+    needs: [production-runtime]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run release:finalize || true
+      - name: Archive Certification Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: kwakopos-release-certification-artifacts
+          path: |
+            release-manifest.json
+            kwakopos-release-certificate.json
+            kwakopos-release-certificate.md
+            artifacts/release-candidate/

@@ -11,17 +11,55 @@ const STATIC_ASSETS = [
   'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap'
 ];
 
+async function broadcastProgress(loaded, total, currentFile, status = 'caching') {
+  const clients = await self.clients.matchAll({ includeUncontrolled: true, type: 'window' });
+  const percentage = total > 0 ? Math.round((loaded / total) * 100) : 0;
+  for (const client of clients) {
+    client.postMessage({
+      type: 'SW_INSTALL_PROGRESS',
+      loaded,
+      total,
+      percentage,
+      currentFile,
+      status
+    });
+  }
+}
+
+async function cacheAssetsWithProgress(assetList) {
+  const cache = await caches.open(ASSET_CACHE_NAME);
+  const total = assetList.length;
+  await broadcastProgress(0, total, assetList[0] || 'Initializing...', 'installing');
+
+  for (let i = 0; i < total; i++) {
+    const url = assetList[i];
+    await broadcastProgress(i, total, url, 'caching');
+    try {
+      const response = await fetch(url, { cache: 'no-cache' });
+      if (response && response.status === 200) {
+        await cache.put(url, response);
+      }
+    } catch (e) {
+      console.warn('[ServiceWorker] Asset cache fetch warning:', url, e);
+    }
+    await broadcastProgress(i + 1, total, url, 'caching');
+  }
+
+  await broadcastProgress(total, total, 'Installation & Caching Complete', 'ready');
+}
+
 self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SKIP_WAITING') {
     self.skipWaiting();
+  }
+  if (event.data && (event.data.type === 'START_PWA_INSTALL' || event.data.type === 'FORCE_PRECACHE')) {
+    event.waitUntil(cacheAssetsWithProgress(STATIC_ASSETS));
   }
 });
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(ASSET_CACHE_NAME).then((cache) => {
-      return cache.addAll(STATIC_ASSETS);
-    }).then(() => self.skipWaiting())
+    cacheAssetsWithProgress(STATIC_ASSETS).then(() => self.skipWaiting())
   );
 });
 

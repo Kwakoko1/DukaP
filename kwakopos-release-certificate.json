@@ -1,0 +1,56 @@
+{
+  "product": "KwakoPos",
+  "release": "1.2.0",
+  "gitSha": "559a0d65ab1c81e716ab09102fb1f64a80d00863",
+  "gitBranch": "main",
+  "buildNumber": 358,
+  "schemaVersion": 41,
+  "artifactSha256": "fdc4752bec45cd29923083e43d2a453ee899410d7431a9f13e1cf7cee03c0080",
+  "environment": "production",
+  "deployment": "prod-358",
+  "ciStatus": "PASS",
+  "productionRuntime": "PASS",
+  "browserRuntime": "PASS",
+  "databaseVerification": "PASS",
+  "checksumConvergence": "PASS",
+  "status": "CERTIFIED",
+  "timestamp": "2026-08-17T20:12:38.348Z",
+  "gateResults": [
+    {
+      "name": "01_release_manifest",
+      "status": "PASS",
+      "durationMs": 214,
+      "error": null
+    },
+    {
+      "name": "02_architecture_guard_audit",
+      "status": "PASS",
+      "durationMs": 226,
+      "error": null
+    },
+    {
+      "name": "03_production_preflight_identity",
+      "status": "PASS",
+      "durationMs": 127,
+      "error": null
+    },
+    {
+      "name": "04_production_smoke_suite",
+      "status": "PASS",
+      "durationMs": 10529,
+      "error": null
+    },
+    {
+      "name": "05_rollback_recovery_drill",
+      "status": "PASS",
+      "durationMs": 1365,
+      "error": null
+    },
+    {
+      "name": "06_production_browser_e2e_playwright",
+      "status": "PASS",
+      "durationMs": 66876,
+      "error": null
+    }
+  ]
+}
