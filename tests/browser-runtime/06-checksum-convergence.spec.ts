@@ -116,7 +116,14 @@ test.describe('Real Browser Runtime: Checksum Convergence', () => {
     const serverChecksum = serverChkJson.checksum;
     expect(serverChecksum).toBeDefined();
 
-    // 4. Calculate local canonical SHA-256 checksums on Device A and Device B
+    // 4. Trigger sync on Device B and calculate local canonical SHA-256 checksums
+    await pageB.evaluate(async () => {
+      if ((window as any).productionSyncEngine) {
+        await (window as any).productionSyncEngine.syncPendingQueue();
+      }
+    });
+    await pageB.waitForTimeout(500);
+
     const checksumA = await getChecksum(pageA, tenantId);
     const checksumB = await getChecksum(pageB, tenantId);
 

@@ -45,7 +45,7 @@ export async function runRecoveryRuntimeTests() {
         completedAt: new Date().toISOString(),
         status: 'PASS',
         expected: 'Server calculates deterministic SHA-256 replica checksum matching canonical records',
-        observed: `Authoritative Checksum: ${checksumRes.body.checksum} (Records: ${checksumRes.body.totalRecords})`,
+        observed: `Authoritative Checksum: ${checksumRes.body.checksum} (Records: ${checksumRes.body.recordCount ?? checksumRes.body.totalRecords ?? 0})`,
       });
     } else {
       throw new Error(`Invalid checksum response: ${JSON.stringify(checksumRes.body)}`);

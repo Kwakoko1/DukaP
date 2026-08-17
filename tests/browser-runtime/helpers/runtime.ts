@@ -4,6 +4,8 @@
  */
 import { Page, expect } from '@playwright/test';
 
+export const TEST_TENANT = '00000000-0000-0000-0000-000000000001';
+
 export interface LoginOptions {
   email?: string;
   password?: string;

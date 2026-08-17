@@ -8,7 +8,8 @@ import {
   Search, CheckCircle2, Clock
 } from 'lucide-react';
 import { Badge } from '../../UI/custom-ui';
-import { getDeletedReceiptNumbers, purgeOrderAndReceipt } from '../../../services/receiptEngine';
+import { productRepository } from '../../../db/repositories/productRepository';
+import { localWriteCoordinator } from '../../../db/persistence/localWriteCoordinator';
 import { broadcastMutation } from '../../../services/crossTabSyncService';
 
 export const TrashCan: React.FC = () => {
@@ -155,7 +156,7 @@ export const TrashCan: React.FC = () => {
     if (window.confirm(`PERMANENT DELETE: Purge product "${product.name}" permanently from database?`)) {
       try {
         setIsBusy(true);
-        await db.products.delete(product.id);
+        await productRepository.deleteProduct(product.id, tenantId);
         await db.productVariants.where('productId').equals(product.id).delete();
         showToast(`Product "${product.name}" permanently purged 🗑️`);
       } catch (e: any) {
@@ -192,7 +193,7 @@ export const TrashCan: React.FC = () => {
     if (window.confirm(`PERMANENT DELETE: Purge customer "${customer.name}" permanently?`)) {
       try {
         setIsBusy(true);
-        await db.customers.delete(customer.id);
+        await localWriteCoordinator.executeAtomicMutation('customers', customer, 'DELETE', tenantId, user?.branch_id);
         showToast(`Customer "${customer.name}" permanently purged 🗑️`);
       } catch (e: any) {
         showToast(e?.message || 'Failed to purge customer', 'error');

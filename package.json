@@ -28,9 +28,14 @@
     "db:check": "node scripts/db-health-check.js",
     "production:verify": "node scripts/db-health-check.js && npm run test:all",
     "test:runtime": "node scripts/production-runtime-validation/test-full-production-certification.js",
-    "test:runtime:critical": "node scripts/production-runtime-validation/test-full-production-certification.js --critical-only",
-    "test:browser-runtime": "playwright test",
-    "test:browser-runtime:critical": "playwright test tests/browser-runtime --grep @critical",
+    "test:runtime:critical": "npx playwright test tests/browser-runtime/01-persistence.spec.ts tests/browser-runtime/02-offline-sync.spec.ts tests/browser-runtime/05-pwa-upgrade.spec.ts tests/browser-runtime/06-checksum-convergence.spec.ts --project=chromium",
+    "test:browser-runtime": "npx playwright test --project=chromium",
+    "test:browser-runtime:crossbrowser": "npx playwright test --project=chromium --project=firefox",
+    "production:smoke": "node scripts/production-runtime-validation/test-production-smoke.js",
+    "production:validate-schema": "node scripts/production-runtime-validation/validate-certification-schema.js",
+    "test:audit-architecture": "node scripts/audit-architecture-guards.js",
+    "observability:bundle": "node scripts/production-runtime-validation/generate-diagnostic-bundle.js",
+    "test:rollback-drill": "node scripts/production-runtime-validation/test-rollback-drill.js",
     "production:certify": "npm run production:verify && npm run test:browser-runtime && npm run test:runtime"
   },
   "dependencies": {

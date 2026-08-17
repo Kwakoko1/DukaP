@@ -404,7 +404,7 @@ export const PersistenceTest: React.FC = () => {
       try {
         if (createdTestProductIds.length > 0) {
           for (const pid of createdTestProductIds) {
-            await db.products.delete(pid).catch(() => {});
+            await productRepository.deleteProduct(pid, testTenantId).catch(() => {});
             await supabase.from('products').delete().eq('id', pid).catch(() => {});
           }
         }

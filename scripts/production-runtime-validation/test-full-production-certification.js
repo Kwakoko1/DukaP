@@ -103,7 +103,7 @@ async function executeCertification() {
     const rSess = await runSessionRuntimeTests();
     allResults.push(...rSess);
 
-    // Annotate executionMode for real browser runtime authority
+    // Annotate executionMode and sanitize undefined properties
     allResults.forEach((r) => {
       if ([
         'TEST-001', 'TEST-002', 'TEST-003', 'TEST-004', 'TEST-005',
@@ -114,6 +114,17 @@ async function executeCertification() {
       } else {
         r.executionMode = 'IN_PROCESS';
       }
+
+      // Ensure zero undefined fields in certification evidence
+      r.testId = r.testId || 'UNKNOWN';
+      r.name = r.name || 'Unnamed Test';
+      r.category = r.category || 'GENERAL';
+      r.status = r.status || 'FAIL';
+      r.expected = r.expected || 'N/A';
+      r.observed = r.observed || 'N/A';
+      r.error = r.error || null;
+      r.startedAt = r.startedAt || new Date().toISOString();
+      r.completedAt = r.completedAt || new Date().toISOString();
     });
 
     // Sort results by testId
@@ -122,8 +133,12 @@ async function executeCertification() {
     const totalTests = allResults.length;
     const passedTests = allResults.filter((r) => r.status === 'PASS').length;
     const failedTests = allResults.filter((r) => r.status === 'FAIL').length;
+    
     const realBrowserTests = allResults.filter((r) => r.executionMode === 'REAL_BROWSER');
     const realBrowserPassed = realBrowserTests.filter((r) => r.status === 'PASS').length;
+
+    const inProcessTests = allResults.filter((r) => r.executionMode === 'IN_PROCESS');
+    const inProcessPassed = inProcessTests.filter((r) => r.status === 'PASS').length;
 
     const isCertified = failedTests === 0 && totalTests === 30 && realBrowserPassed === realBrowserTests.length;
 
@@ -141,18 +156,19 @@ async function executeCertification() {
     console.log('\n================================================================');
     console.log(`Architecture:              PASS`);
     console.log(`Static reliability:        PASS`);
-    console.log(`In-process reliability:    PASS`);
-    console.log(`Real browser runtime:      ${realBrowserPassed === realBrowserTests.length ? 'PASS (REAL_BROWSER)' : 'BLOCKED'}`);
+    console.log(`In-process reliability:    ${inProcessPassed}/${inProcessTests.length} PASS (IN_PROCESS)`);
+    console.log(`Real browser runtime:      ${realBrowserPassed}/${realBrowserTests.length} PASS (REAL_BROWSER)`);
     console.log(`Real PWA upgrade:          ${allResults.find(r => r.testId === 'TEST-015')?.status === 'PASS' ? 'PASS (REAL_BROWSER)' : 'BLOCKED'}`);
     console.log(`Real offline multi-device: ${allResults.find(r => r.testId === 'TEST-008')?.status === 'PASS' ? 'PASS (REAL_BROWSER)' : 'BLOCKED'}`);
     console.log(`PostgreSQL verification:   PASS (REAL_BROWSER)`);
     console.log(`----------------------------------------------------------------`);
     console.log(`TOTAL EXECUTED: ${totalTests} | PASSED: ${passedTests} | FAILED: ${failedTests}`);
     console.log(`REAL_BROWSER GATES: ${realBrowserPassed}/${realBrowserTests.length} PASS`);
+    console.log(`IN_PROCESS GATES:   ${inProcessPassed}/${inProcessTests.length} PASS`);
     console.log(`CERTIFICATION DECISION: ${isCertified ? '🏆 CERTIFIED (PASS)' : '⛔ BLOCKED (FAIL)'}`);
     console.log('================================================================\n');
 
-    // Build Certification Model
+    // Build Certification Model with zero undefined fields
     const certReport = {
       product: 'KwakoPos SaaS',
       version: '1.2.0',
@@ -163,7 +179,7 @@ async function executeCertification() {
       gates: {
         architecture: 'PASS',
         staticReliability: 'PASS',
-        inProcessReliability: 'PASS',
+        inProcessReliability: inProcessPassed === inProcessTests.length ? 'PASS' : 'BLOCKED',
         realBrowserRuntime: realBrowserPassed === realBrowserTests.length ? 'PASS' : 'BLOCKED',
         realPwaUpgrade: allResults.find(r => r.testId === 'TEST-015')?.status === 'PASS' ? 'PASS' : 'BLOCKED',
         realOfflineMultiDevice: allResults.find(r => r.testId === 'TEST-008')?.status === 'PASS' ? 'PASS' : 'BLOCKED',
@@ -173,6 +189,18 @@ async function executeCertification() {
         totalTests,
         passed: passedTests,
         failed: failedTests,
+        modeBreakdown: {
+          REAL_BROWSER: {
+            total: realBrowserTests.length,
+            passed: realBrowserPassed,
+            failed: realBrowserTests.length - realBrowserPassed,
+          },
+          IN_PROCESS: {
+            total: inProcessTests.length,
+            passed: inProcessPassed,
+            failed: inProcessTests.length - inProcessPassed,
+          },
+        },
         realBrowserCount: realBrowserTests.length,
         realBrowserPassed: realBrowserPassed,
         criticalFailures: failedTests,
@@ -222,7 +250,7 @@ KWAKOPOS OFFICIAL PRODUCTION RELIABILITY CERTIFICATION
 ================================================================
 Architecture:              ${certReport.gates.architecture}
 Static reliability:        ${certReport.gates.staticReliability}
-In-process reliability:    ${certReport.gates.inProcessReliability}
+In-process reliability:    ${certReport.gates.inProcessReliability} (IN_PROCESS)
 Real browser runtime:      ${certReport.gates.realBrowserRuntime} (REAL_BROWSER)
 Real PWA upgrade:          ${certReport.gates.realPwaUpgrade} (REAL_BROWSER)
 Real offline multi-device: ${certReport.gates.realOfflineMultiDevice} (REAL_BROWSER)
@@ -230,21 +258,30 @@ PostgreSQL verification:   ${certReport.gates.postgresVerification} (REAL_BROWSE
 ----------------------------------------------------------------
 TOTAL RUNTIME TESTS:       ${totalTests} / 30
 REAL_BROWSER TESTS:        ${realBrowserPassed} / ${realBrowserTests.length}
+IN_PROCESS TESTS:          ${inProcessPassed} / ${inProcessTests.length}
 STATUS:                    ${certReport.decision === 'PASS' ? 'CERTIFIED' : 'BLOCKED'}
 ================================================================
 \`\`\`
 
 ---
 
-## 2. Complete Runtime Test Results (TEST-001 through TEST-030)
+## 2. Real Browser Execution Mode (REAL_BROWSER: 13 Tests)
 
-| Test ID | Category | Name | Status | Execution Mode | Expected Invariant | Observed Runtime Result |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-${allResults.map((r) => `| **${r.testId}** | \`${r.category}\` | ${r.name} | ${r.status === 'PASS' ? '✅ PASS' : '❌ FAIL'} | \`${r.executionMode}\` | ${r.expected} | ${r.observed} |`).join('\n')}
+| Test ID | Category | Name | Status | Expected Invariant | Observed Runtime Result |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+${realBrowserTests.map((r) => `| **${r.testId}** | \`${r.category}\` | ${r.name} | ${r.status === 'PASS' ? '✅ PASS' : '❌ FAIL'} | ${r.expected} | ${r.observed} |`).join('\n')}
 
 ---
 
-## 3. Reliability Dimensions Certified
+## 3. In-Process Server Verification Mode (IN_PROCESS: 17 Tests)
+
+| Test ID | Category | Name | Status | Expected Invariant | Observed Runtime Result |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+${inProcessTests.map((r) => `| **${r.testId}** | \`${r.category}\` | ${r.name} | ${r.status === 'PASS' ? '✅ PASS' : '❌ FAIL'} | ${r.expected} | ${r.observed} |`).join('\n')}
+
+---
+
+## 4. Reliability Dimensions Certified
 
 - **PERSISTENCE**: Real IndexedDB local writes, logout retention, browser restarts, and crash boundaries operate deterministically.
 - **SYNC**: Durable outbox, real context.setOffline(true/false) drain, network interruption retries, and multi-device convergence proven.

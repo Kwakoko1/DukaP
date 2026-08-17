@@ -14,6 +14,7 @@ import {
   createCategory, deleteCategory, createBrand, isParentProduct
 } from '../../services/productService';
 import { productRepository } from '../../db/repositories/productRepository';
+import { localWriteCoordinator } from '../../db/persistence/localWriteCoordinator';
 import { Html5Qrcode } from 'html5-qrcode';
 import {
   getDashboardKPIs, get7DayMovements, generateValuationReport,
@@ -278,8 +279,8 @@ export const Inventory: React.FC = () => {
         if (prodRes.ok) {
           const serverProds = await prodRes.json();
           if (Array.isArray(serverProds) && serverProds.length > 0) {
-            for (const sp of serverProds) {
-              await db.products.put({
+            const batchProds = serverProds.map((sp: any) => ({
+              entity: {
                 ...sp,
                 buyingPrice: Number(sp.buying_price || sp.buyingPrice || 0),
                 sellingPrice: Number(sp.selling_price || sp.sellingPrice || sp.price || 0),
@@ -288,8 +289,10 @@ export const Inventory: React.FC = () => {
                 hasVariants: Boolean(sp.hasVariants ?? sp.has_variants ?? false),
                 has_variants: Boolean(sp.hasVariants ?? sp.has_variants ?? false),
                 syncStatus: 'SYNCED'
-              });
-            }
+              },
+              operation: 'CREATE' as const
+            }));
+            await localWriteCoordinator.executeBatchAtomicMutations('products', batchProds, queryTid, currentBranch?.id);
           }
         }
       } catch (_) {}
@@ -1386,10 +1389,10 @@ export const Inventory: React.FC = () => {
             const vStock = v.stock || 0;
             const exStock = existing.stock || 0;
             if (vStock > exStock) {
-              await db.productVariants.delete(existing.id).catch(() => {});
+              await localWriteCoordinator.executeAtomicMutation('productVariants', existing, 'DELETE', currentTenant?.id || '', currentBranch?.id).catch(() => {});
               uniqueMap.set(sig, v);
             } else {
-              await db.productVariants.delete(v.id).catch(() => {});
+              await localWriteCoordinator.executeAtomicMutation('productVariants', v, 'DELETE', currentTenant?.id || '', currentBranch?.id).catch(() => {});
             }
           }
         }
@@ -2432,7 +2435,7 @@ export const Inventory: React.FC = () => {
       setSelectedVariantIds(prev => { const n = new Set(prev); n.delete(variantId); return n; });
       if (editingVariantIdx !== null) setEditingVariantIdx(null);
 
-      await db.productVariants.delete(variantId);
+      await localWriteCoordinator.executeAtomicMutation('productVariants', { id: variantId }, 'DELETE', currentTenant?.id || '', currentBranch?.id);
       await db.stockBalance.where('variant_id').equals(variantId).delete();
 
       if (pId) {
@@ -2579,8 +2582,7 @@ export const Inventory: React.FC = () => {
 
         for (const ev of preSnapshotVars) {
           if (!finalHasVariants || !localVariants.find(lv => lv.id === ev.id)) {
-            await queueOperation('DELETE', 'productVariants' as any, ev);
-            await db.productVariants.delete(ev.id);
+            await localWriteCoordinator.executeAtomicMutation('productVariants', ev, 'DELETE', currentTenant.id, currentBranch.id);
           }
         }
 
@@ -2597,8 +2599,7 @@ export const Inventory: React.FC = () => {
             };
             const stockVal = isNew ? (lv.stock || 0) : (preSnapshotVars.find(ev => ev.id === lv.id)?.stock ?? 0);
             freshVar.stock = stockVal;
-            await db.productVariants.put(freshVar);
-            await queueOperation(isNew ? 'INSERT' : 'UPDATE', 'productVariants' as any, freshVar);
+            await localWriteCoordinator.executeAtomicMutation('productVariants', freshVar, isNew ? 'CREATE' : 'UPDATE', currentTenant.id, currentBranch.id);
 
             if (isNew && stockVal > 0) {
               await recordStockMovement({

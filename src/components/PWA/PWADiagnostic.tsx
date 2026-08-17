@@ -6,6 +6,8 @@ import {
   CURRENT_PWA_BUILD_VER
 } from '../../services/pwaRehydrationService';
 
+import { productRepository } from '../../db/repositories/productRepository';
+
 export const PWADiagnostic: React.FC = () => {
   const [swVersion, setSwVersion] = useState<'v1' | 'v2'>('v2');
   const [simulationMode, setSimulationMode] = useState<'safe-v2' | 'legacy-v1-drop'>('safe-v2');
@@ -25,7 +27,9 @@ export const PWADiagnostic: React.FC = () => {
       { id: `demo-prod-${Date.now()}-3`, name: 'Smart Fitness Watch', price: 249, sellingPrice: 249, buyingPrice: 150, stock: 28, category: 'Fitness', module: 'Retail', hasVariants: false, tenant_id: 'tenant-101', branch_id: 'branch-main' },
       { id: `demo-prod-${Date.now()}-4`, name: 'Mechanical Keyboard', price: 99, sellingPrice: 99, buyingPrice: 55, stock: 60, category: 'Accessories', module: 'Retail', hasVariants: false, tenant_id: 'tenant-101', branch_id: 'branch-main' }
     ];
-    await db.products.bulkPut(sampleItems as any);
+    for (const item of sampleItems) {
+      await productRepository.saveProduct(item as any);
+    }
     setSimulationLog(`Added ${sampleItems.length} test products to local Dexie IndexedDB store.`);
   };
 

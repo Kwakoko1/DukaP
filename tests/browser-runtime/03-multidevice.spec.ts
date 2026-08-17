@@ -21,6 +21,7 @@ test.describe('Real Browser Runtime: Multi-Device Convergence', () => {
     await pageA.waitForLoadState('domcontentloaded');
     await pageA.waitForTimeout(800);
     await waitForIndexedDB(pageA);
+    await pageA.waitForFunction(() => (window as any).db !== undefined);
 
     const contextB = await browser.newContext();
     const pageB = await contextB.newPage();
@@ -28,6 +29,7 @@ test.describe('Real Browser Runtime: Multi-Device Convergence', () => {
     await pageB.waitForLoadState('domcontentloaded');
     await pageB.waitForTimeout(800);
     await waitForIndexedDB(pageB);
+    await pageB.waitForFunction(() => (window as any).db !== undefined);
 
     const prodAId = `RTV-E2E-DEV-A-${Date.now()}`;
     const prodBId = `RTV-E2E-DEV-B-${Date.now()}`;

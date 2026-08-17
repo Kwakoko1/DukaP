@@ -19,6 +19,7 @@ test.describe('Real Browser Runtime: Offline Mode & Synchronization', () => {
     await page.waitForLoadState('domcontentloaded');
     await page.waitForTimeout(1000);
     await waitForIndexedDB(page);
+    await page.waitForFunction(() => (window as any).db !== undefined);
 
     const testId = `RTV-E2E-OFFLINE-${Date.now()}`;
     const testProduct = {

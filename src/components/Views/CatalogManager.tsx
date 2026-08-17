@@ -101,7 +101,8 @@ export const CatalogManager: React.FC<CatalogManagerProps> = ({ onOpenProductEdi
         if (catRes.ok) {
           const serverCats = await catRes.json();
           if (Array.isArray(serverCats) && serverCats.length > 0) {
-            await db.categories.bulkPut(serverCats);
+            const catItems = serverCats.map((sc: any) => ({ entity: sc, operation: 'CREATE' as const }));
+            await localWriteCoordinator.executeBatchAtomicMutations('categories', catItems, queryTid, currentBranch?.id);
           }
         }
 
@@ -110,7 +111,8 @@ export const CatalogManager: React.FC<CatalogManagerProps> = ({ onOpenProductEdi
         if (brandRes.ok) {
           const serverBrands = await brandRes.json();
           if (Array.isArray(serverBrands) && serverBrands.length > 0) {
-            await db.brands.bulkPut(serverBrands);
+            const brandItems = serverBrands.map((sb: any) => ({ entity: sb, operation: 'CREATE' as const }));
+            await localWriteCoordinator.executeBatchAtomicMutations('brands', brandItems, queryTid, currentBranch?.id);
           }
         }
 
@@ -119,16 +121,18 @@ export const CatalogManager: React.FC<CatalogManagerProps> = ({ onOpenProductEdi
         if (prodRes.ok) {
           const serverProds = await prodRes.json();
           if (Array.isArray(serverProds) && serverProds.length > 0) {
-            for (const sp of serverProds) {
-              await db.products.put({
+            const batchProds = serverProds.map((sp: any) => ({
+              entity: {
                 ...sp,
                 buyingPrice: Number(sp.buying_price || sp.buyingPrice || 0),
                 sellingPrice: Number(sp.selling_price || sp.sellingPrice || sp.price || 0),
                 price: Number(sp.price || sp.selling_price || 0),
                 stock: Number(sp.stock || 0),
                 syncStatus: 'SYNCED'
-              });
-            }
+              },
+              operation: 'CREATE' as const
+            }));
+            await localWriteCoordinator.executeBatchAtomicMutations('products', batchProds, queryTid, currentBranch?.id);
           }
         }
         // 4. Auto-reconcile product categories and brands into Dexie tables

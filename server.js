@@ -2969,7 +2969,7 @@ const server = http.createServer(async (req, res) => {
             } else {
               await sql`
                 INSERT INTO products (id, tenant_id, branch_id, name, category, category_id, brand, brand_id, sku, barcode, buying_price, selling_price, price, cost_price, stock, module, has_variants, origin, status, created_at, updated_at, version)
-                VALUES (${recordId}, ${opTenant}, ${payload.branch_id || ''}, ${payload.name || 'Product'}, ${payload.category || 'General'}, ${payload.category_id || null}, ${payload.brand || ''}, ${payload.brand_id || null}, ${payload.sku || ''}, ${payload.barcode || ''}, ${payload.buyingPrice || payload.buying_price || 0}, ${payload.sellingPrice || payload.selling_price || 0}, ${payload.price || 0}, ${payload.costPrice || payload.cost_price || 0}, ${payload.stock || 0}, ${payload.module || 'Retail'}, ${payload.hasVariants || payload.has_variants || false}, ${payload.origin || 'PRODUCTION'}, ${payload.status || 'Active'}, ${payload.createdAt || payload.created_at || now}, ${now}, ${payload.version || 1})
+                VALUES (${recordId}, ${opTenant}, ${payload.branch_id || ''}, ${payload.name || 'Product'}, ${payload.category || 'General'}, ${payload.category_id || null}, ${payload.brand || ''}, ${payload.brand_id || null}, ${payload.sku || ''}, ${payload.barcode || ''}, ${payload.buyingPrice || payload.buying_price || payload.price || 0}, ${payload.sellingPrice || payload.selling_price || payload.price || 0}, ${payload.price || payload.sellingPrice || payload.selling_price || 0}, ${payload.costPrice || payload.cost_price || 0}, ${payload.stock || 0}, ${payload.module || 'Retail'}, ${payload.hasVariants || payload.has_variants || false}, ${payload.origin || 'PRODUCTION'}, ${payload.status || 'Active'}, ${payload.createdAt || payload.created_at || now}, ${now}, ${payload.version || 1})
                 ON CONFLICT (id) DO UPDATE SET
                   name = EXCLUDED.name,
                   category = EXCLUDED.category,
@@ -2977,8 +2977,9 @@ const server = http.createServer(async (req, res) => {
                   brand = EXCLUDED.brand,
                   brand_id = EXCLUDED.brand_id,
                   stock = EXCLUDED.stock,
-                  selling_price = EXCLUDED.selling_price,
-                  buying_price = EXCLUDED.buying_price,
+                  selling_price = CASE WHEN EXCLUDED.selling_price > 0 THEN EXCLUDED.selling_price ELSE products.selling_price END,
+                  buying_price = CASE WHEN EXCLUDED.buying_price > 0 THEN EXCLUDED.buying_price ELSE products.buying_price END,
+                  price = CASE WHEN EXCLUDED.price > 0 THEN EXCLUDED.price ELSE products.price END,
                   updated_at = ${now},
                   version = products.version + 1;
               `;

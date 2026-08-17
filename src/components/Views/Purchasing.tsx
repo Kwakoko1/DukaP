@@ -192,7 +192,7 @@ const SuppliersTab: React.FC = () => {
       };
 
       await db.transaction('rw', [db.suppliers, db.supplierContacts], async () => {
-        await db.suppliers.put(supplierData);
+        await localWriteCoordinator.executeAtomicMutation('suppliers', supplierData, editTarget ? 'UPDATE' : 'CREATE', currentTenant.id, currentBranch.id);
         // Delete old contacts
         await db.supplierContacts.where('supplier_id').equals(supplierId).delete();
         // Insert new ones
