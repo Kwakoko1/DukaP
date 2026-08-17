@@ -12,13 +12,13 @@ export const outboxRepository = {
   async getPendingMutations(tenantId: string): Promise<SyncOutboxRecord[]> {
     try {
       if (!db.isOpen()) await db.open();
-      const records = await db.syncQueue
-        .where('status')
-        .equals('PENDING')
-        .toArray();
-      return (records as any[]).filter(
-        (r) => !tenantId || r.tenant_id === tenantId || r.tenantId === tenantId
-      ) as SyncOutboxRecord[];
+      const records = await db.syncQueue.toArray();
+      return (records as any[]).filter((r) => {
+        const matchesTenant = !tenantId || r.tenant_id === tenantId || r.tenantId === tenantId;
+        const status = String(r.status || '').toUpperCase();
+        const isPending = status === 'PENDING' || status === 'PROCESSING';
+        return matchesTenant && isPending;
+      }) as SyncOutboxRecord[];
     } catch {
       return [];
     }

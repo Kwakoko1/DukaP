@@ -13,6 +13,13 @@
     "health-check": "node scripts/health-check.js",
     "test:parser": "node scripts/test-stream-parser.js",
     "test:audit": "node scripts/verify-audit-structures.js",
+    "test:session": "node scripts/test-session-suite.js",
+    "test:data-loss": "node scripts/test-data-loss-suite.js",
+    "test:concurrency": "node scripts/test-concurrency-suite.js",
+    "test:isolation": "node scripts/test-tenant-isolation.js",
+    "test:chaos": "node scripts/test-replica-chaos-suite.js",
+    "test:all": "node scripts/test-session-suite.js && node scripts/test-tenant-isolation.js && node scripts/test-concurrency-suite.js && node scripts/test-data-loss-suite.js && node scripts/test-replica-chaos-suite.js",
+    "db:migrate": "node scripts/migrate.js",
     "db:setup": "node scripts/setup-local-postgres.js",
     "db:check": "node scripts/db-health-check.js"
   },

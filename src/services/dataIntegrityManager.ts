@@ -70,18 +70,19 @@ export class DataIntegrityManager {
 
   /**
    * Validates local IndexedDB record counts and schema health for target tenant.
+   * Strictly scopes all counts to the tenant without global fallback.
    */
   public async validateLocalDataIntegrity(tenantId: string): Promise<IntegrityValidationReport> {
     const issues: string[] = [];
 
     try {
+      if (!tenantId) {
+        throw new Error('Tenant ID is required for local data integrity validation.');
+      }
+
       const getCount = async (table: any) => {
         try {
-          if (tenantId) {
-            const c = await table.where('tenant_id').equals(tenantId).count().catch(() => 0);
-            if (c > 0) return c;
-          }
-          return await table.count().catch(() => 0);
+          return await table.where('tenant_id').equals(tenantId).count().catch(() => 0);
         } catch {
           return 0;
         }
@@ -107,10 +108,10 @@ export class DataIntegrityManager {
         getCount(db.stockLedger)
       ]);
 
-      // Rule: If tenant exists on server but local database has 0 products & 0 categories, recovery is required
+      // Rule: If local database has 0 products & 0 categories for this specific tenant, recovery is required
       const needsBootstrap = productCount === 0 && categoryCount === 0;
       if (needsBootstrap) {
-        issues.push('Local IndexedDB has 0 products/categories for tenant. Full server bootstrap required.');
+        issues.push(`Local IndexedDB has 0 products/categories for tenant '${tenantId}'. Server bootstrap required.`);
       }
 
       return {
@@ -191,7 +192,7 @@ export class DataIntegrityManager {
 
       // Stage 7: BOOTSTRAPPING (if local data is missing or incomplete)
       if (report.needsBootstrap) {
-        this.setState('BOOTSTRAPPING', { reason: 'Local replica empty/corrupted' });
+        this.setState('BOOTSTRAPPING', { reason: 'Local replica empty for tenant' });
         console.log(`[Data Integrity Manager] Local database empty for tenant ${tenantId}. Invoking Server Bootstrap Recovery...`);
         const bootstrapRes = await bootstrapEngine.executeFastBootstrap(tenantId, user, branchId);
         if (bootstrapRes.success) {

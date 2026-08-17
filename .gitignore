@@ -30,3 +30,11 @@ dist-ssr
 # must register through the app. Only the .example template is committed.
 cloud_db.json
 scratch/
+
+# Environment files and credentials
+.env
+.env.local
+.env.*.local
+.env.production
+.env.staging
+

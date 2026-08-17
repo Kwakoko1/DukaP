@@ -4,6 +4,7 @@ import path from 'path';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import pg from 'pg';
+import { runMigrations } from './scripts/migrate.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -24,17 +25,18 @@ if (fs.existsSync(envPath)) {
   });
 }
 
-const PORT = process.env.PORT || 8080;
+const PORT = parseInt(process.env.PORT || '8080', 10);
 const DIST_DIR = path.join(__dirname, 'dist');
+const isProduction = process.env.NODE_ENV === 'production' || process.env.APP_ENV === 'production';
 
-const NEON_PROD_FALLBACK = 'postgresql://neondb_owner:npg_h1k4wASpWoGx@ep-polished-dawn-axwcu8hf-pooler.c-4.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require';
-const DEFAULT_LOCAL_PG_URL = 'postgresql://postgres:postgres@localhost:5432/kwakopos';
+// Fail-fast database URL configuration in production
+const DATABASE_URL = process.env.DATABASE_URL || (!isProduction ? 'postgresql://postgres:postgres@localhost:5432/kwakopos' : null);
 
-// In cloud/container environments (AppHosting, Cloud Run, Heroku, etc.), ensure we connect to the Cloud database
-const isCloudHosting = Boolean(process.env.K_SERVICE || process.env.FIREBASE_CONFIG || process.env.GAE_ENV || process.env.NODE_ENV === 'production' || process.env.PORT);
-const defaultTarget = isCloudHosting ? NEON_PROD_FALLBACK : DEFAULT_LOCAL_PG_URL;
+if (!DATABASE_URL) {
+  console.error('[FATAL SECURITY ERROR] DATABASE_URL environment variable is required in production.');
+  process.exit(1);
+}
 
-const DATABASE_URL = process.env.DATABASE_URL || process.env.VITE_POSTGRES_URL || defaultTarget;
 const isSSLRequired = DATABASE_URL.includes('sslmode=require') || DATABASE_URL.includes('neon.tech');
 
 console.log(`[PostgreSQL Engine] Initializing database connection pool...`);
@@ -72,36 +74,107 @@ function applySecurityHeaders(res) {
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('X-XSS-Protection', '1; mode=block');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(self), microphone=(), geolocation=()');
+  res.setHeader('Content-Security-Policy', "default-src 'self' 'unsafe-inline' 'unsafe-eval' https: data: blob:;");
+  if (isProduction) {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
+  }
 }
 
-// In-Memory Rate Limiting Guard for Sensitive Routes
-const rateLimitMap = new Map();
+// ─── DISTRIBUTED MULTI-NODE RATE LIMITER (POSTGRESQL + MEMORY FALLBACK) ──────
+const inMemoryRateLimitFallback = new Map();
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
-const MAX_AUTH_ATTEMPTS_PER_MIN = 25;
+const MAX_AUTH_ATTEMPTS_PER_MIN = 30;
+
+async function checkDistributedRateLimit(ip, route = 'auth', maxAttempts = null) {
+  const key = `${ip}:${route}`;
+  const now = Date.now();
+  const limit = maxAttempts || (route.startsWith('auth') || route === 'login' || route === 'register' ? MAX_AUTH_ATTEMPTS_PER_MIN : 120);
+  const resetAt = now + RATE_LIMIT_WINDOW_MS;
+
+  if (pool) {
+    try {
+      const res = await pool.query(
+        `INSERT INTO rate_limits (key, count, reset_at, updated_at)
+         VALUES ($1, 1, $2, $3)
+         ON CONFLICT (key) DO UPDATE
+         SET count = CASE WHEN rate_limits.reset_at < $3 THEN 1 ELSE rate_limits.count + 1 END,
+             reset_at = CASE WHEN rate_limits.reset_at < $3 THEN $2 ELSE rate_limits.reset_at END,
+             updated_at = $3
+         RETURNING count, reset_at;`,
+        [key, resetAt, now]
+      );
+      if (res.rows && res.rows[0]) {
+        return res.rows[0].count <= limit;
+      }
+    } catch (_) {
+      // Fallback to in-memory on transient database error
+    }
+  }
+
+  // In-memory fallback
+  const entry = inMemoryRateLimitFallback.get(key) || { count: 0, resetAt };
+  if (now > entry.resetAt) {
+    entry.count = 1;
+    entry.resetAt = resetAt;
+  } else {
+    entry.count += 1;
+  }
+  inMemoryRateLimitFallback.set(key, entry);
+  return entry.count <= limit;
+}
 
 function checkRateLimit(ip, route = 'auth') {
   const key = `${ip}:${route}`;
   const now = Date.now();
-  const entry = rateLimitMap.get(key) || { count: 0, resetAt: now + RATE_LIMIT_WINDOW_MS };
-  
+  const maxAttempts = route.startsWith('auth') ? MAX_AUTH_ATTEMPTS_PER_MIN : 120;
+  const entry = inMemoryRateLimitFallback.get(key) || { count: 0, resetAt: now + RATE_LIMIT_WINDOW_MS };
   if (now > entry.resetAt) {
     entry.count = 1;
     entry.resetAt = now + RATE_LIMIT_WINDOW_MS;
   } else {
     entry.count += 1;
   }
-  rateLimitMap.set(key, entry);
-  return entry.count <= MAX_AUTH_ATTEMPTS_PER_MIN;
+  inMemoryRateLimitFallback.set(key, entry);
+  return entry.count <= maxAttempts;
+}
+
+// Background cleanup for expired distributed rate limits every 15 minutes
+setInterval(async () => {
+  if (pool) {
+    try {
+      const cutoff = Date.now() - (60 * 60 * 1000);
+      await pool.query('DELETE FROM rate_limits WHERE reset_at < $1', [cutoff]);
+    } catch (_) {}
+  }
+}, 15 * 60 * 1000).unref();
+
+function normalizeClientTimestamp(clientTimestamp, serverNow) {
+  if (!clientTimestamp || typeof clientTimestamp !== 'number') return serverNow;
+  if (clientTimestamp > serverNow + 300000) return serverNow; // Clamp future drift > 5 min
+  if (clientTimestamp < 1577836800000) return serverNow; // Clamp clock rollback before 2020
+  return clientTimestamp;
 }
 
 // ─── HYBRID SESSION MANAGEMENT & TOKEN CRYPTOGRAPHY ──────────────────────────
-const JWT_SECRET = process.env.JWT_SECRET || process.env.VITE_JWT_SECRET || process.env.SESSION_SECRET || 'kwakopos-hybrid-session-signing-secret-2026';
-const ACCESS_TOKEN_TTL_SECONDS = parseInt(process.env.ACCESS_TOKEN_TTL || '1200', 10); // 20 minutes
+let JWT_SECRET = process.env.JWT_SECRET || process.env.SESSION_SECRET;
+if (!JWT_SECRET) {
+  if (isProduction) {
+    console.error('[FATAL SECURITY ERROR] JWT_SECRET environment variable is required in production.');
+    process.exit(1);
+  } else {
+    console.warn('[SECURITY WARNING] No JWT_SECRET set. Generating dynamic 256-bit cryptographically secure secret for development.');
+    JWT_SECRET = crypto.randomBytes(32).toString('hex');
+  }
+}
+
+const ACCESS_TOKEN_TTL_SECONDS = parseInt(process.env.ACCESS_TOKEN_TTL || '900', 10); // 15 minutes
 const REFRESH_TOKEN_TTL_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
 const ABSOLUTE_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 function base64UrlEncode(str) {
   return Buffer.from(str)
+
     .toString('base64')
     .replace(/=/g, '')
     .replace(/\+/g, '-')
@@ -168,11 +241,14 @@ function generateSecureToken(length = 32) {
 async function recordSessionAudit(event, { sessionId, userId, tenantId, branchId, deviceId, ip, userAgent, metadata = {} }) {
   try {
     const auditId = `sa-${Date.now()}-${generateSecureToken(4)}`;
+    const now = Date.now();
     await sql`
-      INSERT INTO session_audit_logs (id, session_id, user_id, tenant_id, branch_id, device_id, event, ip_address, user_agent, timestamp, metadata)
-      VALUES (${auditId}, ${sessionId || null}, ${userId || null}, ${tenantId || null}, ${branchId || null}, ${deviceId || null}, ${event}, ${ip || null}, ${userAgent || null}, ${Date.now()}, ${JSON.stringify(metadata)})
+      INSERT INTO session_audit_logs (id, session_id, user_id, tenant_id, branch_id, device_id, event, action, ip_address, user_agent, timestamp, created_at, metadata, details)
+      VALUES (${auditId}, ${sessionId || null}, ${userId || null}, ${tenantId || null}, ${branchId || null}, ${deviceId || null}, ${event}, ${event}, ${ip || null}, ${userAgent || null}, ${now}, ${now}, ${JSON.stringify(metadata)}, ${JSON.stringify(metadata)})
       ON CONFLICT (id) DO NOTHING;
-    `.catch(() => {});
+    `.catch((err) => {
+      console.warn('[Session Audit Catch]', err.message);
+    });
   } catch (e) {
     console.warn('[Session Audit] Failed to record session audit:', e.message);
   }
@@ -211,864 +287,17 @@ function pushSystemLog(level, message, metadata = {}) {
 
 pushSystemLog('INFO', 'KwakoPOS PostgreSQL Backend Server Engine initialized', { port: PORT, target: 'PostgreSQL' });
 
-// Auto-initialize Neon PostgreSQL schema on startup
+// Auto-initialize PostgreSQL schema via versioned migrations on startup
 async function initDatabaseSchema() {
   try {
-    console.log(`[Neon Backend Engine] Initializing database schema on Neon PostgreSQL...`);
-    await sql`
-      CREATE TABLE IF NOT EXISTS tenants (
-        id TEXT PRIMARY KEY,
-        name TEXT NOT NULL,
-        plan TEXT DEFAULT 'Basic',
-        status TEXT DEFAULT 'Active',
-        business_code TEXT,
-        tenant_code TEXT,
-        created_at BIGINT,
-        deleted_at BIGINT
-      );
-    `;
-    await sql`
-      CREATE TABLE IF NOT EXISTS users (
-        id TEXT PRIMARY KEY,
-        tenant_id TEXT,
-        branch_id TEXT,
-        name TEXT,
-        username TEXT,
-        email TEXT,
-        phone TEXT,
-        role TEXT,
-        password_hash TEXT,
-        created_at BIGINT,
-        deleted_at BIGINT
-      );
-    `;
-    await sql`
-      CREATE TABLE IF NOT EXISTS branches (
-        id TEXT PRIMARY KEY,
-        tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-        name TEXT,
-        location TEXT,
-        is_headquarters BOOLEAN DEFAULT false,
-        created_at BIGINT,
-        deleted_at BIGINT
-      );
-    `;
-    await sql`
-      CREATE TABLE IF NOT EXISTS products (
-        id TEXT PRIMARY KEY,
-        tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-        branch_id TEXT,
-        name TEXT,
-        category TEXT,
-        category_id TEXT,
-        sku TEXT,
-        barcode TEXT,
-        buying_price NUMERIC DEFAULT 0,
-        selling_price NUMERIC DEFAULT 0,
-        price NUMERIC DEFAULT 0,
-        cost_price NUMERIC DEFAULT 0,
-        stock NUMERIC DEFAULT 0,
-        module TEXT DEFAULT 'Retail',
-        has_variants BOOLEAN DEFAULT false,
-        origin TEXT DEFAULT 'PRODUCTION',
-        status TEXT DEFAULT 'Active',
-        version INT DEFAULT 1,
-        created_at BIGINT,
-        updated_at BIGINT,
-        deleted_at BIGINT
-      );
-    `;
-    await sql`
-      CREATE TABLE IF NOT EXISTS product_variants (
-        id TEXT PRIMARY KEY,
-        product_id TEXT,
-        tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-        branch_id TEXT,
-        sku TEXT,
-        barcode TEXT,
-        buying_price NUMERIC DEFAULT 0,
-        selling_price NUMERIC DEFAULT 0,
-        stock NUMERIC DEFAULT 0,
-        reserved_stock NUMERIC DEFAULT 0,
-        reorder_level NUMERIC DEFAULT 5,
-        status TEXT DEFAULT 'Active',
-        attributes JSONB DEFAULT '{}'::jsonb,
-        created_at BIGINT,
-        updated_at BIGINT,
-        deleted_at BIGINT
-      );
-    `;
-    await sql`
-      CREATE TABLE IF NOT EXISTS categories (
-        id TEXT PRIMARY KEY,
-        tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-        branch_id TEXT,
-        name TEXT,
-        code TEXT,
-        description TEXT,
-        color TEXT,
-        icon TEXT,
-        status TEXT DEFAULT 'Active',
-        created_by TEXT,
-        updated_by TEXT,
-        created_at BIGINT,
-        updated_at BIGINT,
-        deleted_at BIGINT,
-        sync_version INT DEFAULT 1,
-        sync_status TEXT DEFAULT 'SYNCED',
-        last_synced_at BIGINT,
-        parent_id TEXT
-      );
-    `;
-    await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_categories_tenant_name ON categories(tenant_id, LOWER(name)) WHERE deleted_at IS NULL;`;
-    await sql`
-      CREATE TABLE IF NOT EXISTS brands (
-        id TEXT PRIMARY KEY,
-        tenant_id TEXT,
-        branch_id TEXT,
-        name TEXT,
-        code TEXT,
-        description TEXT,
-        color TEXT,
-        icon TEXT,
-        status TEXT DEFAULT 'Active',
-        created_by TEXT,
-        updated_by TEXT,
-        created_at BIGINT,
-        updated_at BIGINT,
-        deleted_at BIGINT,
-        sync_version INT DEFAULT 1,
-        sync_status TEXT DEFAULT 'SYNCED',
-        last_synced_at BIGINT
-      );
-    `;
-    await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_brands_tenant_name ON brands(tenant_id, LOWER(name)) WHERE deleted_at IS NULL;`;
-    await sql`
-      CREATE TABLE IF NOT EXISTS stock_ledger (
-        id TEXT PRIMARY KEY,
-        tenant_id TEXT,
-        branch_id TEXT,
-        product_id TEXT,
-        variant_id TEXT,
-        movement_type TEXT,
-        quantity_before NUMERIC DEFAULT 0,
-        quantity_change NUMERIC DEFAULT 0,
-        quantity_after NUMERIC DEFAULT 0,
-        unit_cost NUMERIC DEFAULT 0,
-        total_cost NUMERIC DEFAULT 0,
-        user_id TEXT,
-        device_id TEXT,
-        idempotency_key TEXT,
-        created_at BIGINT
-      );
-    `;
-    await sql`ALTER TABLE stock_ledger ADD COLUMN IF NOT EXISTS movement_type TEXT;`;
-    await sql`ALTER TABLE stock_ledger ADD COLUMN IF NOT EXISTS quantity_before NUMERIC DEFAULT 0;`;
-    await sql`ALTER TABLE stock_ledger ADD COLUMN IF NOT EXISTS quantity_change NUMERIC DEFAULT 0;`;
-    await sql`ALTER TABLE stock_ledger ADD COLUMN IF NOT EXISTS quantity_after NUMERIC DEFAULT 0;`;
-    await sql`ALTER TABLE stock_ledger ADD COLUMN IF NOT EXISTS unit_cost NUMERIC DEFAULT 0;`;
-    await sql`ALTER TABLE stock_ledger ADD COLUMN IF NOT EXISTS total_cost NUMERIC DEFAULT 0;`;
-    await sql`ALTER TABLE stock_ledger ADD COLUMN IF NOT EXISTS user_id TEXT;`;
-    await sql`ALTER TABLE stock_ledger ADD COLUMN IF NOT EXISTS device_id TEXT;`;
-    // ─── SESSIONS, DEVICES, & SESSION AUDIT SCHEMA ─────────────────────────────
-    await sql`
-      CREATE TABLE IF NOT EXISTS devices (
-        id TEXT PRIMARY KEY,
-        device_id TEXT UNIQUE NOT NULL,
-        tenant_id TEXT NOT NULL,
-        user_id TEXT,
-        name TEXT,
-        platform TEXT,
-        browser TEXT,
-        created_at BIGINT NOT NULL,
-        last_seen_at BIGINT NOT NULL,
-        last_sync_at BIGINT,
-        revoked_at BIGINT,
-        revoke_reason TEXT,
-        status TEXT DEFAULT 'ACTIVE'
-      );
-      CREATE INDEX IF NOT EXISTS idx_devices_device_id ON devices(device_id);
-      CREATE INDEX IF NOT EXISTS idx_devices_tenant_id ON devices(tenant_id);
-      CREATE INDEX IF NOT EXISTS idx_devices_user_id ON devices(user_id);
-      CREATE INDEX IF NOT EXISTS idx_devices_status ON devices(status);
-
-      CREATE TABLE IF NOT EXISTS sessions (
-        id TEXT PRIMARY KEY,
-        session_id TEXT UNIQUE NOT NULL,
-        user_id TEXT NOT NULL,
-        tenant_id TEXT NOT NULL,
-        branch_id TEXT,
-        device_id TEXT NOT NULL,
-        refresh_token_hash TEXT NOT NULL,
-        token_family_id TEXT NOT NULL,
-        created_at BIGINT NOT NULL,
-        last_activity_at BIGINT NOT NULL,
-        last_validated_at BIGINT NOT NULL,
-        expires_at BIGINT NOT NULL,
-        revoked_at BIGINT,
-        revoke_reason TEXT,
-        ip_address TEXT,
-        user_agent TEXT,
-        platform TEXT,
-        status TEXT DEFAULT 'ACTIVE',
-        permissions_version INT DEFAULT 1,
-        tenant_version INT DEFAULT 1,
-        metadata JSONB DEFAULT '{}'::jsonb
-      );
-      CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
-      CREATE INDEX IF NOT EXISTS idx_sessions_tenant_id ON sessions(tenant_id);
-      CREATE INDEX IF NOT EXISTS idx_sessions_device_id ON sessions(device_id);
-      CREATE INDEX IF NOT EXISTS idx_sessions_session_id ON sessions(session_id);
-      CREATE INDEX IF NOT EXISTS idx_sessions_token_family ON sessions(token_family_id);
-      CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
-      CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
-
-      CREATE TABLE IF NOT EXISTS session_audit_logs (
-        id TEXT PRIMARY KEY,
-        session_id TEXT,
-        user_id TEXT,
-        tenant_id TEXT,
-        branch_id TEXT,
-        device_id TEXT,
-        event TEXT NOT NULL,
-        ip_address TEXT,
-        user_agent TEXT,
-        timestamp BIGINT NOT NULL,
-        metadata JSONB DEFAULT '{}'::jsonb
-      );
-      CREATE INDEX IF NOT EXISTS idx_session_audit_tenant ON session_audit_logs(tenant_id, timestamp DESC);
-      CREATE INDEX IF NOT EXISTS idx_session_audit_user ON session_audit_logs(user_id, timestamp DESC);
-      CREATE INDEX IF NOT EXISTS idx_session_audit_session ON session_audit_logs(session_id);
-    `;
-
-    // ─── CRITICAL SCHEMA RECONCILIATION FOR NEON POSTGRESQL ────────────────────
-    // 1. Guarantee deleted_at column presence across all core tables
-    await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS deleted_at BIGINT;`.catch(() => {});
-    await sql`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS deleted_at BIGINT;`.catch(() => {});
-    await sql`ALTER TABLE branches ADD COLUMN IF NOT EXISTS deleted_at BIGINT;`.catch(() => {});
-    await sql`ALTER TABLE products ADD COLUMN IF NOT EXISTS deleted_at BIGINT;`.catch(() => {});
-    await sql`ALTER TABLE product_variants ADD COLUMN IF NOT EXISTS deleted_at BIGINT;`.catch(() => {});
-    await sql`ALTER TABLE categories ADD COLUMN IF NOT EXISTS deleted_at BIGINT;`.catch(() => {});
-    await sql`ALTER TABLE brands ADD COLUMN IF NOT EXISTS deleted_at BIGINT;`.catch(() => {});
-    await sql`ALTER TABLE stock_ledger ADD COLUMN IF NOT EXISTS deleted_at BIGINT;`.catch(() => {});
-
-    // 2. Guarantee BIGINT timestamp types to prevent INTEGER overflow (13-digit Unix millis)
-    await sql`ALTER TABLE users ALTER COLUMN created_at TYPE BIGINT USING created_at::BIGINT;`.catch(() => {});
-    await sql`ALTER TABLE users ALTER COLUMN deleted_at TYPE BIGINT USING deleted_at::BIGINT;`.catch(() => {});
-    await sql`ALTER TABLE tenants ALTER COLUMN created_at TYPE BIGINT USING created_at::BIGINT;`.catch(() => {});
-    await sql`ALTER TABLE tenants ALTER COLUMN deleted_at TYPE BIGINT USING deleted_at::BIGINT;`.catch(() => {});
-    await sql`ALTER TABLE branches ALTER COLUMN created_at TYPE BIGINT USING created_at::BIGINT;`.catch(() => {});
-    await sql`ALTER TABLE branches ALTER COLUMN deleted_at TYPE BIGINT USING deleted_at::BIGINT;`.catch(() => {});
-    await sql`ALTER TABLE products ALTER COLUMN created_at TYPE BIGINT USING created_at::BIGINT;`.catch(() => {});
-    await sql`ALTER TABLE products ALTER COLUMN updated_at TYPE BIGINT USING updated_at::BIGINT;`.catch(() => {});
-    await sql`ALTER TABLE products ALTER COLUMN deleted_at TYPE BIGINT USING deleted_at::BIGINT;`.catch(() => {});
-    await sql`ALTER TABLE product_variants ALTER COLUMN created_at TYPE BIGINT USING created_at::BIGINT;`.catch(() => {});
-    await sql`ALTER TABLE product_variants ALTER COLUMN updated_at TYPE BIGINT USING updated_at::BIGINT;`.catch(() => {});
-    await sql`ALTER TABLE product_variants ALTER COLUMN deleted_at TYPE BIGINT USING deleted_at::BIGINT;`.catch(() => {});
-    await sql`ALTER TABLE categories ALTER COLUMN created_at TYPE BIGINT USING created_at::BIGINT;`.catch(() => {});
-    await sql`ALTER TABLE categories ALTER COLUMN updated_at TYPE BIGINT USING updated_at::BIGINT;`.catch(() => {});
-    await sql`ALTER TABLE categories ALTER COLUMN deleted_at TYPE BIGINT USING deleted_at::BIGINT;`.catch(() => {});
-    await sql`ALTER TABLE categories ALTER COLUMN last_synced_at TYPE BIGINT USING last_synced_at::BIGINT;`.catch(() => {});
-    await sql`ALTER TABLE brands ALTER COLUMN created_at TYPE BIGINT USING created_at::BIGINT;`.catch(() => {});
-    await sql`ALTER TABLE brands ALTER COLUMN updated_at TYPE BIGINT USING updated_at::BIGINT;`.catch(() => {});
-    await sql`ALTER TABLE brands ALTER COLUMN deleted_at TYPE BIGINT USING deleted_at::BIGINT;`.catch(() => {});
-    await sql`ALTER TABLE brands ALTER COLUMN last_synced_at TYPE BIGINT USING last_synced_at::BIGINT;`.catch(() => {});
-    await sql`ALTER TABLE stock_ledger ALTER COLUMN created_at TYPE BIGINT USING created_at::BIGINT;`.catch(() => {});
-
-    // 3. Partial composite indexes for Super Admin KPI analytics & soft deletion filtering
-    await sql`CREATE INDEX IF NOT EXISTS idx_tenants_kpi_lookup ON tenants (status) WHERE deleted_at IS NULL;`.catch(() => {});
-    await sql`CREATE INDEX IF NOT EXISTS idx_orders_revenue_lookup ON orders (tenant_id, total, status) WHERE created_at > 0;`.catch(() => {});
-    await sql`CREATE INDEX IF NOT EXISTS idx_tenant_subs_kpi ON tenant_subscriptions (tenant_id, status) WHERE updated_at > 0;`.catch(() => {});
-
-    // 3.1 Taxonomy & Tenant Profile Schema Columns & Indexes
-    await sql`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS slug TEXT;`.catch(() => {});
-    await sql`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS email TEXT;`.catch(() => {});
-    await sql`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS phone TEXT;`.catch(() => {});
-    await sql`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS owner_name TEXT;`.catch(() => {});
-    await sql`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS business_type TEXT DEFAULT 'Retail';`.catch(() => {});
-    await sql`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS registration_source TEXT DEFAULT 'SELF_REGISTERED';`.catch(() => {});
-    await sql`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS verification_status TEXT DEFAULT 'VERIFIED';`.catch(() => {});
-    await sql`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS registration_ip TEXT;`.catch(() => {});
-    await sql`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS registration_device TEXT;`.catch(() => {});
-    await sql`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS updated_at BIGINT;`.catch(() => {});
-    await sql`ALTER TABLE branches ADD COLUMN IF NOT EXISTS branch_code TEXT;`.catch(() => {});
-    await sql`ALTER TABLE branches ADD COLUMN IF NOT EXISTS is_default BOOLEAN DEFAULT false;`.catch(() => {});
-    await sql`ALTER TABLE branches ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'Active';`.catch(() => {});
-    await sql`ALTER TABLE branches ADD COLUMN IF NOT EXISTS updated_at BIGINT;`.catch(() => {});
-    await sql`ALTER TABLE categories ADD COLUMN IF NOT EXISTS industry_type TEXT DEFAULT 'retail';`.catch(() => {});
-    await sql`ALTER TABLE brands ADD COLUMN IF NOT EXISTS description_corporate_line TEXT;`.catch(() => {});
-    await sql`ALTER TABLE products ADD COLUMN IF NOT EXISTS category_id TEXT;`.catch(() => {});
-    await sql`ALTER TABLE products ADD COLUMN IF NOT EXISTS brand TEXT;`.catch(() => {});
-    await sql`ALTER TABLE products ADD COLUMN IF NOT EXISTS brand_id TEXT;`.catch(() => {});
-    await sql`CREATE INDEX IF NOT EXISTS idx_categories_tenant_industry ON categories(tenant_id, industry_type);`.catch(() => {});
-    await sql`CREATE INDEX IF NOT EXISTS idx_brands_tenant ON brands(tenant_id);`.catch(() => {});
-
-    // ─── 4. RELATIONAL TENANT INTEGRITY & ORPHAN PREVENTION MIGRATION ────────
-    try {
-      // A. Ensure system administration platform tenant is guaranteed in tenants table
-      await sql`
-        INSERT INTO tenants (id, name, plan, status, business_code, tenant_code, created_at)
-        VALUES ('tenant-admin-system', 'System Platform Administration', 'Enterprise', 'Active', 'SYS-ADMIN-0000', 'SYS-ADMIN-0000', ${Date.now()})
-        ON CONFLICT (id) DO UPDATE SET business_code = 'SYS-ADMIN-0000', tenant_code = 'SYS-ADMIN-0000';
-
-        -- Auto-generate human-readable business codes for any existing tenant records
-        UPDATE tenants
-        SET business_code = COALESCE(NULLIF(business_code, ''), 'BIZ-' || UPPER(SUBSTRING(REGEXP_REPLACE(name, '[^a-zA-Z]', '', 'g') FROM 1 FOR 6)) || '-' || UPPER(SUBSTRING(MD5(id::text) FROM 1 FOR 4))),
-            tenant_code = COALESCE(NULLIF(tenant_code, ''), 'TZ-RET-' || UPPER(SUBSTRING(REGEXP_REPLACE(name, '[^a-zA-Z]', '', 'g') FROM 1 FOR 6)) || '-' || UPPER(SUBSTRING(MD5(id::text) FROM 1 FOR 4)))
-        WHERE business_code IS NULL OR length(trim(business_code)) = 0;
-      `;
-
-      // B. Purge any orphan records from products, variants, categories, branches with invalid/empty tenant_id
-      await sql`DELETE FROM product_variants WHERE tenant_id IS NULL OR length(trim(tenant_id)) = 0 OR tenant_id NOT IN (SELECT id FROM tenants);`.catch(() => {});
-      await sql`DELETE FROM products WHERE tenant_id IS NULL OR length(trim(tenant_id)) = 0 OR tenant_id NOT IN (SELECT id FROM tenants);`.catch(() => {});
-      await sql`DELETE FROM categories WHERE tenant_id IS NULL OR length(trim(tenant_id)) = 0 OR tenant_id NOT IN (SELECT id FROM tenants);`.catch(() => {});
-      await sql`DELETE FROM brands WHERE tenant_id IS NULL OR length(trim(tenant_id)) = 0 OR tenant_id NOT IN (SELECT id FROM tenants);`.catch(() => {});
-      await sql`DELETE FROM branches WHERE tenant_id IS NULL OR length(trim(tenant_id)) = 0 OR tenant_id NOT IN (SELECT id FROM tenants);`.catch(() => {});
-      await sql`DELETE FROM stock_ledger WHERE tenant_id IS NULL OR length(trim(tenant_id)) = 0 OR tenant_id NOT IN (SELECT id FROM tenants);`.catch(() => {});
-
-      // C. Apply Foreign Key constraints dynamically if not already registered
-      await sql`
-        DO $$
-        BEGIN
-          IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_products_tenant') THEN
-            ALTER TABLE products ADD CONSTRAINT fk_products_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
-          END IF;
-          IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_product_variants_tenant') THEN
-            ALTER TABLE product_variants ADD CONSTRAINT fk_product_variants_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
-          END IF;
-          IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_categories_tenant') THEN
-            ALTER TABLE categories ADD CONSTRAINT fk_categories_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
-          END IF;
-          IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_brands_tenant') THEN
-            ALTER TABLE brands ADD CONSTRAINT fk_brands_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
-          END IF;
-          IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_branches_tenant') THEN
-            ALTER TABLE branches ADD CONSTRAINT fk_branches_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
-          END IF;
-          IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_stock_ledger_tenant') THEN
-            ALTER TABLE stock_ledger ADD CONSTRAINT fk_stock_ledger_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
-          END IF;
-
-          -- Safe SET NULL taxonomy foreign keys on products
-          ALTER TABLE products DROP CONSTRAINT IF EXISTS products_category_id_fkey;
-          ALTER TABLE products DROP CONSTRAINT IF EXISTS fk_products_category;
-          ALTER TABLE products DROP CONSTRAINT IF EXISTS products_brand_id_fkey;
-          ALTER TABLE products DROP CONSTRAINT IF EXISTS fk_products_brand;
-
-          IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_products_category') THEN
-            ALTER TABLE products ADD CONSTRAINT fk_products_category FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL;
-          END IF;
-          IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_products_brand') THEN
-            ALTER TABLE products ADD CONSTRAINT fk_products_brand FOREIGN KEY (brand_id) REFERENCES brands(id) ON DELETE SET NULL;
-          END IF;
-
-          -- Non-empty Check Constraints
-          IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_products_tenant_nonempty') THEN
-            ALTER TABLE products ADD CONSTRAINT chk_products_tenant_nonempty CHECK (tenant_id IS NOT NULL AND length(trim(tenant_id)) > 0);
-          END IF;
-          IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_variants_tenant_nonempty') THEN
-            ALTER TABLE product_variants ADD CONSTRAINT chk_variants_tenant_nonempty CHECK (tenant_id IS NOT NULL AND length(trim(tenant_id)) > 0);
-          END IF;
-          IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_categories_tenant_nonempty') THEN
-            ALTER TABLE categories ADD CONSTRAINT chk_categories_tenant_nonempty CHECK (tenant_id IS NOT NULL AND length(trim(tenant_id)) > 0);
-          END IF;
-          IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_branches_tenant_nonempty') THEN
-            ALTER TABLE branches ADD CONSTRAINT chk_branches_tenant_nonempty CHECK (tenant_id IS NOT NULL AND length(trim(tenant_id)) > 0);
-          END IF;
-        END $$;
-      `.catch((migErr) => {
-        console.warn('[server.js] Foreign key migration notice:', migErr.message);
-      });
-    } catch (migErr) {
-      console.warn('[server.js] Relational constraint check warning:', migErr);
-    }
-
-    // ─── 4.1 USERS SCHEMA & DATA RECONCILIATION ────────────────────────────────
-    try {
-      await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS first_name TEXT;`.catch(() => {});
-      await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_name TEXT;`.catch(() => {});
-      await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'Active';`.catch(() => {});
-      await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_super_admin BOOLEAN DEFAULT false;`.catch(() => {});
-      await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS pin_hash TEXT DEFAULT '1911';`.catch(() => {});
-      await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS registration_source TEXT DEFAULT 'PLATFORM_ADMIN';`.catch(() => {});
-      await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS created_by TEXT DEFAULT 'usr-superadmin';`.catch(() => {});
-      await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_status TEXT DEFAULT 'VERIFIED';`.catch(() => {});
-      await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at BIGINT;`.catch(() => {});
-      await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS version INT DEFAULT 1;`.catch(() => {});
-
-      // Auto-reconcile Super Admin record
-      await sql`
-        INSERT INTO users (
-          id, tenant_id, branch_id, name, first_name, last_name, username, email, phone, role, status, pin_hash, is_super_admin, registration_source, created_by, verification_status, version, created_at, updated_at
-        )
-        VALUES (
-          'usr-superadmin', 'tenant-admin-system', 'branch-admin-main', 'System Platform Owner', 'System Platform', 'Owner', 'superadmin', 'admin@kwakoko.co.tz', '+255713296319', 'Super Admin', 'Active', '1911', true, 'PLATFORM_ADMIN', 'SYSTEM_PROVISIONER', 'VERIFIED', 1, ${Date.now()}, ${Date.now()}
-        )
-        ON CONFLICT (id) DO UPDATE SET
-          email = 'admin@kwakoko.co.tz',
-          username = 'superadmin',
-          role = 'Super Admin',
-          is_super_admin = true,
-          name = 'System Platform Owner',
-          first_name = 'System Platform',
-          last_name = 'Owner',
-          branch_id = 'branch-admin-main',
-          status = 'Active',
-          pin_hash = '1911',
-          registration_source = 'PLATFORM_ADMIN',
-          created_by = 'SYSTEM_PROVISIONER',
-          verification_status = 'VERIFIED',
-          updated_at = ${Date.now()};
-      `.catch(() => {});
-
-      // Fix any legacy email references or cashier roles on super admin
-      await sql`
-        UPDATE users SET
-          email = 'admin@kwakoko.co.tz',
-          username = 'superadmin',
-          role = 'Super Admin',
-          is_super_admin = true,
-          name = 'System Platform Owner',
-          first_name = 'System Platform',
-          last_name = 'Owner',
-          branch_id = 'branch-admin-main',
-          status = 'Active',
-          pin_hash = '1911',
-          registration_source = 'PLATFORM_ADMIN',
-          created_by = 'SYSTEM_PROVISIONER',
-          verification_status = 'VERIFIED',
-          updated_at = ${Date.now()}
-        WHERE email ILIKE '%admin@dukapos.com%' OR (is_super_admin = true AND role != 'Super Admin');
-      `.catch(() => {});
-
-      // Auto-reconcile tenant users: populate first_name, last_name, status, etc.
-      await sql`
-        UPDATE users SET
-          first_name = COALESCE(NULLIF(first_name, ''), NULLIF(SPLIT_PART(name, ' ', 1), ''), 'Tenant'),
-          last_name = COALESCE(NULLIF(last_name, ''), NULLIF(SUBSTRING(name FROM POSITION(' ' IN name) + 1), ''), 'Owner'),
-          status = COALESCE(NULLIF(status, ''), 'Active'),
-          pin_hash = COALESCE(NULLIF(pin_hash, ''), '1911'),
-          updated_at = COALESCE(updated_at, created_at, ${Date.now()}),
-          registration_source = COALESCE(NULLIF(registration_source, ''), 'TENANT_ONBOARDING'),
-          created_by = COALESCE(NULLIF(created_by, ''), 'usr-superadmin'),
-          verification_status = COALESCE(NULLIF(verification_status, ''), 'VERIFIED'),
-          version = COALESCE(version, 1)
-        WHERE first_name IS NULL OR last_name IS NULL OR status IS NULL OR verification_status IS NULL OR updated_at IS NULL;
-      `.catch(() => {});
-    } catch (userMigErr) {
-      console.warn('[server.js] Users table migration warning:', userMigErr);
-    }
-
-    await sql`
-      CREATE TABLE IF NOT EXISTS user_branch_roles (
-        id TEXT PRIMARY KEY,
-        tenant_id TEXT,
-        user_id TEXT,
-        branch_id TEXT,
-        role_id TEXT,
-        role_name TEXT,
-        created_at BIGINT
-      );
-    `;
-    await sql`
-      CREATE TABLE IF NOT EXISTS tenant_modules (
-        id VARCHAR(128) PRIMARY KEY,
-        tenant_id VARCHAR(64) NOT NULL,
-        module_key VARCHAR(64) NOT NULL,
-        installed BOOLEAN DEFAULT false,
-        enabled BOOLEAN DEFAULT false,
-        status VARCHAR(32) DEFAULT 'NOT_INSTALLED',
-        version INT DEFAULT 1,
-        installed_at BIGINT,
-        enabled_at BIGINT,
-        disabled_at BIGINT,
-        created_at BIGINT,
-        updated_at BIGINT
-      );
-      CREATE INDEX IF NOT EXISTS idx_tenant_modules_lookup ON tenant_modules(tenant_id, module_key);
-    `;
-    await sql`
-      CREATE TABLE IF NOT EXISTS tenant_settings (
-        id TEXT PRIMARY KEY,
-        tenant_id TEXT,
-        setting_key TEXT,
-        setting_value TEXT,
-        updated_at BIGINT
-      );
-    `;
-    await sql`
-      CREATE TABLE IF NOT EXISTS feature_flags (
-        id TEXT PRIMARY KEY,
-        tenant_id TEXT,
-        flag_key TEXT,
-        is_enabled BOOLEAN DEFAULT false,
-        updated_at BIGINT
-      );
-    `;
-    await sql`
-      CREATE TABLE IF NOT EXISTS user_devices (
-        device_id TEXT PRIMARY KEY,
-        tenant_id TEXT,
-        user_id TEXT,
-        name TEXT,
-        os TEXT,
-        browser TEXT,
-        user_agent TEXT,
-        ip_address TEXT,
-        last_seen_at BIGINT,
-        created_at BIGINT
-      );
-    `;
-    await sql`
-      CREATE TABLE IF NOT EXISTS user_security (
-        user_id TEXT PRIMARY KEY,
-        tenant_id TEXT,
-        pin_hash TEXT,
-        password_hash TEXT,
-        last_login_at BIGINT,
-        failed_attempts INT DEFAULT 0,
-        created_at BIGINT
-      );
-    `;
-    await sql`
-      CREATE TABLE IF NOT EXISTS business_profiles (
-        tenant_id TEXT PRIMARY KEY,
-        business_name TEXT,
-        tin_number TEXT,
-        vrn_number TEXT,
-        address TEXT,
-        phone TEXT,
-        email TEXT,
-        logo_url TEXT,
-        currency TEXT DEFAULT 'TZS',
-        updated_at BIGINT
-      );
-    `;
-    await sql`
-      CREATE TABLE IF NOT EXISTS tenant_subscriptions (
-        id TEXT PRIMARY KEY,
-        tenant_id TEXT,
-        plan_name TEXT,
-        start_date BIGINT,
-        end_date BIGINT,
-        status TEXT DEFAULT 'ACTIVE',
-        amount NUMERIC DEFAULT 0,
-        updated_at BIGINT
-      );
-    `;
-    await sql`
-      CREATE TABLE IF NOT EXISTS subscription_plans (
-        id TEXT PRIMARY KEY,
-        plan_code TEXT,
-        name TEXT,
-        monthly_price NUMERIC,
-        yearly_price NUMERIC,
-        features JSONB DEFAULT '{}'::jsonb
-      );
-    `;
-
-    // Auto-heal: add all missing columns to tenants for full online-registration capture
-    await sql`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS email TEXT;`;
-    await sql`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS owner_name TEXT;`;
-    await sql`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS business_type TEXT DEFAULT 'Retail';`;
-    await sql`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS slug TEXT;`;
-    await sql`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS registration_source TEXT DEFAULT 'SELF_REGISTERED';`;
-    await sql`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS verification_status TEXT DEFAULT 'PENDING';`;
-    await sql`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS updated_at BIGINT;`;
-    await sql`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS registration_ip TEXT;`;
-    await sql`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS registration_device TEXT;`;
-
-    // Auto-heal missing tombstone & version columns for sync engine integrity
-    await sql`ALTER TABLE products ADD COLUMN IF NOT EXISTS deleted BOOLEAN DEFAULT false;`;
-    await sql`ALTER TABLE categories ADD COLUMN IF NOT EXISTS deleted BOOLEAN DEFAULT false;`;
-    await sql`ALTER TABLE brands ADD COLUMN IF NOT EXISTS deleted BOOLEAN DEFAULT false;`;
-    await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS deleted BOOLEAN DEFAULT false;`;
-    await sql`ALTER TABLE branches ADD COLUMN IF NOT EXISTS deleted BOOLEAN DEFAULT false;`;
-
-    // Auto-heal missing password_hash and security columns on existing tables
-    await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT;`;
-    await sql`ALTER TABLE user_security ADD COLUMN IF NOT EXISTS tenant_id TEXT;`;
-    await sql`ALTER TABLE user_security ADD COLUMN IF NOT EXISTS password_hash TEXT;`;
-    await sql`ALTER TABLE user_security ADD COLUMN IF NOT EXISTS last_login_at BIGINT;`;
-    await sql`ALTER TABLE user_security ADD COLUMN IF NOT EXISTS created_at BIGINT;`;
-
-    // Security audit log — created here so /api/securityAuditLogs never 404s on cold start
-    await sql`
-      CREATE TABLE IF NOT EXISTS security_audit_logs (
-        id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-        tenant_id TEXT,
-        user_id TEXT,
-        action TEXT NOT NULL,
-        entity TEXT,
-        entity_id TEXT,
-        details JSONB DEFAULT '{}'::jsonb,
-        ip_address TEXT,
-        user_agent TEXT,
-        created_at BIGINT DEFAULT EXTRACT(EPOCH FROM NOW())::BIGINT
-      );
-    `;
-    await sql`CREATE INDEX IF NOT EXISTS idx_security_audit_logs_tenant ON security_audit_logs(tenant_id);`;
-    await sql`CREATE INDEX IF NOT EXISTS idx_security_audit_logs_user   ON security_audit_logs(user_id);`;
-    await sql`CREATE INDEX IF NOT EXISTS idx_security_audit_logs_created ON security_audit_logs(created_at DESC);`;
-
-    // ─── ENTERPRISE PRODUCTION EXTENSIONS ───────────────────────────────────
-
-    // 1. Immutable Append-Only Audit Trail Table
-    await sql`
-      CREATE TABLE IF NOT EXISTS platform_audit_trail (
-        id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-        actor_id TEXT NOT NULL,
-        actor_name TEXT NOT NULL,
-        action TEXT NOT NULL,
-        target_tenant TEXT,
-        ip_address TEXT,
-        user_agent TEXT,
-        before_state JSONB DEFAULT '{}'::jsonb,
-        after_state JSONB DEFAULT '{}'::jsonb,
-        timestamp BIGINT DEFAULT EXTRACT(EPOCH FROM NOW())::BIGINT * 1000
-      );
-    `;
-    await sql`CREATE INDEX IF NOT EXISTS idx_platform_audit_actor ON platform_audit_trail(actor_id);`;
-    await sql`CREATE INDEX IF NOT EXISTS idx_platform_audit_tenant ON platform_audit_trail(target_tenant);`;
-    await sql`CREATE INDEX IF NOT EXISTS idx_platform_audit_ts ON platform_audit_trail(timestamp DESC);`;
-
-    // 2. Pre-Aggregated Financial & MRR Analytics Summary Table
-    await sql`
-      CREATE TABLE IF NOT EXISTS mrr_analytics_summary (
-        id TEXT PRIMARY KEY,
-        month_label TEXT NOT NULL,
-        tenants_count INT DEFAULT 0,
-        subscriptions_count INT DEFAULT 0,
-        mrr_amount NUMERIC DEFAULT 0,
-        updated_at BIGINT
-      );
-    `;
-
-    // 3. PostgreSQL Stored Procedure for Atomic Cascading Tenant Purging
-    await sql`
-      CREATE OR REPLACE FUNCTION fn_purge_tenant_cascade(
-        p_tenant_id TEXT,
-        p_soft_delete BOOLEAN,
-        p_actor_id TEXT
-      ) RETURNS VOID AS $$
-      DECLARE
-        v_now BIGINT := EXTRACT(EPOCH FROM NOW())::BIGINT * 1000;
-      BEGIN
-        IF p_soft_delete THEN
-          -- Soft Delete: Mark tenant as Archived with deleted_at timestamp
-          BEGIN UPDATE tenants SET status = 'Archived', deleted_at = v_now, updated_at = v_now WHERE id = p_tenant_id; EXCEPTION WHEN OTHERS THEN NULL; END;
-          BEGIN UPDATE users SET deleted_at = v_now WHERE tenant_id = p_tenant_id; EXCEPTION WHEN OTHERS THEN NULL; END;
-          BEGIN UPDATE branches SET deleted_at = v_now WHERE tenant_id = p_tenant_id; EXCEPTION WHEN OTHERS THEN NULL; END;
-          BEGIN UPDATE products SET deleted_at = v_now WHERE tenant_id = p_tenant_id; EXCEPTION WHEN OTHERS THEN NULL; END;
-        ELSE
-          -- Hard Purge: Atomic Cascade Removal Across Relational Tables
-          BEGIN DELETE FROM stock_ledger WHERE tenant_id = p_tenant_id; EXCEPTION WHEN OTHERS THEN NULL; END;
-          BEGIN DELETE FROM product_variants WHERE tenant_id = p_tenant_id; EXCEPTION WHEN OTHERS THEN NULL; END;
-          BEGIN DELETE FROM products WHERE tenant_id = p_tenant_id; EXCEPTION WHEN OTHERS THEN NULL; END;
-          BEGIN DELETE FROM categories WHERE tenant_id = p_tenant_id; EXCEPTION WHEN OTHERS THEN NULL; END;
-          BEGIN DELETE FROM brands WHERE tenant_id = p_tenant_id; EXCEPTION WHEN OTHERS THEN NULL; END;
-          BEGIN DELETE FROM user_branch_roles WHERE tenant_id = p_tenant_id; EXCEPTION WHEN OTHERS THEN NULL; END;
-          BEGIN DELETE FROM tenant_modules WHERE tenant_id = p_tenant_id; EXCEPTION WHEN OTHERS THEN NULL; END;
-          BEGIN DELETE FROM tenant_settings WHERE tenant_id = p_tenant_id; EXCEPTION WHEN OTHERS THEN NULL; END;
-          BEGIN DELETE FROM feature_flags WHERE tenant_id = p_tenant_id; EXCEPTION WHEN OTHERS THEN NULL; END;
-          BEGIN DELETE FROM tenant_subscriptions WHERE tenant_id = p_tenant_id; EXCEPTION WHEN OTHERS THEN NULL; END;
-          BEGIN DELETE FROM user_security WHERE tenant_id = p_tenant_id OR user_id IN (SELECT id FROM users WHERE tenant_id = p_tenant_id); EXCEPTION WHEN OTHERS THEN NULL; END;
-          BEGIN DELETE FROM user_devices WHERE tenant_id = p_tenant_id; EXCEPTION WHEN OTHERS THEN NULL; END;
-          BEGIN DELETE FROM business_profiles WHERE tenant_id = p_tenant_id; EXCEPTION WHEN OTHERS THEN NULL; END;
-          BEGIN DELETE FROM branches WHERE tenant_id = p_tenant_id; EXCEPTION WHEN OTHERS THEN NULL; END;
-          BEGIN DELETE FROM users WHERE tenant_id = p_tenant_id; EXCEPTION WHEN OTHERS THEN NULL; END;
-          BEGIN DELETE FROM tenants WHERE id = p_tenant_id; EXCEPTION WHEN OTHERS THEN NULL; END;
-        END IF;
-
-        -- Record Immutable Audit Event inside the same atomic transaction
-        BEGIN
-          INSERT INTO platform_audit_trail (actor_id, actor_name, action, target_tenant, timestamp)
-          VALUES (p_actor_id, 'Super Admin Engine', CASE WHEN p_soft_delete THEN 'TENANT_SOFT_DELETE' ELSE 'TENANT_HARD_PURGE' END, p_tenant_id, v_now);
-        EXCEPTION WHEN OTHERS THEN NULL; END;
-      END;
-      $$ LANGUAGE plpgsql;
-    `;
-
-    // 4. PostgreSQL Immutability Trigger for security_audit_logs
-    await sql`
-      CREATE OR REPLACE FUNCTION freeze_security_audit_logs()
-      RETURNS TRIGGER AS $$
-      BEGIN
-          RAISE EXCEPTION 'PDPA COMPLIANCE FAILURE: Modification or deletion of security_audit_logs records is strictly forbidden.';
-          RETURN NULL;
-      END;
-      $$ LANGUAGE plpgsql;
-    `;
-
-    // 5. PostgreSQL DDL for Enterprise Vehicle & Fleet Management
-    await sql`
-      CREATE TABLE IF NOT EXISTS fleet_vehicles (
-        id VARCHAR(64) PRIMARY KEY,
-        tenant_id VARCHAR(64) NOT NULL,
-        branch_id VARCHAR(64),
-        name VARCHAR(255) NOT NULL,
-        type VARCHAR(32) NOT NULL,
-        vin VARCHAR(64),
-        license_plate VARCHAR(64) NOT NULL,
-        status VARCHAR(32) NOT NULL,
-        fuel_type VARCHAR(32) NOT NULL,
-        odometer NUMERIC DEFAULT 0,
-        owner_id VARCHAR(64),
-        created_at BIGINT NOT NULL,
-        updated_at BIGINT NOT NULL
-      );
-      CREATE INDEX IF NOT EXISTS idx_fleet_vehicles_tenant_status ON fleet_vehicles(tenant_id, status);
-    `.catch(() => {});
-
-    await sql`
-      CREATE TABLE IF NOT EXISTS fleet_fuel_logs (
-        id VARCHAR(64) PRIMARY KEY,
-        tenant_id VARCHAR(64) NOT NULL,
-        branch_id VARCHAR(64),
-        vehicle_id VARCHAR(64) NOT NULL,
-        date BIGINT NOT NULL,
-        odometer NUMERIC NOT NULL,
-        gallons_or_liters NUMERIC NOT NULL,
-        cost_per_unit NUMERIC NOT NULL,
-        total_cost NUMERIC NOT NULL,
-        currency VARCHAR(10) DEFAULT 'USD',
-        is_partial_fill BOOLEAN DEFAULT FALSE,
-        created_at BIGINT NOT NULL
-      );
-      CREATE INDEX IF NOT EXISTS idx_fleet_fuel_vehicle ON fleet_fuel_logs(vehicle_id, date);
-    `.catch(() => {});
-
-    await sql`
-      CREATE TABLE IF NOT EXISTS fleet_expense_logs (
-        id VARCHAR(64) PRIMARY KEY,
-        tenant_id VARCHAR(64) NOT NULL,
-        branch_id VARCHAR(64),
-        vehicle_id VARCHAR(64) NOT NULL,
-        category VARCHAR(32) NOT NULL,
-        amount NUMERIC NOT NULL,
-        currency VARCHAR(10) DEFAULT 'USD',
-        date BIGINT NOT NULL,
-        description TEXT,
-        reference_id VARCHAR(64),
-        created_at BIGINT NOT NULL
-      );
-      CREATE INDEX IF NOT EXISTS idx_fleet_expense_vehicle ON fleet_expense_logs(vehicle_id, date, category);
-    `.catch(() => {});
-
-    await sql`
-      CREATE TABLE IF NOT EXISTS fleet_maintenance_logs (
-        id VARCHAR(64) PRIMARY KEY,
-        tenant_id VARCHAR(64) NOT NULL,
-        branch_id VARCHAR(64),
-        vehicle_id VARCHAR(64) NOT NULL,
-        title VARCHAR(255) NOT NULL,
-        description TEXT,
-        cost NUMERIC NOT NULL,
-        currency VARCHAR(10) DEFAULT 'USD',
-        odometer_at_service NUMERIC NOT NULL,
-        service_date BIGINT NOT NULL,
-        status VARCHAR(32) NOT NULL,
-        created_at BIGINT NOT NULL
-      );
-      CREATE INDEX IF NOT EXISTS idx_fleet_maintenance_vehicle ON fleet_maintenance_logs(vehicle_id, service_date);
-    `.catch(() => {});
-
-    await sql`
-      CREATE TABLE IF NOT EXISTS fleet_drivers (
-        id VARCHAR(64) PRIMARY KEY,
-        tenant_id VARCHAR(64) NOT NULL,
-        branch_id VARCHAR(64),
-        employee_number VARCHAR(64),
-        full_name VARCHAR(255) NOT NULL,
-        phone VARCHAR(64),
-        license_number VARCHAR(64) NOT NULL,
-        license_category VARCHAR(32),
-        license_expiry BIGINT NOT NULL,
-        status VARCHAR(32) NOT NULL DEFAULT 'AVAILABLE',
-        assigned_vehicle_id VARCHAR(64),
-        created_at BIGINT NOT NULL,
-        updated_at BIGINT NOT NULL,
-        deleted_at BIGINT DEFAULT 0
-      );
-      CREATE INDEX IF NOT EXISTS idx_fleet_drivers_tenant ON fleet_drivers(tenant_id, status);
-
-      CREATE TABLE IF NOT EXISTS fleet_trips (
-        id VARCHAR(64) PRIMARY KEY,
-        tenant_id VARCHAR(64) NOT NULL,
-        branch_id VARCHAR(64),
-        trip_number VARCHAR(64) NOT NULL,
-        vehicle_id VARCHAR(64) NOT NULL,
-        driver_id VARCHAR(64) NOT NULL,
-        customer VARCHAR(255),
-        trip_type VARCHAR(64),
-        origin VARCHAR(255),
-        destination VARCHAR(255),
-        route TEXT,
-        departure_time BIGINT NOT NULL,
-        expected_return BIGINT,
-        actual_return BIGINT,
-        starting_odometer NUMERIC NOT NULL,
-        ending_odometer NUMERIC,
-        distance NUMERIC DEFAULT 0,
-        fuel_used NUMERIC DEFAULT 0,
-        trip_revenue NUMERIC DEFAULT 0,
-        trip_expenses NUMERIC DEFAULT 0,
-        status VARCHAR(32) NOT NULL DEFAULT 'DRAFT',
-        created_at BIGINT NOT NULL,
-        updated_at BIGINT NOT NULL,
-        deleted_at BIGINT DEFAULT 0
-      );
-      CREATE INDEX IF NOT EXISTS idx_fleet_trips_tenant ON fleet_trips(tenant_id, status);
-
-      CREATE TABLE IF NOT EXISTS fleet_inspections (
-        id VARCHAR(64) PRIMARY KEY,
-        tenant_id VARCHAR(64) NOT NULL,
-        branch_id VARCHAR(64),
-        vehicle_id VARCHAR(64) NOT NULL,
-        driver_id VARCHAR(64) NOT NULL,
-        inspection_date BIGINT NOT NULL,
-        template_name VARCHAR(128) DEFAULT 'Pre-Trip Safety Inspection',
-        items JSONB NOT NULL DEFAULT '[]',
-        overall_status VARCHAR(32) NOT NULL DEFAULT 'PASS',
-        notes TEXT,
-        created_at BIGINT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS fleet_documents (
-        id VARCHAR(64) PRIMARY KEY,
-        tenant_id VARCHAR(64) NOT NULL,
-        branch_id VARCHAR(64),
-        entity_type VARCHAR(32) NOT NULL,
-        entity_id VARCHAR(64) NOT NULL,
-        doc_type VARCHAR(64) NOT NULL,
-        doc_number VARCHAR(128),
-        issue_date BIGINT,
-        expiry_date BIGINT NOT NULL,
-        status VARCHAR(32) NOT NULL DEFAULT 'ACTIVE',
-        attachment_url TEXT,
-        created_at BIGINT NOT NULL
-      );
-      CREATE INDEX IF NOT EXISTS idx_fleet_documents_expiry ON fleet_documents(expiry_date, status);
-    `.catch(() => {});
-
-    // ─── SAFE NON-BLOCKING HISTORICAL DATA MIGRATION ────────────────────────
-    const tablesToMigrate = ['tenants', 'products', 'product_variants', 'categories', 'brands'];
-    for (const table of tablesToMigrate) {
-      try {
-        const rows = await sql(`UPDATE ${table} SET deleted_at = 0 WHERE deleted_at IS NULL`);
-        if (rows && rows.length > 0) {
-          console.info(`[CD Engine] Normalized ${rows.length} legacy rows in table: ${table}`);
-        }
-      } catch (tableErr) {
-        console.warn(`[CD Engine Warning] Table migration notice for ${table}:`, tableErr.message);
-      }
-    }
-
-    console.log(`[CD Engine] Idempotent DDL convergence & schema migration complete. Node ready.`);
+    console.log(`[PostgreSQL Backend Engine] Running versioned database migrations...`);
+    await runMigrations(pool);
+    console.log(`[PostgreSQL Backend Engine] Database migrations verified and up to date.`);
   } catch (err) {
-    console.error(`[CD Engine Fatal] Zero-downtime boot migration error:`, err);
+    console.error(`[PostgreSQL Backend Engine Fatal] Startup database migration error:`, err);
   }
 }
+
 
 initDatabaseSchema().catch((err) => {
   console.error('[CD Engine Fatal] Error during database initialization:', err);
@@ -1772,7 +1001,7 @@ const server = http.createServer(async (req, res) => {
       if (pathname === '/api/auth/register' && req.method === 'POST') {
         applySecurityHeaders(res);
         const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '0.0.0.0';
-        if (!checkRateLimit(clientIp, 'register')) {
+        if (!await checkDistributedRateLimit(clientIp, 'register', 10)) {
           res.writeHead(429, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ success: false, error: 'Too many registration attempts. Please wait 1 minute.' }));
           return;
@@ -1935,7 +1164,7 @@ const server = http.createServer(async (req, res) => {
       if (pathname === '/api/auth/login' && req.method === 'POST') {
         applySecurityHeaders(res);
         const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '0.0.0.0';
-        if (!checkRateLimit(clientIp, 'login')) {
+        if (!await checkDistributedRateLimit(clientIp, 'login', 30)) {
           res.writeHead(429, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ success: false, error: 'Too many login attempts. Please wait 1 minute.' }));
           return;
@@ -2167,6 +1396,11 @@ const server = http.createServer(async (req, res) => {
       if (pathname === '/api/auth/refresh' && req.method === 'POST') {
         applySecurityHeaders(res);
         const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '0.0.0.0';
+        if (!await checkDistributedRateLimit(clientIp, 'refresh', 60)) {
+          res.writeHead(429, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, code: 'RATE_LIMITED', error: 'Too many token refresh requests. Please wait 1 minute.' }));
+          return;
+        }
         const payload = await parseRequestBody(req);
         const rawRefreshToken = (payload.refreshToken || '').trim();
         const deviceId = (payload.deviceId || req.headers['x-device-id'] || '').trim();
@@ -2194,7 +1428,7 @@ const server = http.createServer(async (req, res) => {
           if (sessionRows.length === 0) {
             // Token Reuse Detection Guard: Check if this token was part of a token family that has since been rotated
             const reuseCheckRows = await sql`
-              SELECT session_id, token_family_id, user_id, tenant_id, device_id 
+              SELECT session_id, user_id, tenant_id, device_id, COALESCE(metadata->>'tokenFamilyId', '') as token_family_id
               FROM session_audit_logs 
               WHERE event = 'SESSION_ROTATED' AND metadata->>'old_token_hash' = ${providedHash}
               LIMIT 1;
@@ -2302,7 +1536,7 @@ const server = http.createServer(async (req, res) => {
             permissionsVersion: session.permissions_version || 1
           }, JWT_SECRET, ACCESS_TOKEN_TTL_SECONDS);
 
-          recordSessionAudit('SESSION_ROTATED', {
+          await recordSessionAudit('SESSION_ROTATED', {
             sessionId: session.session_id,
             userId: session.user_id,
             tenantId: session.tenant_id,
@@ -3459,16 +2693,16 @@ const server = http.createServer(async (req, res) => {
         const filterSince = Math.max(since, sinceVersion);
 
         const [prods, vars, cats, brds, ledger, brs, settings, modules, flags, devList, custs, ords] = await Promise.all([
-          sql`SELECT * FROM products WHERE tenant_id = ${targetTenant} AND (updated_at > ${since} OR created_at > ${since})`,
-          sql`SELECT * FROM product_variants WHERE tenant_id = ${targetTenant} AND (updated_at > ${since} OR created_at > ${since})`,
-          sql`SELECT * FROM categories WHERE tenant_id = ${targetTenant} AND (updated_at > ${filterSince} OR created_at > ${filterSince} OR sync_version > ${sinceVersion})`,
-          sql`SELECT * FROM brands WHERE tenant_id = ${targetTenant} AND (updated_at > ${filterSince} OR created_at > ${filterSince} OR sync_version > ${sinceVersion})`,
-          sql`SELECT * FROM stock_ledger WHERE tenant_id = ${targetTenant} AND created_at > ${since}`,
-          sql`SELECT * FROM branches WHERE tenant_id = ${targetTenant}`,
-          sql`SELECT * FROM tenant_settings WHERE tenant_id = ${targetTenant}`,
-          sql`SELECT * FROM tenant_modules WHERE tenant_id = ${targetTenant}`,
-          sql`SELECT * FROM feature_flags WHERE tenant_id = ${targetTenant}`,
-          sql`SELECT * FROM user_devices WHERE tenant_id = ${targetTenant}`,
+          sql`SELECT * FROM products WHERE tenant_id = ${targetTenant} AND (updated_at > ${since} OR created_at > ${since})`.catch(() => []),
+          sql`SELECT * FROM product_variants WHERE tenant_id = ${targetTenant} AND (updated_at > ${since} OR created_at > ${since})`.catch(() => []),
+          sql`SELECT * FROM categories WHERE tenant_id = ${targetTenant} AND (updated_at > ${filterSince} OR created_at > ${filterSince} OR sync_version > ${sinceVersion})`.catch(() => []),
+          sql`SELECT * FROM brands WHERE tenant_id = ${targetTenant} AND (updated_at > ${filterSince} OR created_at > ${filterSince} OR sync_version > ${sinceVersion})`.catch(() => []),
+          sql`SELECT * FROM stock_ledger WHERE tenant_id = ${targetTenant} AND created_at > ${since}`.catch(() => []),
+          sql`SELECT * FROM branches WHERE tenant_id = ${targetTenant}`.catch(() => []),
+          sql`SELECT * FROM tenant_settings WHERE tenant_id = ${targetTenant}`.catch(() => []),
+          sql`SELECT * FROM tenant_modules WHERE tenant_id = ${targetTenant}`.catch(() => []),
+          sql`SELECT * FROM feature_flags WHERE tenant_id = ${targetTenant}`.catch(() => []),
+          sql`SELECT * FROM devices WHERE tenant_id = ${targetTenant}`.catch(() => []),
           sql`SELECT * FROM customers WHERE tenant_id = ${targetTenant} AND (updated_at > ${since} OR created_at > ${since})`.catch(() => []),
           sql`SELECT * FROM orders WHERE tenant_id = ${targetTenant} AND (updated_at > ${since} OR created_at > ${since})`.catch(() => [])
         ]);
@@ -3518,6 +2752,12 @@ const server = http.createServer(async (req, res) => {
 
       // 18. POST /api/sync/push (Batch Queue Sync to Neon PostgreSQL)
       if (pathname === '/api/sync/push' && req.method === 'POST') {
+        const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '0.0.0.0';
+        if (!await checkDistributedRateLimit(clientIp, 'sync_push', 240)) {
+          res.writeHead(429, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, error: 'Too many sync push requests. Please wait a moment.' }));
+          return;
+        }
         const body = await parseRequestBody(req);
         const operations = body.operations || [];
         const deviceId = req.headers['x-device-id'] || body.deviceId || 'WEB-CLIENT';
@@ -3558,10 +2798,14 @@ const server = http.createServer(async (req, res) => {
               await sql`UPDATE products SET deleted = true, deleted_at = ${now}, updated_at = ${now}, version = COALESCE(version, 1) + 1 WHERE id = ${recordId}`;
             } else {
               await sql`
-                INSERT INTO products (id, tenant_id, branch_id, name, category, category_id, sku, barcode, buying_price, selling_price, price, cost_price, stock, module, has_variants, origin, status, created_at, updated_at, version)
-                VALUES (${recordId}, ${opTenant}, ${payload.branch_id || ''}, ${payload.name || 'Product'}, ${payload.category || 'General'}, ${payload.category_id || ''}, ${payload.sku || ''}, ${payload.barcode || ''}, ${payload.buyingPrice || payload.buying_price || 0}, ${payload.sellingPrice || payload.selling_price || 0}, ${payload.price || 0}, ${payload.costPrice || payload.cost_price || 0}, ${payload.stock || 0}, ${payload.module || 'Retail'}, ${payload.hasVariants || false}, ${payload.origin || 'PRODUCTION'}, ${payload.status || 'Active'}, ${payload.createdAt || payload.created_at || now}, ${now}, ${payload.version || 1})
+                INSERT INTO products (id, tenant_id, branch_id, name, category, category_id, brand, brand_id, sku, barcode, buying_price, selling_price, price, cost_price, stock, module, has_variants, origin, status, created_at, updated_at, version)
+                VALUES (${recordId}, ${opTenant}, ${payload.branch_id || ''}, ${payload.name || 'Product'}, ${payload.category || 'General'}, ${payload.category_id || null}, ${payload.brand || ''}, ${payload.brand_id || null}, ${payload.sku || ''}, ${payload.barcode || ''}, ${payload.buyingPrice || payload.buying_price || 0}, ${payload.sellingPrice || payload.selling_price || 0}, ${payload.price || 0}, ${payload.costPrice || payload.cost_price || 0}, ${payload.stock || 0}, ${payload.module || 'Retail'}, ${payload.hasVariants || payload.has_variants || false}, ${payload.origin || 'PRODUCTION'}, ${payload.status || 'Active'}, ${payload.createdAt || payload.created_at || now}, ${now}, ${payload.version || 1})
                 ON CONFLICT (id) DO UPDATE SET
                   name = EXCLUDED.name,
+                  category = EXCLUDED.category,
+                  category_id = EXCLUDED.category_id,
+                  brand = EXCLUDED.brand,
+                  brand_id = EXCLUDED.brand_id,
                   stock = EXCLUDED.stock,
                   selling_price = EXCLUDED.selling_price,
                   buying_price = EXCLUDED.buying_price,
@@ -3590,35 +2834,47 @@ const server = http.createServer(async (req, res) => {
               await sql`UPDATE categories SET deleted_at = ${now}, updated_at = ${now}, sync_version = sync_version + 1 WHERE id = ${recordId} AND tenant_id = ${opTenant}`;
               await sql`UPDATE products SET category_id = NULL, category = 'General' WHERE (category_id = ${recordId} OR category = ${payload.name || ''}) AND tenant_id = ${opTenant}`;
             } else {
-              await sql`
-                INSERT INTO categories (id, tenant_id, branch_id, name, code, description, industry_type, color, icon, status, created_by, updated_by, created_at, updated_at, sync_version, sync_status, parent_id)
-                VALUES (
-                  ${recordId},
-                  ${opTenant},
-                  ${payload.branch_id || null},
-                  ${payload.name || ''},
-                  ${payload.code || ''},
-                  ${payload.description || ''},
-                  ${payload.industry_type || 'retail'},
-                  ${payload.color || '#4f46e5'},
-                  ${payload.icon || 'Folder'},
-                  ${payload.status || 'Active'},
-                  ${payload.created_by || 'usr-system'},
-                  ${payload.updated_by || 'usr-system'},
-                  ${payload.created_at || now},
-                  ${now},
-                  ${payload.sync_version || 1},
-                  'SYNCED',
-                  ${payload.parent_id || payload.parentId || null}
-                )
-                ON CONFLICT (id) DO UPDATE SET
-                  name = EXCLUDED.name,
-                  description = EXCLUDED.description,
-                  industry_type = EXCLUDED.industry_type,
-                  status = EXCLUDED.status,
-                  updated_at = ${now},
-                  sync_version = categories.sync_version + 1;
-              `;
+              try {
+                await sql`
+                  INSERT INTO categories (id, tenant_id, branch_id, name, code, description, industry_type, color, icon, status, created_by, updated_by, created_at, updated_at, sync_version, sync_status, parent_id)
+                  VALUES (
+                    ${recordId},
+                    ${opTenant},
+                    ${payload.branch_id || null},
+                    ${payload.name || ''},
+                    ${payload.code || ''},
+                    ${payload.description || ''},
+                    ${payload.industry_type || 'retail'},
+                    ${payload.color || '#4f46e5'},
+                    ${payload.icon || 'Folder'},
+                    ${payload.status || 'Active'},
+                    ${payload.created_by || 'usr-system'},
+                    ${payload.updated_by || 'usr-system'},
+                    ${payload.created_at || now},
+                    ${now},
+                    ${payload.sync_version || 1},
+                    'SYNCED',
+                    ${payload.parent_id || payload.parentId || null}
+                  )
+                  ON CONFLICT (id) DO UPDATE SET
+                    name = EXCLUDED.name,
+                    description = EXCLUDED.description,
+                    industry_type = EXCLUDED.industry_type,
+                    status = EXCLUDED.status,
+                    updated_at = ${now},
+                    sync_version = categories.sync_version + 1;
+                `;
+              } catch (catErr) {
+                if (catErr.code === '23505') {
+                  await sql`
+                    UPDATE categories 
+                    SET description = ${payload.description || ''}, status = ${payload.status || 'Active'}, updated_at = ${now}, sync_version = sync_version + 1
+                    WHERE tenant_id = ${opTenant} AND LOWER(name) = LOWER(${payload.name || ''});
+                  `;
+                } else {
+                  throw catErr;
+                }
+              }
             }
             processedIds.push(op.id || recordId);
           } else if (entity === 'brands') {
@@ -3626,34 +2882,46 @@ const server = http.createServer(async (req, res) => {
               await sql`UPDATE brands SET deleted_at = ${now}, updated_at = ${now}, sync_version = sync_version + 1 WHERE id = ${recordId} AND tenant_id = ${opTenant}`;
               await sql`UPDATE products SET brand_id = NULL, brand = '' WHERE (brand_id = ${recordId} OR brand = ${payload.name || ''}) AND tenant_id = ${opTenant}`;
             } else {
-              await sql`
-                INSERT INTO brands (id, tenant_id, branch_id, name, code, description, description_corporate_line, color, icon, status, created_by, updated_by, created_at, updated_at, sync_version, sync_status)
-                VALUES (
-                  ${recordId},
-                  ${opTenant},
-                  ${payload.branch_id || null},
-                  ${payload.name || ''},
-                  ${payload.code || ''},
-                  ${payload.description || ''},
-                  ${payload.description_corporate_line || payload.description || ''},
-                  ${payload.color || '#9333ea'},
-                  ${payload.icon || 'Tag'},
-                  ${payload.status || 'Active'},
-                  ${payload.created_by || 'usr-system'},
-                  ${payload.updated_by || 'usr-system'},
-                  ${payload.created_at || now},
-                  ${now},
-                  ${payload.sync_version || 1},
-                  'SYNCED'
-                )
-                ON CONFLICT (id) DO UPDATE SET
-                  name = EXCLUDED.name,
-                  description = EXCLUDED.description,
-                  description_corporate_line = EXCLUDED.description_corporate_line,
-                  status = EXCLUDED.status,
-                  updated_at = ${now},
-                  sync_version = brands.sync_version + 1;
-              `;
+              try {
+                await sql`
+                  INSERT INTO brands (id, tenant_id, branch_id, name, code, description, description_corporate_line, color, icon, status, created_by, updated_by, created_at, updated_at, sync_version, sync_status)
+                  VALUES (
+                    ${recordId},
+                    ${opTenant},
+                    ${payload.branch_id || null},
+                    ${payload.name || ''},
+                    ${payload.code || ''},
+                    ${payload.description || ''},
+                    ${payload.description_corporate_line || payload.description || ''},
+                    ${payload.color || '#9333ea'},
+                    ${payload.icon || 'Tag'},
+                    ${payload.status || 'Active'},
+                    ${payload.created_by || 'usr-system'},
+                    ${payload.updated_by || 'usr-system'},
+                    ${payload.created_at || now},
+                    ${now},
+                    ${payload.sync_version || 1},
+                    'SYNCED'
+                  )
+                  ON CONFLICT (id) DO UPDATE SET
+                    name = EXCLUDED.name,
+                    description = EXCLUDED.description,
+                    description_corporate_line = EXCLUDED.description_corporate_line,
+                    status = EXCLUDED.status,
+                    updated_at = ${now},
+                    sync_version = brands.sync_version + 1;
+                `;
+              } catch (brdErr) {
+                if (brdErr.code === '23505') {
+                  await sql`
+                    UPDATE brands 
+                    SET description = ${payload.description || ''}, status = ${payload.status || 'Active'}, updated_at = ${now}, sync_version = sync_version + 1
+                    WHERE tenant_id = ${opTenant} AND LOWER(name) = LOWER(${payload.name || ''});
+                  `;
+                } else {
+                  throw brdErr;
+                }
+              }
             }
             processedIds.push(op.id || recordId);
           } else if (entity === 'stockLedger' || entity === 'stock_ledger') {

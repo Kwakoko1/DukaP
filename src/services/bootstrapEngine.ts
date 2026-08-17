@@ -4,6 +4,9 @@
  */
 
 import { db } from '../db/dexie';
+import { replicaManager } from './replicaManager';
+import { productionSyncEngine } from './productionSyncEngine';
+import { hlcEngine } from './hlcEngine';
 
 export interface BootstrapSnapshotPayload {
   tenant: any;
@@ -47,7 +50,14 @@ export class BootstrapEngine {
     console.log(`[BootstrapEngine] Initiating fast bootstrap snapshot for tenant: ${tenantId}`);
 
     try {
-      // 0. Get local watermark for conditional ETag re-validation
+      // 0a. Pre-Bootstrap Outbox Safety Check
+      const safetyCheck = await replicaManager.canSafelyBootstrap(tenantId);
+      if (!safetyCheck.allowed) {
+        console.warn(`[BootstrapEngine] Outbox dirty (${safetyCheck.pendingOutboxCount} pending mutations). Attempting outbox flush before snapshot...`);
+        await productionSyncEngine.processQueue(tenantId).catch(() => {});
+      }
+
+      // 0b. Get local watermark for conditional ETag re-validation
       const localWatermark = await db.syncMetadata.get('lastSyncVersion');
       const watermarkVal = localWatermark?.value || 1;
       const clientETag = `W/"sync-${tenantId}-v${watermarkVal}"`;
@@ -77,6 +87,15 @@ export class BootstrapEngine {
       }
 
       const snapshot: BootstrapSnapshotPayload = await response.json();
+      if (!snapshot || typeof snapshot !== 'object') {
+        throw new Error('Invalid or empty bootstrap snapshot received from server.');
+      }
+
+      // Calibrate local clock offset with authoritative server timestamp
+      if (snapshot.serverTimestamp || (snapshot as any).serverTime) {
+        hlcEngine.calibrateOffset(snapshot.serverTimestamp || (snapshot as any).serverTime, Date.now() - startTime);
+      }
+
       console.log(
         `[BootstrapEngine] Snapshot received (${snapshot.syncVersion} watermark) in ${Date.now() - startTime}ms`
       );
@@ -238,6 +257,9 @@ export class BootstrapEngine {
       }
 
       const syncData = await response.json();
+      if (syncData?.serverTimestamp || syncData?.serverTime) {
+        hlcEngine.calibrateOffset(syncData.serverTimestamp || syncData.serverTime);
+      }
       const changes = syncData?.changes || {};
       let updatedCount = 0;
 

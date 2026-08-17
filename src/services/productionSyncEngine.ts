@@ -183,6 +183,9 @@ class ProductionSyncEngine {
 
             if (pushRes.ok) {
               const pushData = await pushRes.json();
+              if (pushData?.serverTime || pushData?.serverTimestamp) {
+                hlcEngine.calibrateOffset(pushData.serverTime || pushData.serverTimestamp);
+              }
               if (pushData.success) {
                 opError = null;
               } else {

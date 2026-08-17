@@ -19,15 +19,35 @@ export interface CreateSyncEventParams {
 }
 
 /**
+ * Generates cryptographically secure UUID v4
+ */
+export function generateSecureUUID(): string {
+  if (typeof crypto !== 'undefined') {
+    if (typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+    if (typeof crypto.getRandomValues === 'function') {
+      const bytes = new Uint8Array(16);
+      crypto.getRandomValues(bytes);
+      bytes[6] = (bytes[6] & 0x0f) | 0x40;
+      bytes[8] = (bytes[8] & 0x3f) | 0x80;
+      const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+      return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+    }
+  }
+  return `uuid-${Date.now().toString(16)}-${Math.random().toString(16).slice(2, 10)}`;
+}
+
+/**
  * Resolves persistent unique Device ID for POS terminal / browser session telemetry
  */
 export function getOrCreateDeviceId(): string {
-  if (typeof window === 'undefined') return 'dev-node-server';
+  if (typeof window === 'undefined') {
+    return `dev-srv-${generateSecureUUID().slice(0, 12)}`;
+  }
   let deviceId = localStorage.getItem('dukapos_device_id');
   if (!deviceId) {
-    deviceId = typeof crypto !== 'undefined' && crypto.randomUUID
-      ? `dev-node-${crypto.randomUUID()}`
-      : `dev-node-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    deviceId = `dev-${generateSecureUUID()}`;
     localStorage.setItem('dukapos_device_id', deviceId);
   }
   return deviceId;
@@ -107,9 +127,7 @@ export async function createSyncEvent(params: CreateSyncEventParams): Promise<Sy
     }
   }
 
-  const syncToken = typeof crypto !== 'undefined' && crypto.randomUUID
-    ? crypto.randomUUID()
-    : `sync-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+  const syncToken = generateSecureUUID();
 
   const priority = params.priority || deriveSyncPriority(params.entity, params.operation);
   const actionType = mapOperationToLegacyActionType(params.operation);

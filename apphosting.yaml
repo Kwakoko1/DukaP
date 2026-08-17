@@ -1,13 +1,15 @@
-# Firebase AppHosting Configuration for DukaPos Web App
+# Firebase AppHosting Configuration for KwakoPOS Web App
 runConfig:
   concurrency: 40      # Optimized to prevent CPU thrashing on 1 vCPU
   cpu: 1
   memoryMiB: 1024      # 1GB to prevent Node.js OOM crashes
 
 env:
-  - variable: DATABASE_URL
-    value: postgresql://neondb_owner:npg_h1k4wASpWoGx@ep-polished-dawn-axwcu8hf-pooler.c-4.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require
-  - variable: VITE_POSTGRES_URL
-    value: postgresql://neondb_owner:npg_h1k4wASpWoGx@ep-polished-dawn-axwcu8hf-pooler.c-4.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require
   - variable: PORT
     value: "8080"
+  - variable: APP_ENV
+    value: "production"
+  - variable: NODE_ENV
+    value: "production"
+  # DATABASE_URL and JWT_SECRET should be configured via Cloud Secret Manager in production
+

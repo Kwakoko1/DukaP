@@ -4,6 +4,7 @@
  */
 
 import { versionMetadata } from '../config/versionMetadata';
+import { generateSecureUUID } from './syncEventGenerator';
 
 export interface DeviceInfo {
   device_id: string;
@@ -18,10 +19,12 @@ export interface DeviceInfo {
 }
 
 export function getOrCreateDeviceId(): string {
-  if (typeof localStorage === 'undefined') return 'device-server-node';
+  if (typeof localStorage === 'undefined') {
+    return `dev-srv-${generateSecureUUID().slice(0, 12)}`;
+  }
   let deviceId = localStorage.getItem('dukapos_device_id');
   if (!deviceId) {
-    deviceId = `dev-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    deviceId = `dev-${generateSecureUUID()}`;
     localStorage.setItem('dukapos_device_id', deviceId);
   }
   return deviceId;

@@ -1,0 +1,19 @@
+-- Migration 004: Ensure Session, Device and Stock compatibility columns
+
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS id TEXT;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'ACTIVE';
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS token_family_id TEXT;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS expires_at BIGINT;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS last_validated_at BIGINT;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS permissions_version INT DEFAULT 1;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS tenant_version INT DEFAULT 1;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS platform TEXT;
+
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS id TEXT;
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'ACTIVE';
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS device_name TEXT;
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS name TEXT;
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS last_seen_at BIGINT;
+
+CREATE INDEX IF NOT EXISTS idx_sessions_user_status ON sessions(user_id, status);

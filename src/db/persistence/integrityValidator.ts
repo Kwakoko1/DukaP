@@ -13,6 +13,7 @@ export interface IntegrityCheckSummary {
   unmappedCategories: number;
   unmappedBrands: number;
   checkedAt: number;
+  error?: string;
 }
 
 export const integrityValidator = {
@@ -51,15 +52,17 @@ export const integrityValidator = {
         unmappedBrands,
         checkedAt: Date.now(),
       };
-    } catch {
+    } catch (err: any) {
       return {
-        passed: true,
+        passed: false,
         tenantId,
-        orphanedVariants: 0,
-        unmappedCategories: 0,
-        unmappedBrands: 0,
+        orphanedVariants: -1,
+        unmappedCategories: -1,
+        unmappedBrands: -1,
         checkedAt: Date.now(),
+        error: err?.message || 'Integrity validation exception'
       };
     }
   }
 };
+

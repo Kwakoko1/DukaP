@@ -52,7 +52,7 @@ async function runSessionTests() {
   console.log('[TEST 1] Testing POST /api/auth/login with Device Identity...');
   try {
     const loginRes = await makeRequest({ path: '/api/auth/login', method: 'POST' }, {
-      identifier: 'nkala91186@gmail.com',
+      identifier: 'yannick@kwakoko.co.tz',
       password: 'Kwakoko@2026',
       deviceId,
       deviceName: 'Automated Test POS Kiosk'
@@ -159,7 +159,7 @@ async function runSessionTests() {
   console.log('\n[TEST 6] Testing Multi-Device Session Listing (GET /api/auth/sessions)...');
   try {
     const login2 = await makeRequest({ path: '/api/auth/login', method: 'POST' }, {
-      identifier: 'nkala91186@gmail.com',
+      identifier: 'yannick@kwakoko.co.tz',
       password: 'Kwakoko@2026',
       deviceId: `device-mobile-${Date.now()}`,
       deviceName: 'Mobile Register'
