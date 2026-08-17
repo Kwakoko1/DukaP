@@ -38,3 +38,7 @@ scratch/
 .env.production
 .env.staging
 
+# Playwright Test Outputs
+test-results/
+playwright-report/
+

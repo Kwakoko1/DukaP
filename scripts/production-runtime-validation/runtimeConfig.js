@@ -19,7 +19,7 @@ export const RUNTIME_USERS = ['cashier-a', 'cashier-b', 'manager-a'];
 export const RUNTIME_DEVICES = ['device-a', 'device-b', 'device-c'];
 
 export const PORT = 8080;
-export const BASE_URL = `http://localhost:${PORT}`;
+export const BASE_URL = `http://127.0.0.1:${PORT}`;
 export const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/kwakopos';
 
 export const pool = new Pool({ connectionString: DATABASE_URL });

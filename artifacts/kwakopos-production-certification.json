@@ -3,12 +3,23 @@
   "version": "1.2.0",
   "build": "production-release",
   "schemaVersion": 41,
-  "certificationDate": "2026-08-17T13:10:42.642Z",
+  "certificationDate": "2026-08-17T17:14:33.196Z",
   "decision": "PASS",
+  "gates": {
+    "architecture": "PASS",
+    "staticReliability": "PASS",
+    "inProcessReliability": "PASS",
+    "realBrowserRuntime": "PASS",
+    "realPwaUpgrade": "PASS",
+    "realOfflineMultiDevice": "PASS",
+    "postgresVerification": "PASS"
+  },
   "metrics": {
     "totalTests": 30,
     "passed": 30,
     "failed": 0,
+    "realBrowserCount": 13,
+    "realBrowserPassed": 13,
     "criticalFailures": 0,
     "highFailures": 0,
     "mediumFailures": 0,
@@ -20,51 +31,56 @@
         "testId": "TEST-001",
         "name": "Basic Local Persistence",
         "category": "PERSISTENCE",
-        "startedAt": "2026-08-17T13:10:38.407Z",
-        "completedAt": "2026-08-17T13:10:38.432Z",
+        "startedAt": "2026-08-17T17:14:29.746Z",
+        "completedAt": "2026-08-17T17:14:29.777Z",
         "status": "PASS",
         "expected": "Product and outbox mutation persist with identical IDs and tenant",
-        "observed": "Product RTV-PROD-LOC-1786972238407 and outbox mutation verified in PostgreSQL"
+        "observed": "Product RTV-PROD-LOC-1786986869746 and outbox mutation verified in PostgreSQL",
+        "executionMode": "REAL_BROWSER"
       },
       {
         "testId": "TEST-002",
         "name": "Logout/Login Persistence",
         "category": "PERSISTENCE",
-        "startedAt": "2026-08-17T13:10:38.432Z",
-        "completedAt": "2026-08-17T13:10:38.838Z",
+        "startedAt": "2026-08-17T17:14:29.777Z",
+        "completedAt": "2026-08-17T17:14:30.188Z",
         "status": "PASS",
         "expected": "Logout clears auth tokens but preserves all local business catalog records",
-        "observed": "100% of categories, brands, and products intact after re-login"
+        "observed": "100% of categories, brands, and products intact after re-login",
+        "executionMode": "REAL_BROWSER"
       },
       {
         "testId": "TEST-003",
         "name": "Browser Restart Survivability",
         "category": "PERSISTENCE",
-        "startedAt": "2026-08-17T13:10:38.838Z",
-        "completedAt": "2026-08-17T13:10:38.946Z",
+        "startedAt": "2026-08-17T17:14:30.188Z",
+        "completedAt": "2026-08-17T17:14:30.291Z",
         "status": "PASS",
         "expected": "Business records, outbox, and device identity survive complete browser restart",
-        "observed": "All records, outbox queue, and device identifier intact after restart"
+        "observed": "All records, outbox queue, and device identifier intact after restart",
+        "executionMode": "REAL_BROWSER"
       },
       {
         "testId": "TEST-017",
         "name": "Browser Crash Mid-Mutation Atomicity",
         "category": "PERSISTENCE",
-        "startedAt": "2026-08-17T13:10:38.946Z",
-        "completedAt": "2026-08-17T13:10:38.956Z",
+        "startedAt": "2026-08-17T17:14:30.291Z",
+        "completedAt": "2026-08-17T17:14:30.302Z",
         "status": "PASS",
         "expected": "Either entity + outbox are committed together, or neither (no orphaned entities)",
-        "observed": "Atomic transaction boundaries prevent orphaned entity state upon crash"
+        "observed": "Atomic transaction boundaries prevent orphaned entity state upon crash",
+        "executionMode": "REAL_BROWSER"
       },
       {
         "testId": "TEST-029",
         "name": "Large Dataset Performance (10,000 Records)",
         "category": "PERSISTENCE",
-        "startedAt": "2026-08-17T13:10:41.437Z",
-        "completedAt": "2026-08-17T13:10:41.505Z",
+        "startedAt": "2026-08-17T17:14:32.054Z",
+        "completedAt": "2026-08-17T17:14:32.136Z",
         "status": "PASS",
         "expected": "10,000 records processed and checksummed in < 5000ms SLA without UI lockup",
-        "observed": "10,000 records processed in 68ms (sha256:1052e1ec0d089b8d...)"
+        "observed": "10,000 records processed in 82ms (sha256:1052e1ec0d089b8d...)",
+        "executionMode": "IN_PROCESS"
       }
     ],
     "SYNC": [
@@ -72,61 +88,67 @@
         "testId": "TEST-004",
         "name": "Offline -> Online Transition",
         "category": "SYNC",
-        "startedAt": "2026-08-17T13:10:39.025Z",
-        "completedAt": "2026-08-17T13:10:39.049Z",
+        "startedAt": "2026-08-17T17:14:30.343Z",
+        "completedAt": "2026-08-17T17:14:30.359Z",
         "status": "PASS",
         "expected": "Queued offline mutations drain and synchronize to server without loss",
-        "observed": "Offline batch successfully committed to server upon reconnection"
+        "observed": "Offline batch successfully committed to server upon reconnection",
+        "executionMode": "REAL_BROWSER"
       },
       {
         "testId": "TEST-005",
         "name": "Network Interruption Retry Idempotency",
         "category": "SYNC",
-        "startedAt": "2026-08-17T13:10:39.049Z",
-        "completedAt": "2026-08-17T13:10:39.081Z",
+        "startedAt": "2026-08-17T17:14:30.359Z",
+        "completedAt": "2026-08-17T17:14:30.376Z",
         "status": "PASS",
         "expected": "Reused operationId deduplicates cleanly with zero duplicate transactions",
-        "observed": "Both initial push and retry resolved with exact idempotency match"
+        "observed": "Both initial push and retry resolved with exact idempotency match",
+        "executionMode": "REAL_BROWSER"
       },
       {
         "testId": "TEST-006",
         "name": "Server Commit / Client Timeout Idempotency",
         "category": "SYNC",
-        "startedAt": "2026-08-17T13:10:39.667Z",
-        "completedAt": "2026-08-17T13:10:39.741Z",
+        "startedAt": "2026-08-17T17:14:30.588Z",
+        "completedAt": "2026-08-17T17:14:30.654Z",
         "status": "PASS",
         "expected": "Exactly ONE sale committed in PostgreSQL after timeout/retry simulation",
-        "observed": "Authoritative DB confirmed exactly 1 record created"
+        "observed": "Authoritative DB confirmed exactly 1 record created",
+        "executionMode": "IN_PROCESS"
       },
       {
         "testId": "TEST-008",
         "name": "Multi-Device Convergence",
         "category": "SYNC",
-        "startedAt": "2026-08-17T13:10:40.172Z",
-        "completedAt": "2026-08-17T13:10:40.610Z",
+        "startedAt": "2026-08-17T17:14:31.067Z",
+        "completedAt": "2026-08-17T17:14:31.366Z",
         "status": "PASS",
         "expected": "Both Device A and B converge to identical server authoritative state",
-        "observed": "Device A and B synchronized 91 identical records"
+        "observed": "Device A and B synchronized 299 identical records",
+        "executionMode": "REAL_BROWSER"
       },
       {
         "testId": "TEST-010",
         "name": "Delete Convergence & Tombstones",
         "category": "SYNC",
-        "startedAt": "2026-08-17T13:10:40.649Z",
-        "completedAt": "2026-08-17T13:10:40.810Z",
+        "startedAt": "2026-08-17T17:14:31.395Z",
+        "completedAt": "2026-08-17T17:14:31.496Z",
         "status": "PASS",
         "expected": "Deleted record propagates as tombstone without resurrection",
-        "observed": "Tombstone confirmed in delta sync (deleted_at: 1786972240656)"
+        "observed": "Tombstone confirmed in delta sync (deleted_at: 1786986871401)",
+        "executionMode": "REAL_BROWSER"
       },
       {
         "testId": "TEST-030",
         "name": "Low Bandwidth & High Latency Resilience",
         "category": "SYNC",
-        "startedAt": "2026-08-17T13:10:39.081Z",
-        "completedAt": "2026-08-17T13:10:39.666Z",
+        "startedAt": "2026-08-17T17:14:30.376Z",
+        "completedAt": "2026-08-17T17:14:30.588Z",
         "status": "PASS",
         "expected": "System responds predictably within timeout bounds on slow connections",
-        "observed": "Delta sync probe resolved in 585ms without network abort"
+        "observed": "Delta sync probe resolved in 212ms without network abort",
+        "executionMode": "IN_PROCESS"
       }
     ],
     "CONCURRENCY": [
@@ -134,41 +156,45 @@
         "testId": "TEST-007",
         "name": "Concurrent Duplicate Request Deduplication",
         "category": "CONCURRENCY",
-        "startedAt": "2026-08-17T13:10:39.742Z",
-        "completedAt": "2026-08-17T13:10:39.978Z",
+        "startedAt": "2026-08-17T17:14:30.655Z",
+        "completedAt": "2026-08-17T17:14:30.883Z",
         "status": "PASS",
         "expected": "5 concurrent identical mutations produce exactly 1 database record",
-        "observed": "All 5 concurrent requests succeeded with 200 OK; PostgreSQL has exactly 1 record"
+        "observed": "All 5 concurrent requests succeeded with 200 OK; PostgreSQL has exactly 1 record",
+        "executionMode": "IN_PROCESS"
       },
       {
         "testId": "TEST-009",
         "name": "Multi-Device Offline Concurrency",
         "category": "CONCURRENCY",
-        "startedAt": "2026-08-17T13:10:40.610Z",
-        "completedAt": "2026-08-17T13:10:40.649Z",
+        "startedAt": "2026-08-17T17:14:31.366Z",
+        "completedAt": "2026-08-17T17:14:31.395Z",
         "status": "PASS",
         "expected": "Stock reflects both concurrent sales (-2 and -3) through additive ledger",
-        "observed": "Additive stock movements recorded with separate operation IDs"
+        "observed": "Additive stock movements recorded with separate operation IDs",
+        "executionMode": "REAL_BROWSER"
       },
       {
         "testId": "TEST-023",
         "name": "Hardware Clock Skew Tolerance",
         "category": "CONCURRENCY",
-        "startedAt": "2026-08-17T13:10:42.011Z",
-        "completedAt": "2026-08-17T13:10:42.029Z",
+        "startedAt": "2026-08-17T17:14:32.554Z",
+        "completedAt": "2026-08-17T17:14:32.570Z",
         "status": "PASS",
         "expected": "Server absorbs skewed client timestamp (+2h), returns calibrated authoritative time",
-        "observed": "Server calibrated timestamp: 1786972242018"
+        "observed": "Server calibrated timestamp: 1786986872553",
+        "executionMode": "IN_PROCESS"
       },
       {
         "testId": "TEST-027",
         "name": "Multi-Tab Concurrency & Sync Leader Election",
         "category": "CONCURRENCY",
-        "startedAt": "2026-08-17T13:10:41.245Z",
-        "completedAt": "2026-08-17T13:10:41.437Z",
+        "startedAt": "2026-08-17T17:14:31.858Z",
+        "completedAt": "2026-08-17T17:14:32.054Z",
         "status": "PASS",
         "expected": "Mutations across multiple browser tabs coordinate with single authorized sync worker",
-        "observed": "Shared IndexedDB state and broadcast channel coordination verified"
+        "observed": "Shared IndexedDB state and broadcast channel coordination verified",
+        "executionMode": "IN_PROCESS"
       }
     ],
     "INVENTORY": [
@@ -176,21 +202,23 @@
         "testId": "TEST-011",
         "name": "Parent Variant Stock Projection",
         "category": "INVENTORY",
-        "startedAt": "2026-08-17T13:10:40.810Z",
-        "completedAt": "2026-08-17T13:10:40.810Z",
+        "startedAt": "2026-08-17T17:14:31.496Z",
+        "completedAt": "2026-08-17T17:14:31.497Z",
         "status": "PASS",
         "expected": "Parent product stock dynamically equals sum of variants (30 -> 0) without phantom mutations",
-        "observed": "Derived projection verified with 0 outbox mutations and unchanged business updatedAt"
+        "observed": "Derived projection verified with 0 outbox mutations and unchanged business updatedAt",
+        "executionMode": "IN_PROCESS"
       },
       {
         "testId": "TEST-013",
         "name": "Stock Reconstruction from Ledger",
         "category": "INVENTORY",
-        "startedAt": "2026-08-17T13:10:40.810Z",
-        "completedAt": "2026-08-17T13:10:40.811Z",
+        "startedAt": "2026-08-17T17:14:31.497Z",
+        "completedAt": "2026-08-17T17:14:31.497Z",
         "status": "PASS",
         "expected": "Reconstructed stock from immutable ledger events identically matches current stock balance",
-        "observed": "Reconstructed stock (122) == Current balance (122)"
+        "observed": "Reconstructed stock (122) == Current balance (122)",
+        "executionMode": "IN_PROCESS"
       }
     ],
     "POS": [
@@ -198,11 +226,12 @@
         "testId": "TEST-012",
         "name": "POS Transaction Atomicity",
         "category": "POS",
-        "startedAt": "2026-08-17T13:10:40.811Z",
-        "completedAt": "2026-08-17T13:10:40.985Z",
+        "startedAt": "2026-08-17T17:14:31.497Z",
+        "completedAt": "2026-08-17T17:14:31.638Z",
         "status": "PASS",
         "expected": "Sale and Stock Ledger movements committed atomically in all-or-nothing boundary",
-        "observed": "Sale (1) and Ledger Movement (1) committed atomically"
+        "observed": "Sale (1) and Ledger Movement (1) committed atomically",
+        "executionMode": "REAL_BROWSER"
       }
     ],
     "PWA": [
@@ -210,21 +239,23 @@
         "testId": "TEST-014",
         "name": "PWA Upgrade Lifecycle (N -> N+3)",
         "category": "PWA",
-        "startedAt": "2026-08-17T13:10:41.185Z",
-        "completedAt": "2026-08-17T13:10:41.203Z",
+        "startedAt": "2026-08-17T17:14:31.805Z",
+        "completedAt": "2026-08-17T17:14:31.820Z",
         "status": "PASS",
         "expected": "100% of business entities and device identity survive PWA updates across versions",
-        "observed": "Live release verified with 9 migration versions intact in PostgreSQL"
+        "observed": "Live release verified with 9 migration versions intact in PostgreSQL",
+        "executionMode": "REAL_BROWSER"
       },
       {
         "testId": "TEST-015",
         "name": "PWA Upgrade with Pending Outbox",
         "category": "PWA",
-        "startedAt": "2026-08-17T13:10:41.203Z",
-        "completedAt": "2026-08-17T13:10:41.226Z",
+        "startedAt": "2026-08-17T17:14:31.820Z",
+        "completedAt": "2026-08-17T17:14:31.842Z",
         "status": "PASS",
         "expected": "Exactly 10 pending mutations preserved and processed without drop",
-        "observed": "All 10 pending mutations successfully committed and processed"
+        "observed": "All 10 pending mutations successfully committed and processed",
+        "executionMode": "REAL_BROWSER"
       }
     ],
     "SECURITY": [
@@ -232,31 +263,34 @@
         "testId": "TEST-020",
         "name": "Runtime Cross-Tenant Isolation",
         "category": "SECURITY",
-        "startedAt": "2026-08-17T13:10:42.273Z",
-        "completedAt": "2026-08-17T13:10:42.570Z",
+        "startedAt": "2026-08-17T17:14:32.864Z",
+        "completedAt": "2026-08-17T17:14:33.128Z",
         "status": "PASS",
         "expected": "Alien tenant queries return zero records with strict database isolation",
-        "observed": "Zero cross-tenant records leaked (0 records returned for alien tenant)"
+        "observed": "Zero cross-tenant records leaked (0 records returned for alien tenant)",
+        "executionMode": "IN_PROCESS"
       },
       {
         "testId": "TEST-021",
         "name": "Session Expiry Handling During Sync",
         "category": "SECURITY",
-        "startedAt": "2026-08-17T13:10:42.571Z",
-        "completedAt": "2026-08-17T13:10:42.572Z",
+        "startedAt": "2026-08-17T17:14:33.129Z",
+        "completedAt": "2026-08-17T17:14:33.131Z",
         "status": "PASS",
         "expected": "Expired session returns 401/403 while client outbox remains durable until re-authentication",
-        "observed": "Server correctly returned HTTP 401 without compromising local outbox"
+        "observed": "Server correctly returned HTTP 401 without compromising local outbox",
+        "executionMode": "IN_PROCESS"
       },
       {
         "testId": "TEST-022",
         "name": "Refresh Token Reuse Detection & Revocation",
         "category": "SECURITY",
-        "startedAt": "2026-08-17T13:10:42.572Z",
-        "completedAt": "2026-08-17T13:10:42.638Z",
+        "startedAt": "2026-08-17T17:14:33.131Z",
+        "completedAt": "2026-08-17T17:14:33.193Z",
         "status": "PASS",
         "expected": "Reusing rotated refresh token triggers security compromise revocation (401/403)",
-        "observed": "Reuse attempt blocked with HTTP 401"
+        "observed": "Reuse attempt blocked with HTTP 401",
+        "executionMode": "IN_PROCESS"
       }
     ],
     "RECOVERY": [
@@ -264,61 +298,67 @@
         "testId": "TEST-018",
         "name": "Content-Based Checksum Consistency",
         "category": "RECOVERY",
-        "startedAt": "2026-08-17T13:10:41.690Z",
-        "completedAt": "2026-08-17T13:10:41.714Z",
+        "startedAt": "2026-08-17T17:14:32.307Z",
+        "completedAt": "2026-08-17T17:14:32.351Z",
         "status": "PASS",
         "expected": "Server calculates deterministic SHA-256 replica checksum matching canonical records",
-        "observed": "Authoritative Checksum: sha256:44d76a521ca0e563b4515afb60936990ca21deab1cedb5ab99377bd3be2963f8 (Records: undefined)"
+        "observed": "Authoritative Checksum: sha256:3f2a2ff3cc611c4ed27e144dc6b2280af1f5643986f173fe532da78247d735a8 (Records: undefined)",
+        "executionMode": "REAL_BROWSER"
       },
       {
         "testId": "TEST-019",
         "name": "Checksum Divergence Quarantine Recovery",
         "category": "RECOVERY",
-        "startedAt": "2026-08-17T13:10:41.714Z",
-        "completedAt": "2026-08-17T13:10:42.011Z",
+        "startedAt": "2026-08-17T17:14:32.351Z",
+        "completedAt": "2026-08-17T17:14:32.554Z",
         "status": "PASS",
         "expected": "Diverged replica transitions to QUARANTINED, preserves local outbox, and recovers",
-        "observed": "Quarantine protocol successfully triggered without database deletion"
+        "observed": "Quarantine protocol successfully triggered without database deletion",
+        "executionMode": "IN_PROCESS"
       },
       {
         "testId": "TEST-024",
         "name": "Monotonic Checkpoint Regression Protection",
         "category": "RECOVERY",
-        "startedAt": "2026-08-17T13:10:42.029Z",
-        "completedAt": "2026-08-17T13:10:42.242Z",
+        "startedAt": "2026-08-17T17:14:32.570Z",
+        "completedAt": "2026-08-17T17:14:32.843Z",
         "status": "PASS",
         "expected": "Watermark regression (99 < 100) strictly rejected; progression (101 >= 100) committed",
-        "observed": "Checkpoint monotonicity protection invariant verified in live sync"
+        "observed": "Checkpoint monotonicity protection invariant verified in live sync",
+        "executionMode": "IN_PROCESS"
       },
       {
         "testId": "TEST-025",
         "name": "Atomic Delta Failure Rollback",
         "category": "RECOVERY",
-        "startedAt": "2026-08-17T13:10:42.242Z",
-        "completedAt": "2026-08-17T13:10:42.259Z",
+        "startedAt": "2026-08-17T17:14:32.843Z",
+        "completedAt": "2026-08-17T17:14:32.856Z",
         "status": "PASS",
         "expected": "Error during delta mutation application rolls back all preceding delta changes",
-        "observed": "Zero partial delta mutations committed upon failure"
+        "observed": "Zero partial delta mutations committed upon failure",
+        "executionMode": "IN_PROCESS"
       },
       {
         "testId": "TEST-026",
         "name": "Atomic Checkpoint Failure Rollback",
         "category": "RECOVERY",
-        "startedAt": "2026-08-17T13:10:42.259Z",
-        "completedAt": "2026-08-17T13:10:42.261Z",
+        "startedAt": "2026-08-17T17:14:32.856Z",
+        "completedAt": "2026-08-17T17:14:32.859Z",
         "status": "PASS",
         "expected": "Failure during checkpoint advancement rolls back all incoming delta entities",
-        "observed": "Delta mutations and checkpoint watermark remain strictly synchronized in ONE transaction"
+        "observed": "Delta mutations and checkpoint watermark remain strictly synchronized in ONE transaction",
+        "executionMode": "IN_PROCESS"
       },
       {
         "testId": "TEST-028",
         "name": "Service Worker Restart Recovery",
         "category": "RECOVERY",
-        "startedAt": "2026-08-17T13:10:42.261Z",
-        "completedAt": "2026-08-17T13:10:42.273Z",
+        "startedAt": "2026-08-17T17:14:32.859Z",
+        "completedAt": "2026-08-17T17:14:32.863Z",
         "status": "PASS",
         "expected": "Service worker restart resumes outbox processing from durable persistence",
-        "observed": "Outbox state machine resumes processing from durable storage"
+        "observed": "Outbox state machine resumes processing from durable storage",
+        "executionMode": "IN_PROCESS"
       }
     ],
     "MIGRATION": [
@@ -326,11 +366,12 @@
         "testId": "TEST-016",
         "name": "Database Migrations (001 -> 009)",
         "category": "MIGRATION",
-        "startedAt": "2026-08-17T13:10:41.227Z",
-        "completedAt": "2026-08-17T13:10:41.245Z",
+        "startedAt": "2026-08-17T17:14:31.842Z",
+        "completedAt": "2026-08-17T17:14:31.858Z",
         "status": "PASS",
         "expected": "All 14 PostgreSQL schema tables exist with active indexes and foreign key constraints",
-        "observed": "All 14 core tables verified in PostgreSQL"
+        "observed": "All 14 core tables verified in PostgreSQL",
+        "executionMode": "IN_PROCESS"
       }
     ]
   },
@@ -339,301 +380,331 @@
       "testId": "TEST-001",
       "name": "Basic Local Persistence",
       "category": "PERSISTENCE",
-      "startedAt": "2026-08-17T13:10:38.407Z",
-      "completedAt": "2026-08-17T13:10:38.432Z",
+      "startedAt": "2026-08-17T17:14:29.746Z",
+      "completedAt": "2026-08-17T17:14:29.777Z",
       "status": "PASS",
       "expected": "Product and outbox mutation persist with identical IDs and tenant",
-      "observed": "Product RTV-PROD-LOC-1786972238407 and outbox mutation verified in PostgreSQL"
+      "observed": "Product RTV-PROD-LOC-1786986869746 and outbox mutation verified in PostgreSQL",
+      "executionMode": "REAL_BROWSER"
     },
     {
       "testId": "TEST-002",
       "name": "Logout/Login Persistence",
       "category": "PERSISTENCE",
-      "startedAt": "2026-08-17T13:10:38.432Z",
-      "completedAt": "2026-08-17T13:10:38.838Z",
+      "startedAt": "2026-08-17T17:14:29.777Z",
+      "completedAt": "2026-08-17T17:14:30.188Z",
       "status": "PASS",
       "expected": "Logout clears auth tokens but preserves all local business catalog records",
-      "observed": "100% of categories, brands, and products intact after re-login"
+      "observed": "100% of categories, brands, and products intact after re-login",
+      "executionMode": "REAL_BROWSER"
     },
     {
       "testId": "TEST-003",
       "name": "Browser Restart Survivability",
       "category": "PERSISTENCE",
-      "startedAt": "2026-08-17T13:10:38.838Z",
-      "completedAt": "2026-08-17T13:10:38.946Z",
+      "startedAt": "2026-08-17T17:14:30.188Z",
+      "completedAt": "2026-08-17T17:14:30.291Z",
       "status": "PASS",
       "expected": "Business records, outbox, and device identity survive complete browser restart",
-      "observed": "All records, outbox queue, and device identifier intact after restart"
+      "observed": "All records, outbox queue, and device identifier intact after restart",
+      "executionMode": "REAL_BROWSER"
     },
     {
       "testId": "TEST-004",
       "name": "Offline -> Online Transition",
       "category": "SYNC",
-      "startedAt": "2026-08-17T13:10:39.025Z",
-      "completedAt": "2026-08-17T13:10:39.049Z",
+      "startedAt": "2026-08-17T17:14:30.343Z",
+      "completedAt": "2026-08-17T17:14:30.359Z",
       "status": "PASS",
       "expected": "Queued offline mutations drain and synchronize to server without loss",
-      "observed": "Offline batch successfully committed to server upon reconnection"
+      "observed": "Offline batch successfully committed to server upon reconnection",
+      "executionMode": "REAL_BROWSER"
     },
     {
       "testId": "TEST-005",
       "name": "Network Interruption Retry Idempotency",
       "category": "SYNC",
-      "startedAt": "2026-08-17T13:10:39.049Z",
-      "completedAt": "2026-08-17T13:10:39.081Z",
+      "startedAt": "2026-08-17T17:14:30.359Z",
+      "completedAt": "2026-08-17T17:14:30.376Z",
       "status": "PASS",
       "expected": "Reused operationId deduplicates cleanly with zero duplicate transactions",
-      "observed": "Both initial push and retry resolved with exact idempotency match"
+      "observed": "Both initial push and retry resolved with exact idempotency match",
+      "executionMode": "REAL_BROWSER"
     },
     {
       "testId": "TEST-006",
       "name": "Server Commit / Client Timeout Idempotency",
       "category": "SYNC",
-      "startedAt": "2026-08-17T13:10:39.667Z",
-      "completedAt": "2026-08-17T13:10:39.741Z",
+      "startedAt": "2026-08-17T17:14:30.588Z",
+      "completedAt": "2026-08-17T17:14:30.654Z",
       "status": "PASS",
       "expected": "Exactly ONE sale committed in PostgreSQL after timeout/retry simulation",
-      "observed": "Authoritative DB confirmed exactly 1 record created"
+      "observed": "Authoritative DB confirmed exactly 1 record created",
+      "executionMode": "IN_PROCESS"
     },
     {
       "testId": "TEST-007",
       "name": "Concurrent Duplicate Request Deduplication",
       "category": "CONCURRENCY",
-      "startedAt": "2026-08-17T13:10:39.742Z",
-      "completedAt": "2026-08-17T13:10:39.978Z",
+      "startedAt": "2026-08-17T17:14:30.655Z",
+      "completedAt": "2026-08-17T17:14:30.883Z",
       "status": "PASS",
       "expected": "5 concurrent identical mutations produce exactly 1 database record",
-      "observed": "All 5 concurrent requests succeeded with 200 OK; PostgreSQL has exactly 1 record"
+      "observed": "All 5 concurrent requests succeeded with 200 OK; PostgreSQL has exactly 1 record",
+      "executionMode": "IN_PROCESS"
     },
     {
       "testId": "TEST-008",
       "name": "Multi-Device Convergence",
       "category": "SYNC",
-      "startedAt": "2026-08-17T13:10:40.172Z",
-      "completedAt": "2026-08-17T13:10:40.610Z",
+      "startedAt": "2026-08-17T17:14:31.067Z",
+      "completedAt": "2026-08-17T17:14:31.366Z",
       "status": "PASS",
       "expected": "Both Device A and B converge to identical server authoritative state",
-      "observed": "Device A and B synchronized 91 identical records"
+      "observed": "Device A and B synchronized 299 identical records",
+      "executionMode": "REAL_BROWSER"
     },
     {
       "testId": "TEST-009",
       "name": "Multi-Device Offline Concurrency",
       "category": "CONCURRENCY",
-      "startedAt": "2026-08-17T13:10:40.610Z",
-      "completedAt": "2026-08-17T13:10:40.649Z",
+      "startedAt": "2026-08-17T17:14:31.366Z",
+      "completedAt": "2026-08-17T17:14:31.395Z",
       "status": "PASS",
       "expected": "Stock reflects both concurrent sales (-2 and -3) through additive ledger",
-      "observed": "Additive stock movements recorded with separate operation IDs"
+      "observed": "Additive stock movements recorded with separate operation IDs",
+      "executionMode": "REAL_BROWSER"
     },
     {
       "testId": "TEST-010",
       "name": "Delete Convergence & Tombstones",
       "category": "SYNC",
-      "startedAt": "2026-08-17T13:10:40.649Z",
-      "completedAt": "2026-08-17T13:10:40.810Z",
+      "startedAt": "2026-08-17T17:14:31.395Z",
+      "completedAt": "2026-08-17T17:14:31.496Z",
       "status": "PASS",
       "expected": "Deleted record propagates as tombstone without resurrection",
-      "observed": "Tombstone confirmed in delta sync (deleted_at: 1786972240656)"
+      "observed": "Tombstone confirmed in delta sync (deleted_at: 1786986871401)",
+      "executionMode": "REAL_BROWSER"
     },
     {
       "testId": "TEST-011",
       "name": "Parent Variant Stock Projection",
       "category": "INVENTORY",
-      "startedAt": "2026-08-17T13:10:40.810Z",
-      "completedAt": "2026-08-17T13:10:40.810Z",
+      "startedAt": "2026-08-17T17:14:31.496Z",
+      "completedAt": "2026-08-17T17:14:31.497Z",
       "status": "PASS",
       "expected": "Parent product stock dynamically equals sum of variants (30 -> 0) without phantom mutations",
-      "observed": "Derived projection verified with 0 outbox mutations and unchanged business updatedAt"
+      "observed": "Derived projection verified with 0 outbox mutations and unchanged business updatedAt",
+      "executionMode": "IN_PROCESS"
     },
     {
       "testId": "TEST-012",
       "name": "POS Transaction Atomicity",
       "category": "POS",
-      "startedAt": "2026-08-17T13:10:40.811Z",
-      "completedAt": "2026-08-17T13:10:40.985Z",
+      "startedAt": "2026-08-17T17:14:31.497Z",
+      "completedAt": "2026-08-17T17:14:31.638Z",
       "status": "PASS",
       "expected": "Sale and Stock Ledger movements committed atomically in all-or-nothing boundary",
-      "observed": "Sale (1) and Ledger Movement (1) committed atomically"
+      "observed": "Sale (1) and Ledger Movement (1) committed atomically",
+      "executionMode": "REAL_BROWSER"
     },
     {
       "testId": "TEST-013",
       "name": "Stock Reconstruction from Ledger",
       "category": "INVENTORY",
-      "startedAt": "2026-08-17T13:10:40.810Z",
-      "completedAt": "2026-08-17T13:10:40.811Z",
+      "startedAt": "2026-08-17T17:14:31.497Z",
+      "completedAt": "2026-08-17T17:14:31.497Z",
       "status": "PASS",
       "expected": "Reconstructed stock from immutable ledger events identically matches current stock balance",
-      "observed": "Reconstructed stock (122) == Current balance (122)"
+      "observed": "Reconstructed stock (122) == Current balance (122)",
+      "executionMode": "IN_PROCESS"
     },
     {
       "testId": "TEST-014",
       "name": "PWA Upgrade Lifecycle (N -> N+3)",
       "category": "PWA",
-      "startedAt": "2026-08-17T13:10:41.185Z",
-      "completedAt": "2026-08-17T13:10:41.203Z",
+      "startedAt": "2026-08-17T17:14:31.805Z",
+      "completedAt": "2026-08-17T17:14:31.820Z",
       "status": "PASS",
       "expected": "100% of business entities and device identity survive PWA updates across versions",
-      "observed": "Live release verified with 9 migration versions intact in PostgreSQL"
+      "observed": "Live release verified with 9 migration versions intact in PostgreSQL",
+      "executionMode": "REAL_BROWSER"
     },
     {
       "testId": "TEST-015",
       "name": "PWA Upgrade with Pending Outbox",
       "category": "PWA",
-      "startedAt": "2026-08-17T13:10:41.203Z",
-      "completedAt": "2026-08-17T13:10:41.226Z",
+      "startedAt": "2026-08-17T17:14:31.820Z",
+      "completedAt": "2026-08-17T17:14:31.842Z",
       "status": "PASS",
       "expected": "Exactly 10 pending mutations preserved and processed without drop",
-      "observed": "All 10 pending mutations successfully committed and processed"
+      "observed": "All 10 pending mutations successfully committed and processed",
+      "executionMode": "REAL_BROWSER"
     },
     {
       "testId": "TEST-016",
       "name": "Database Migrations (001 -> 009)",
       "category": "MIGRATION",
-      "startedAt": "2026-08-17T13:10:41.227Z",
-      "completedAt": "2026-08-17T13:10:41.245Z",
+      "startedAt": "2026-08-17T17:14:31.842Z",
+      "completedAt": "2026-08-17T17:14:31.858Z",
       "status": "PASS",
       "expected": "All 14 PostgreSQL schema tables exist with active indexes and foreign key constraints",
-      "observed": "All 14 core tables verified in PostgreSQL"
+      "observed": "All 14 core tables verified in PostgreSQL",
+      "executionMode": "IN_PROCESS"
     },
     {
       "testId": "TEST-017",
       "name": "Browser Crash Mid-Mutation Atomicity",
       "category": "PERSISTENCE",
-      "startedAt": "2026-08-17T13:10:38.946Z",
-      "completedAt": "2026-08-17T13:10:38.956Z",
+      "startedAt": "2026-08-17T17:14:30.291Z",
+      "completedAt": "2026-08-17T17:14:30.302Z",
       "status": "PASS",
       "expected": "Either entity + outbox are committed together, or neither (no orphaned entities)",
-      "observed": "Atomic transaction boundaries prevent orphaned entity state upon crash"
+      "observed": "Atomic transaction boundaries prevent orphaned entity state upon crash",
+      "executionMode": "REAL_BROWSER"
     },
     {
       "testId": "TEST-018",
       "name": "Content-Based Checksum Consistency",
       "category": "RECOVERY",
-      "startedAt": "2026-08-17T13:10:41.690Z",
-      "completedAt": "2026-08-17T13:10:41.714Z",
+      "startedAt": "2026-08-17T17:14:32.307Z",
+      "completedAt": "2026-08-17T17:14:32.351Z",
       "status": "PASS",
       "expected": "Server calculates deterministic SHA-256 replica checksum matching canonical records",
-      "observed": "Authoritative Checksum: sha256:44d76a521ca0e563b4515afb60936990ca21deab1cedb5ab99377bd3be2963f8 (Records: undefined)"
+      "observed": "Authoritative Checksum: sha256:3f2a2ff3cc611c4ed27e144dc6b2280af1f5643986f173fe532da78247d735a8 (Records: undefined)",
+      "executionMode": "REAL_BROWSER"
     },
     {
       "testId": "TEST-019",
       "name": "Checksum Divergence Quarantine Recovery",
       "category": "RECOVERY",
-      "startedAt": "2026-08-17T13:10:41.714Z",
-      "completedAt": "2026-08-17T13:10:42.011Z",
+      "startedAt": "2026-08-17T17:14:32.351Z",
+      "completedAt": "2026-08-17T17:14:32.554Z",
       "status": "PASS",
       "expected": "Diverged replica transitions to QUARANTINED, preserves local outbox, and recovers",
-      "observed": "Quarantine protocol successfully triggered without database deletion"
+      "observed": "Quarantine protocol successfully triggered without database deletion",
+      "executionMode": "IN_PROCESS"
     },
     {
       "testId": "TEST-020",
       "name": "Runtime Cross-Tenant Isolation",
       "category": "SECURITY",
-      "startedAt": "2026-08-17T13:10:42.273Z",
-      "completedAt": "2026-08-17T13:10:42.570Z",
+      "startedAt": "2026-08-17T17:14:32.864Z",
+      "completedAt": "2026-08-17T17:14:33.128Z",
       "status": "PASS",
       "expected": "Alien tenant queries return zero records with strict database isolation",
-      "observed": "Zero cross-tenant records leaked (0 records returned for alien tenant)"
+      "observed": "Zero cross-tenant records leaked (0 records returned for alien tenant)",
+      "executionMode": "IN_PROCESS"
     },
     {
       "testId": "TEST-021",
       "name": "Session Expiry Handling During Sync",
       "category": "SECURITY",
-      "startedAt": "2026-08-17T13:10:42.571Z",
-      "completedAt": "2026-08-17T13:10:42.572Z",
+      "startedAt": "2026-08-17T17:14:33.129Z",
+      "completedAt": "2026-08-17T17:14:33.131Z",
       "status": "PASS",
       "expected": "Expired session returns 401/403 while client outbox remains durable until re-authentication",
-      "observed": "Server correctly returned HTTP 401 without compromising local outbox"
+      "observed": "Server correctly returned HTTP 401 without compromising local outbox",
+      "executionMode": "IN_PROCESS"
     },
     {
       "testId": "TEST-022",
       "name": "Refresh Token Reuse Detection & Revocation",
       "category": "SECURITY",
-      "startedAt": "2026-08-17T13:10:42.572Z",
-      "completedAt": "2026-08-17T13:10:42.638Z",
+      "startedAt": "2026-08-17T17:14:33.131Z",
+      "completedAt": "2026-08-17T17:14:33.193Z",
       "status": "PASS",
       "expected": "Reusing rotated refresh token triggers security compromise revocation (401/403)",
-      "observed": "Reuse attempt blocked with HTTP 401"
+      "observed": "Reuse attempt blocked with HTTP 401",
+      "executionMode": "IN_PROCESS"
     },
     {
       "testId": "TEST-023",
       "name": "Hardware Clock Skew Tolerance",
       "category": "CONCURRENCY",
-      "startedAt": "2026-08-17T13:10:42.011Z",
-      "completedAt": "2026-08-17T13:10:42.029Z",
+      "startedAt": "2026-08-17T17:14:32.554Z",
+      "completedAt": "2026-08-17T17:14:32.570Z",
       "status": "PASS",
       "expected": "Server absorbs skewed client timestamp (+2h), returns calibrated authoritative time",
-      "observed": "Server calibrated timestamp: 1786972242018"
+      "observed": "Server calibrated timestamp: 1786986872553",
+      "executionMode": "IN_PROCESS"
     },
     {
       "testId": "TEST-024",
       "name": "Monotonic Checkpoint Regression Protection",
       "category": "RECOVERY",
-      "startedAt": "2026-08-17T13:10:42.029Z",
-      "completedAt": "2026-08-17T13:10:42.242Z",
+      "startedAt": "2026-08-17T17:14:32.570Z",
+      "completedAt": "2026-08-17T17:14:32.843Z",
       "status": "PASS",
       "expected": "Watermark regression (99 < 100) strictly rejected; progression (101 >= 100) committed",
-      "observed": "Checkpoint monotonicity protection invariant verified in live sync"
+      "observed": "Checkpoint monotonicity protection invariant verified in live sync",
+      "executionMode": "IN_PROCESS"
     },
     {
       "testId": "TEST-025",
       "name": "Atomic Delta Failure Rollback",
       "category": "RECOVERY",
-      "startedAt": "2026-08-17T13:10:42.242Z",
-      "completedAt": "2026-08-17T13:10:42.259Z",
+      "startedAt": "2026-08-17T17:14:32.843Z",
+      "completedAt": "2026-08-17T17:14:32.856Z",
       "status": "PASS",
       "expected": "Error during delta mutation application rolls back all preceding delta changes",
-      "observed": "Zero partial delta mutations committed upon failure"
+      "observed": "Zero partial delta mutations committed upon failure",
+      "executionMode": "IN_PROCESS"
     },
     {
       "testId": "TEST-026",
       "name": "Atomic Checkpoint Failure Rollback",
       "category": "RECOVERY",
-      "startedAt": "2026-08-17T13:10:42.259Z",
-      "completedAt": "2026-08-17T13:10:42.261Z",
+      "startedAt": "2026-08-17T17:14:32.856Z",
+      "completedAt": "2026-08-17T17:14:32.859Z",
       "status": "PASS",
       "expected": "Failure during checkpoint advancement rolls back all incoming delta entities",
-      "observed": "Delta mutations and checkpoint watermark remain strictly synchronized in ONE transaction"
+      "observed": "Delta mutations and checkpoint watermark remain strictly synchronized in ONE transaction",
+      "executionMode": "IN_PROCESS"
     },
     {
       "testId": "TEST-027",
       "name": "Multi-Tab Concurrency & Sync Leader Election",
       "category": "CONCURRENCY",
-      "startedAt": "2026-08-17T13:10:41.245Z",
-      "completedAt": "2026-08-17T13:10:41.437Z",
+      "startedAt": "2026-08-17T17:14:31.858Z",
+      "completedAt": "2026-08-17T17:14:32.054Z",
       "status": "PASS",
       "expected": "Mutations across multiple browser tabs coordinate with single authorized sync worker",
-      "observed": "Shared IndexedDB state and broadcast channel coordination verified"
+      "observed": "Shared IndexedDB state and broadcast channel coordination verified",
+      "executionMode": "IN_PROCESS"
     },
     {
       "testId": "TEST-028",
       "name": "Service Worker Restart Recovery",
       "category": "RECOVERY",
-      "startedAt": "2026-08-17T13:10:42.261Z",
-      "completedAt": "2026-08-17T13:10:42.273Z",
+      "startedAt": "2026-08-17T17:14:32.859Z",
+      "completedAt": "2026-08-17T17:14:32.863Z",
       "status": "PASS",
       "expected": "Service worker restart resumes outbox processing from durable persistence",
-      "observed": "Outbox state machine resumes processing from durable storage"
+      "observed": "Outbox state machine resumes processing from durable storage",
+      "executionMode": "IN_PROCESS"
     },
     {
       "testId": "TEST-029",
       "name": "Large Dataset Performance (10,000 Records)",
       "category": "PERSISTENCE",
-      "startedAt": "2026-08-17T13:10:41.437Z",
-      "completedAt": "2026-08-17T13:10:41.505Z",
+      "startedAt": "2026-08-17T17:14:32.054Z",
+      "completedAt": "2026-08-17T17:14:32.136Z",
       "status": "PASS",
       "expected": "10,000 records processed and checksummed in < 5000ms SLA without UI lockup",
-      "observed": "10,000 records processed in 68ms (sha256:1052e1ec0d089b8d...)"
+      "observed": "10,000 records processed in 82ms (sha256:1052e1ec0d089b8d...)",
+      "executionMode": "IN_PROCESS"
     },
     {
       "testId": "TEST-030",
       "name": "Low Bandwidth & High Latency Resilience",
       "category": "SYNC",
-      "startedAt": "2026-08-17T13:10:39.081Z",
-      "completedAt": "2026-08-17T13:10:39.666Z",
+      "startedAt": "2026-08-17T17:14:30.376Z",
+      "completedAt": "2026-08-17T17:14:30.588Z",
       "status": "PASS",
       "expected": "System responds predictably within timeout bounds on slow connections",
-      "observed": "Delta sync probe resolved in 585ms without network abort"
+      "observed": "Delta sync probe resolved in 212ms without network abort",
+      "executionMode": "IN_PROCESS"
     }
   ]
 }

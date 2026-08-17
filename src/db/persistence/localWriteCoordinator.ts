@@ -77,6 +77,10 @@ export const localWriteCoordinator = {
         await table.put(recordToSave);
       }
 
+      if (typeof window !== 'undefined' && (window as any).__E2E_FAIL_AFTER_ENTITY_WRITE) {
+        throw new Error('E2E Controlled Failure Injection After Entity Write');
+      }
+
       await outboxRepository.enqueueMutation(outboxRecord, tx);
     });
 

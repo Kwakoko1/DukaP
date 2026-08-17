@@ -2862,6 +2862,9 @@ class DukaPosDatabase extends Dexie {
 
 
 export const db = new DukaPosDatabase();
+if (typeof window !== 'undefined') {
+  (window as any).db = db;
+}
 
 // ─── Deep Write Pipeline ──────────────────────────────────────────────────────
 /**

@@ -29,7 +29,9 @@
     "production:verify": "node scripts/db-health-check.js && npm run test:all",
     "test:runtime": "node scripts/production-runtime-validation/test-full-production-certification.js",
     "test:runtime:critical": "node scripts/production-runtime-validation/test-full-production-certification.js --critical-only",
-    "production:certify": "npm run production:verify && npm run test:runtime"
+    "test:browser-runtime": "playwright test",
+    "test:browser-runtime:critical": "playwright test tests/browser-runtime --grep @critical",
+    "production:certify": "npm run production:verify && npm run test:browser-runtime && npm run test:runtime"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",
@@ -48,6 +50,7 @@
     "recharts": "^3.9.2"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@types/node": "^24.13.2",
     "@types/pg": "^8.20.3",
     "@types/react": "^19.2.17",
