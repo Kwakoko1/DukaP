@@ -3,12 +3,12 @@
 - **Product**: KwakoPos
 - **Release Version**: 1.2.0
 - **Build Number**: 358
-- **Git SHA**: `559a0d65ab1c81e716ab09102fb1f64a80d00863`
+- **Git SHA**: `7aa660ad8ec6ee69dd39023534f0a9894feb54e1`
 - **Git Branch**: `main`
 - **Schema Version**: 41
-- **Artifact SHA256**: `fdc4752bec45cd29923083e43d2a453ee899410d7431a9f13e1cf7cee03c0080`
+- **Artifact SHA256**: `32d98474acf10b4c42f563030eba02c5034301d240bb53c85519f24c148c62db`
 - **Environment**: production
-- **Certification Timestamp**: 2026-08-17T20:12:38.348Z
+- **Certification Timestamp**: 2026-08-17T20:26:27.379Z
 - **FINAL STATUS**: **✅ CERTIFIED**
 
 ---
@@ -17,12 +17,12 @@
 
 | Gate Name | Status | Duration |
 | :--- | :--- | :--- |
-| `01_release_manifest` | ✅ PASS | 214ms |
-| `02_architecture_guard_audit` | ✅ PASS | 226ms |
-| `03_production_preflight_identity` | ✅ PASS | 127ms |
-| `04_production_smoke_suite` | ✅ PASS | 10529ms |
-| `05_rollback_recovery_drill` | ✅ PASS | 1365ms |
-| `06_production_browser_e2e_playwright` | ✅ PASS | 66876ms |
+| `01_release_manifest` | ✅ PASS | 229ms |
+| `02_architecture_guard_audit` | ✅ PASS | 265ms |
+| `03_production_preflight_identity` | ✅ PASS | 143ms |
+| `04_production_smoke_suite` | ✅ PASS | 10666ms |
+| `05_rollback_recovery_drill` | ✅ PASS | 818ms |
+| `06_production_browser_e2e_playwright` | ✅ PASS | 61643ms |
 
 ---
 
