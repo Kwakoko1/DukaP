@@ -594,6 +594,20 @@ const server = http.createServer(async (req, res) => {
         tenantId = tenantId.split(',')[0].trim();
       }
 
+      // Auth Guard for Bearer tokens
+      const authHeader = req.headers.authorization || req.headers.Authorization;
+      if (authHeader && authHeader.startsWith('Bearer ') && !pathname.startsWith('/api/auth/login') && !pathname.startsWith('/api/auth/register')) {
+        const tokenStr = authHeader.substring(7).trim();
+        if (tokenStr) {
+          const verified = verifyJwt(tokenStr, JWT_SECRET);
+          if (!verified) {
+            res.writeHead(401, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: false, code: 'AUTH_REQUIRED', error: 'Invalid or expired authentication token' }));
+            return;
+          }
+        }
+      }
+
       // Server-Side Mutation Guard: Reject sync & mutation payloads for archived/deleted tenants
       const isMutationMethod = req.method === 'POST' || req.method === 'PUT' || req.method === 'DELETE';
       const isSuperAdminAction = pathname.startsWith('/api/superadmin/') || pathname === '/api/tenants/all';
@@ -2818,8 +2832,8 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
-      // 17. GET /api/sync & /api/sync/pull (Master Incremental Sync from Neon PostgreSQL)
-      if ((pathname === '/api/sync' || pathname === '/api/sync/pull') && req.method === 'GET') {
+      // 17. GET /api/sync & /api/sync/pull & /api/sync/delta (Master Incremental Sync from Neon PostgreSQL)
+      if ((pathname === '/api/sync' || pathname === '/api/sync/pull' || pathname === '/api/sync/delta') && req.method === 'GET') {
         const since = parseInt(fullUrl.searchParams.get('since') || '0', 10);
         const sinceVersion = parseInt(fullUrl.searchParams.get('sinceVersion') || '0', 10);
         const targetTenant = tenantId || fullUrl.searchParams.get('tenantId') || 'tenant-101';
@@ -2907,7 +2921,7 @@ const server = http.createServer(async (req, res) => {
           return;
         }
         const body = await parseRequestBody(req);
-        const operations = body.operations || [];
+        const operations = body.operations || body.mutations || [];
         const deviceId = req.headers['x-device-id'] || body.deviceId || 'WEB-CLIENT';
         const now = Date.now();
         const processedIds = [];
@@ -2942,8 +2956,16 @@ const server = http.createServer(async (req, res) => {
           }
 
           if (entity === 'products' || entity === 'product') {
-            if (action === 'DELETE' || payload.deleted) {
-              await sql`UPDATE products SET deleted = true, deleted_at = ${now}, updated_at = ${now}, version = COALESCE(version, 1) + 1 WHERE id = ${recordId}`;
+            if (action === 'DELETE' || payload.deleted || payload.deleted_at) {
+              await sql`
+                INSERT INTO products (id, tenant_id, branch_id, name, status, deleted_at, updated_at, version)
+                VALUES (${recordId}, ${opTenant}, ${payload.branch_id || ''}, ${payload.name || 'Product'}, 'Inactive', ${payload.deleted_at || now}, ${now}, ${payload.version || 1})
+                ON CONFLICT (id) DO UPDATE SET
+                  status = 'Inactive',
+                  deleted_at = COALESCE(EXCLUDED.deleted_at, ${now}),
+                  updated_at = ${now},
+                  version = products.version + 1;
+              `;
             } else {
               await sql`
                 INSERT INTO products (id, tenant_id, branch_id, name, category, category_id, brand, brand_id, sku, barcode, buying_price, selling_price, price, cost_price, stock, module, has_variants, origin, status, created_at, updated_at, version)
@@ -3114,14 +3136,33 @@ const server = http.createServer(async (req, res) => {
             }
 
             processedIds.push(op.id || recordId);
-          } else if (entity === 'orders') {
+          } else if (entity === 'orders' || entity === 'sales' || entity === 'sale') {
+            const rawTotal = Number(payload.total_amount || payload.total || 0);
             await sql`
-              INSERT INTO orders (id, tenant_id, branch_id, total, status, payment_method, created_at, updated_at)
-              VALUES (${recordId}, ${opTenant}, ${payload.branch_id || ''}, ${payload.total || 0}, ${payload.status || 'Completed'}, ${payload.paymentMethod || payload.payment_method || 'Cash'}, ${payload.timestamp || payload.created_at || now}, ${now})
+              INSERT INTO sales (id, tenant_id, branch_id, customer_id, total_amount, payment_method, payment_status, items, created_at, updated_at)
+              VALUES (${recordId}, ${opTenant}, ${payload.branch_id || null}, ${payload.customer_id || null}, ${rawTotal}, ${payload.payment_method || payload.paymentMethod || 'Cash'}, ${payload.payment_status || 'PAID'}, ${JSON.stringify(payload.items || [])}::jsonb, ${payload.created_at || now}, ${now})
               ON CONFLICT (id) DO UPDATE SET
-                status = EXCLUDED.status,
+                total_amount = EXCLUDED.total_amount,
+                payment_status = EXCLUDED.payment_status,
                 updated_at = ${now};
-            `.catch(() => {});
+            `.catch((err) => console.error('[Sync Push] sales insert error:', err.message));
+            await sql`
+              INSERT INTO orders (id, tenant_id, branch_id, customer_id, total_amount, payment_method, status, created_at)
+              VALUES (${recordId}, ${opTenant}, ${payload.branch_id || ''}, ${payload.customer_id || null}, ${rawTotal}, ${payload.paymentMethod || payload.payment_method || 'Cash'}, ${payload.status || 'Completed'}, ${payload.timestamp || payload.created_at || now})
+              ON CONFLICT (id) DO UPDATE SET
+                total_amount = EXCLUDED.total_amount,
+                status = EXCLUDED.status;
+            `.catch((err) => console.error('[Sync Push] orders insert error:', err.message));
+            processedIds.push(op.id || recordId);
+          } else if (entity === 'customers' || entity === 'customer') {
+            await sql`
+              INSERT INTO customers (id, tenant_id, name, phone, email, created_at)
+              VALUES (${recordId}, ${opTenant}, ${payload.name || 'Customer'}, ${payload.phone || null}, ${payload.email || null}, ${payload.created_at || now})
+              ON CONFLICT (id) DO UPDATE SET
+                name = EXCLUDED.name,
+                phone = EXCLUDED.phone,
+                email = EXCLUDED.email;
+            `.catch((err) => console.error('[Sync Push] customers insert error:', err.message));
             processedIds.push(op.id || recordId);
           } else if (entity === 'receipts') {
             await sql`

@@ -26,7 +26,10 @@
     "db:migrate": "node scripts/migrate.js",
     "db:setup": "node scripts/setup-local-postgres.js",
     "db:check": "node scripts/db-health-check.js",
-    "production:verify": "node scripts/db-health-check.js && npm run test:all"
+    "production:verify": "node scripts/db-health-check.js && npm run test:all",
+    "test:runtime": "node scripts/production-runtime-validation/test-full-production-certification.js",
+    "test:runtime:critical": "node scripts/production-runtime-validation/test-full-production-certification.js --critical-only",
+    "production:certify": "npm run production:verify && npm run test:runtime"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",
