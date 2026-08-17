@@ -2,7 +2,7 @@
  * KwakoPos — Durable Outbox Sync Queue Repository
  * 
  * Manages local mutation queuing, idempotency checks, retry tracking,
- * and state transitions (PENDING -> PROCESSING -> SYNCED / FAILED).
+ * and state transitions (PENDING -> PROCESSING -> SYNCED / FAILED / CONFLICT / DEAD_LETTER).
  */
 
 import { db } from '../dexie';
@@ -39,11 +39,24 @@ export const outboxRepository = {
     }
   },
 
-  async markMutationSynced(id: string): Promise<void> {
+  async markMutationProcessing(id: string | number): Promise<void> {
     try {
-      const rec = (await db.syncQueue.get(id)) as any;
+      const rec = (await db.syncQueue.get(id as any)) as any;
       if (rec) {
-        rec.status = 'Synced';
+        rec.status = 'PROCESSING';
+        rec.last_attempt = Date.now();
+        await db.syncQueue.put(rec);
+      }
+    } catch (err) {
+      console.warn('[OutboxRepository] markMutationProcessing warning:', err);
+    }
+  },
+
+  async markMutationSynced(id: string | number): Promise<void> {
+    try {
+      const rec = (await db.syncQueue.get(id as any)) as any;
+      if (rec) {
+        rec.status = 'SYNCED';
         await db.syncQueue.put(rec);
       }
     } catch (err) {
@@ -51,18 +64,51 @@ export const outboxRepository = {
     }
   },
 
-  async markMutationFailed(id: string, errorMsg: string): Promise<void> {
+  async markMutationFailed(id: string | number, errorMsg: string): Promise<void> {
     try {
-      const rec = (await db.syncQueue.get(id)) as any;
+      const rec = (await db.syncQueue.get(id as any)) as any;
       if (rec) {
-        rec.status = 'Failed';
-        rec.last_error = errorMsg;
-        rec.retry_count = (rec.retry_count || 0) + 1;
+        const nextRetry = (rec.retry_count || rec.retryCount || 0) + 1;
+        rec.retry_count = nextRetry;
+        rec.retryCount = nextRetry;
         rec.last_attempt = Date.now();
+        rec.last_error = errorMsg;
+        rec.lastError = errorMsg;
+        rec.error = errorMsg;
+        // If retried more than 10 times with persistent error, transition to DEAD_LETTER
+        rec.status = nextRetry > 10 ? 'DEAD_LETTER' : 'FAILED';
         await db.syncQueue.put(rec);
       }
     } catch (err) {
       console.warn('[OutboxRepository] markMutationFailed warning:', err);
+    }
+  },
+
+  async markMutationConflict(id: string | number, conflictDetail: string): Promise<void> {
+    try {
+      const rec = (await db.syncQueue.get(id as any)) as any;
+      if (rec) {
+        rec.status = 'CONFLICT';
+        rec.last_error = conflictDetail;
+        rec.last_attempt = Date.now();
+        await db.syncQueue.put(rec);
+      }
+    } catch (err) {
+      console.warn('[OutboxRepository] markMutationConflict warning:', err);
+    }
+  },
+
+  async markMutationDeadLetter(id: string | number, reason: string): Promise<void> {
+    try {
+      const rec = (await db.syncQueue.get(id as any)) as any;
+      if (rec) {
+        rec.status = 'DEAD_LETTER';
+        rec.last_error = reason;
+        rec.last_attempt = Date.now();
+        await db.syncQueue.put(rec);
+      }
+    } catch (err) {
+      console.warn('[OutboxRepository] markMutationDeadLetter warning:', err);
     }
   },
 

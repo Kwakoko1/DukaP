@@ -8,43 +8,51 @@
 import { db } from '../dexie';
 import { outboxRepository } from '../sync/outboxRepository';
 import type { SyncOutboxRecord } from '../database/schema';
+import { generateSecureUUID, getOrCreateDeviceId } from '../../services/syncEventGenerator';
+import { hlcEngine } from '../../services/hlcEngine';
 
 export const localWriteCoordinator = {
   /**
    * Performs an atomic IndexedDB transaction containing the business record mutation
-   * AND the durable outbox queue record.
+   * AND the durable outbox queue record conforming to MutationEnvelope.
    */
   async executeAtomicMutation<T extends { id: string }>(
     tableName: string,
     entity: T,
     operation: 'CREATE' | 'UPDATE' | 'DELETE',
     tenantId: string,
-    branchId?: string
+    branchId?: string,
+    userId?: string
   ): Promise<T> {
     if (!db.isOpen()) await db.open();
 
-    let deviceId = 'device-default';
-    try {
-      deviceId = localStorage.getItem('dukapos_device_id') || 'device-default';
-    } catch (_) {}
-
-    const mutationId = `mut_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-    const idempotencyKey = `${deviceId}_${mutationId}`;
+    const deviceId = getOrCreateDeviceId();
+    const mutationId = generateSecureUUID();
+    const operationId = generateSecureUUID();
+    const idempotencyKey = `${deviceId}:${operationId}`;
+    const hlc = hlcEngine.now();
+    const now = Date.now();
 
     const outboxRecord: SyncOutboxRecord = {
-      id: mutationId,
+      id: operationId,
+      mutationId,
+      operationId,
       tenantId,
       branchId: branchId || (entity as any).branch_id || (entity as any).branchId || '',
       deviceId,
+      userId: userId || (entity as any).user_id || 'usr-system',
       entity: tableName,
       entityId: entity.id,
       operation,
       payload: entity,
       clientVersion: (entity as any).version || 1,
-      createdAt: Date.now(),
+      hlc,
+      schemaVersion: 8,
+      createdAt: now,
       status: 'PENDING',
       retryCount: 0,
       idempotencyKey,
+      correlationId: generateSecureUUID(),
     };
 
     await db.transaction('rw', [tableName, 'syncQueue'], async (tx) => {
@@ -52,15 +60,19 @@ export const localWriteCoordinator = {
       if (operation === 'DELETE') {
         const softDeletedEntity = {
           ...entity,
-          deletedAt: Date.now(),
+          deletedAt: now,
+          deleted_at: now,
           syncStatus: 'PENDING',
+          isSynced: 0,
         };
         await table.put(softDeletedEntity);
       } else {
         const recordToSave = {
           ...entity,
           syncStatus: 'PENDING',
-          updatedAt: Date.now(),
+          isSynced: 0,
+          updatedAt: now,
+          updated_at: now,
         };
         await table.put(recordToSave);
       }
@@ -78,44 +90,49 @@ export const localWriteCoordinator = {
     tableName: string,
     items: { entity: T; operation: 'CREATE' | 'UPDATE' | 'DELETE' }[],
     tenantId: string,
-    branchId?: string
+    branchId?: string,
+    userId?: string
   ): Promise<T[]> {
     if (items.length === 0) return [];
     if (!db.isOpen()) await db.open();
 
-    let deviceId = 'device-default';
-    try {
-      deviceId = localStorage.getItem('dukapos_device_id') || 'device-default';
-    } catch (_) {}
-
+    const deviceId = getOrCreateDeviceId();
     const now = Date.now();
     const entitiesToSave: any[] = [];
     const outboxRecords: SyncOutboxRecord[] = [];
 
-    items.forEach(({ entity, operation }, idx) => {
-      const mutationId = `mut_${now}_${idx}_${Math.random().toString(36).substring(2, 6)}`;
-      const idempotencyKey = `${deviceId}_${mutationId}`;
+    items.forEach(({ entity, operation }) => {
+      const mutationId = generateSecureUUID();
+      const operationId = generateSecureUUID();
+      const idempotencyKey = `${deviceId}:${operationId}`;
+      const hlc = hlcEngine.now();
 
       const recToSave = operation === 'DELETE' 
-        ? { ...entity, deletedAt: now, syncStatus: 'PENDING' }
-        : { ...entity, syncStatus: 'PENDING', updatedAt: now };
+        ? { ...entity, deletedAt: now, deleted_at: now, syncStatus: 'PENDING', isSynced: 0 }
+        : { ...entity, syncStatus: 'PENDING', isSynced: 0, updatedAt: now, updated_at: now };
 
       entitiesToSave.push(recToSave);
 
       outboxRecords.push({
-        id: mutationId,
+        id: operationId,
+        mutationId,
+        operationId,
         tenantId,
         branchId: branchId || (entity as any).branch_id || (entity as any).branchId || '',
         deviceId,
+        userId: userId || (entity as any).user_id || 'usr-system',
         entity: tableName,
         entityId: entity.id,
         operation,
         payload: entity,
         clientVersion: (entity as any).version || 1,
+        hlc,
+        schemaVersion: 8,
         createdAt: now,
         status: 'PENDING',
         retryCount: 0,
         idempotencyKey,
+        correlationId: generateSecureUUID(),
       });
     });
 

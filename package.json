@@ -21,7 +21,8 @@
     "test:all": "node scripts/test-session-suite.js && node scripts/test-tenant-isolation.js && node scripts/test-concurrency-suite.js && node scripts/test-data-loss-suite.js && node scripts/test-replica-chaos-suite.js",
     "db:migrate": "node scripts/migrate.js",
     "db:setup": "node scripts/setup-local-postgres.js",
-    "db:check": "node scripts/db-health-check.js"
+    "db:check": "node scripts/db-health-check.js",
+    "production:verify": "node scripts/db-health-check.js && npm run test:all"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",

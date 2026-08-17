@@ -13,6 +13,7 @@ import {
   ProductService, cleanDuplicateVariants, getVariantAttrSig,
   createCategory, deleteCategory, createBrand, isParentProduct
 } from '../../services/productService';
+import { productRepository } from '../../db/repositories/productRepository';
 import { Html5Qrcode } from 'html5-qrcode';
 import {
   getDashboardKPIs, get7DayMovements, generateValuationReport,
@@ -802,7 +803,7 @@ export const Inventory: React.FC = () => {
               syncStatus: 'PENDING',
               updatedAt: Date.now(),
             };
-            await db.products.put(updatedProd);
+            await productRepository.saveProduct(updatedProd);
           } else {
             // INSERT: Create new product
             prodId = typeof crypto !== 'undefined' && crypto.randomUUID
@@ -828,7 +829,7 @@ export const Inventory: React.FC = () => {
               createdAt: Date.now(),
               updatedAt: Date.now(),
             };
-            await db.products.put(newProd);
+            await productRepository.saveProduct(newProd);
             existingProducts.push(newProd);
           }
 

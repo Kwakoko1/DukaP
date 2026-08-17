@@ -1,7 +1,8 @@
 /**
  * KwakoPos — Local Integrity Validator
  * 
- * Verifies foreign-key integrity between parent products and variants, categories, and brands.
+ * Verifies foreign-key integrity between parent products and variants, categories, and brands,
+ * and generates deterministic replica checksums.
  */
 
 import { db } from '../dexie';
@@ -13,6 +14,7 @@ export interface IntegrityCheckSummary {
   unmappedCategories: number;
   unmappedBrands: number;
   checkedAt: number;
+  checksum?: string;
   error?: string;
 }
 
@@ -44,6 +46,8 @@ export const integrityValidator = {
         if (p.brand && !brandNames.has(p.brand.toLowerCase())) unmappedBrands++;
       });
 
+      const checksum = this.calculateChecksumFromData(products, variants, categories, brands);
+
       return {
         passed: orphanedVariants === 0,
         tenantId,
@@ -51,6 +55,7 @@ export const integrityValidator = {
         unmappedCategories,
         unmappedBrands,
         checkedAt: Date.now(),
+        checksum,
       };
     } catch (err: any) {
       return {
@@ -63,6 +68,31 @@ export const integrityValidator = {
         error: err?.message || 'Integrity validation exception'
       };
     }
+  },
+
+  calculateChecksumFromData(products: any[], variants: any[], categories: any[], brands: any[]): string {
+    const rawString = `${products.length}:${variants.length}:${categories.length}:${brands.length}`;
+    let hash = 0;
+    for (let i = 0; i < rawString.length; i++) {
+      const char = rawString.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash |= 0;
+    }
+    return `chk-${Math.abs(hash).toString(16)}-${products.length}`;
+  },
+
+  async calculateTenantChecksum(tenantId: string): Promise<string> {
+    try {
+      if (!db.isOpen()) await db.open();
+      const [prods, vars, cats, brds] = await Promise.all([
+        db.products.where('tenant_id').equals(tenantId).count().catch(() => 0),
+        db.productVariants.where('tenant_id').equals(tenantId).count().catch(() => 0),
+        db.categories.where('tenant_id').equals(tenantId).count().catch(() => 0),
+        db.brands.where('tenant_id').equals(tenantId).count().catch(() => 0),
+      ]);
+      return `chk-${tenantId.slice(0, 6)}-${prods}-${vars}-${cats}-${brds}`;
+    } catch {
+      return 'chk-unknown';
+    }
   }
 };
-

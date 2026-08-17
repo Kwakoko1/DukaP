@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../../../db/dexie';
 import { useAuth } from '../../../context/AuthContext';
+import { productRepository } from '../../../db/repositories/productRepository';
 import {
   Pill, Plus, Search, Download, Edit2, Trash2, Tag,
   Package, AlertTriangle,
@@ -117,7 +118,7 @@ export const MedicinesMaster: React.FC = () => {
       updated_at: now,
     };
     if (editingId) delete product.created_at;
-    await db.products.put(product);
+    await productRepository.saveProduct(product);
     setShowForm(false);
     setEditingId(null);
     setForm(emptyForm());

@@ -8,6 +8,7 @@ import {
   mergeDuplicateCategories, mergeDuplicateBrands,
   reconcileCategoriesAndBrands
 } from '../../services/productService';
+import { localWriteCoordinator } from '../../db/persistence/localWriteCoordinator';
 import {
   Layers, Tag, Package, Search, Plus, Edit, Trash2,
   ChevronRight, Download, Sparkles
@@ -276,13 +277,13 @@ export const CatalogManager: React.FC<CatalogManagerProps> = ({ onOpenProductEdi
         if (oldName !== trimmed) {
           const prods = await db.products.where('tenant_id').equals(currentTenant.id).toArray();
           const categoryProds = prods.filter(p => p.category === oldName);
-          await db.transaction('rw', db.products, async () => {
-            for (const p of categoryProds) {
-              p.category = trimmed;
-              p.syncStatus = 'PENDING';
-              await db.products.put(p);
-            }
-          });
+          if (categoryProds.length > 0) {
+            const batchItems = categoryProds.map(p => ({
+              entity: { ...p, category: trimmed },
+              operation: 'UPDATE' as const
+            }));
+            await localWriteCoordinator.executeBatchAtomicMutations('products', batchItems, currentTenant.id, currentBranch?.id);
+          }
         }
         setEditingCategory(null);
       } else {
@@ -317,13 +318,13 @@ export const CatalogManager: React.FC<CatalogManagerProps> = ({ onOpenProductEdi
         if (oldName !== trimmed) {
           const prods = await db.products.where('tenant_id').equals(currentTenant.id).toArray();
           const brandProds = prods.filter(p => p.brand === oldName);
-          await db.transaction('rw', db.products, async () => {
-            for (const p of brandProds) {
-              p.brand = trimmed;
-              p.syncStatus = 'PENDING';
-              await db.products.put(p);
-            }
-          });
+          if (brandProds.length > 0) {
+            const batchItems = brandProds.map(p => ({
+              entity: { ...p, brand: trimmed },
+              operation: 'UPDATE' as const
+            }));
+            await localWriteCoordinator.executeBatchAtomicMutations('products', batchItems, currentTenant.id, currentBranch?.id);
+          }
         }
         setEditingBrand(null);
       } else {

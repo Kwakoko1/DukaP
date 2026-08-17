@@ -1,4 +1,4 @@
-name: DukaPos SaaS Continuous Integration
+name: KwakoPos SaaS Production Reliability & CI Gate
 
 on:
   push:
@@ -8,8 +8,23 @@ on:
 
 jobs:
   validate-quality-gates:
-    name: Code Quality, Security & Type Checking
+    name: Code Quality, Reliability & Distributed Consistency Gate
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: kwakopos
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgrespassword
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - name: Checkout Codebase
@@ -32,10 +47,27 @@ jobs:
       - name: Quality Gate 2 - Strict TypeScript Type Checking & Vite Build
         run: npm run build
 
-      - name: Quality Gate 3 - Security Vulnerability Audit
-        run: npm audit --audit-level=high || true
+      - name: Quality Gate 3 - Database Migration & Health Check
+        env:
+          DATABASE_URL: postgresql://postgres:postgrespassword@localhost:5432/kwakopos
+          JWT_SECRET: ci-test-jwt-secret-key-32-chars-long-secure
+          SESSION_SECRET: ci-test-session-secret-key-32-chars-long-secure
+        run: |
+          npm run db:migrate
+          npm run db:check
 
-      - name: Quality Gate 4 - Bundle Artifact & Size Check
+      - name: Quality Gate 4 - Full Production Reliability & Chaos Suite
+        env:
+          DATABASE_URL: postgresql://postgres:postgrespassword@localhost:5432/kwakopos
+          JWT_SECRET: ci-test-jwt-secret-key-32-chars-long-secure
+          SESSION_SECRET: ci-test-session-secret-key-32-chars-long-secure
+          PORT: 8080
+        run: |
+          node server.js &
+          sleep 3
+          npm run production:verify
+
+      - name: Quality Gate 5 - Bundle Artifact Check
         run: |
           if [ ! -d "dist" ]; then
             echo "Error: Production bundle directory 'dist' was not generated!"

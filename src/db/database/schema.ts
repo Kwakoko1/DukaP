@@ -5,22 +5,51 @@
  * for local IndexedDB replication (KwakoPosDB).
  */
 
-export interface SyncOutboxRecord {
-  id: string;
+export interface MutationEnvelope {
+  mutationId: string;
+  operationId: string;
   tenantId: string;
   branchId?: string;
   deviceId: string;
+  userId?: string;
   entity: string;
   entityId: string;
-  operation: 'CREATE' | 'UPDATE' | 'DELETE';
+  operation: 'CREATE' | 'UPDATE' | 'DELETE' | 'INSERT' | 'STOCK_IN' | 'STOCK_OUT' | 'TRANSFER' | 'ADJUSTMENT' | 'SALE';
+  payload: unknown;
+  clientVersion?: number;
+  serverVersion?: number;
+  hlc: string;
+  schemaVersion: number;
+  createdAt: string | number;
+  idempotencyKey: string;
+  correlationId: string;
+  causationId?: string;
+}
+
+export interface SyncOutboxRecord {
+  id: string; // operationId
+  mutationId?: string;
+  operationId?: string;
+  tenantId: string;
+  branchId?: string;
+  deviceId: string;
+  userId?: string;
+  entity: string;
+  entityId: string;
+  operation: 'CREATE' | 'UPDATE' | 'DELETE' | 'INSERT' | 'STOCK_IN' | 'STOCK_OUT' | 'TRANSFER' | 'ADJUSTMENT' | 'SALE';
   payload: any;
-  clientVersion: number;
+  clientVersion?: number;
+  serverVersion?: number;
+  hlc?: string;
+  schemaVersion?: number;
   createdAt: number;
-  status: 'PENDING' | 'PROCESSING' | 'SYNCED' | 'FAILED';
+  status: 'PENDING' | 'PROCESSING' | 'SYNCED' | 'FAILED' | 'CONFLICT' | 'DEAD_LETTER';
   retryCount: number;
   lastAttemptAt?: number;
   lastError?: string;
   idempotencyKey: string;
+  correlationId?: string;
+  causationId?: string;
 }
 
 export interface SyncInboxRecord {
@@ -29,7 +58,7 @@ export interface SyncInboxRecord {
   deviceId: string;
   entity: string;
   entityId: string;
-  operation: 'CREATE' | 'UPDATE' | 'DELETE';
+  operation: 'CREATE' | 'UPDATE' | 'DELETE' | 'INSERT' | 'STOCK_IN' | 'STOCK_OUT' | 'TRANSFER' | 'ADJUSTMENT' | 'SALE';
   payload: any;
   serverVersion: number;
   receivedAt: number;
@@ -59,17 +88,10 @@ export const CANONICAL_STORES = {
   productVariants: 'id, productId, tenant_id, branch_id, sku, barcode, syncStatus, deletedAt',
   categories: 'id, tenant_id, name, parent_id, sync_version',
   brands: 'id, tenant_id, name, sync_version',
-  customers: 'id, tenant_id, name, phone, email',
-  suppliers: 'id, tenant_id, name, contactPerson, phone',
-  orders: 'id, tenant_id, branch_id, orderNumber, createdAt, paymentStatus, orderStatus',
-  stockLedger: 'id, tenant_id, branch_id, productId, variantId, movementType, createdAt',
-  stockBalance: 'id, tenant_id, branch_id, productId, variantId',
-  tenants: 'id, name, status',
-  branches: 'id, tenant_id, name',
-  tenantSettings: 'id, tenant_id, key',
-  users: 'id, tenant_id, email, is_super_admin',
-  syncQueue: 'id, tenant_id, status, idempotencyKey, createdAt',
-  syncInbox: 'id, tenant_id, status, serverVersion, receivedAt',
-  serverCheckpoints: 'id, tenant_id, deviceId',
-  syncState: 'id, updatedAt',
+  stockLedger: 'id, tenant_id, branch_id, product_id, variant_id, movement_type, idempotency_key, created_at',
+  syncQueue: '++id, tenant_id, entity, entity_id, status, sync_token, created_at, idempotencyKey',
+  syncOutbox: 'id, tenantId, entity, entityId, status, idempotencyKey, createdAt',
+  syncInbox: 'id, tenantId, entity, entityId, status, receivedAt',
+  syncCheckpoints: 'id, tenantId, deviceId',
+  syncState: 'id',
 };
