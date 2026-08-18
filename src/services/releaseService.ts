@@ -39,7 +39,7 @@ class ReleaseService {
         release_type: 'MAJOR',
         git_tag: 'v1.0.0',
         commit_hash: '9f2a81b',
-        release_notes: 'Initial production launch of DukaPos SaaS platform with Multi-Tenant isolation, POS, Inventory, Stock Ledger, and Offline Sync Engine.',
+        release_notes: 'Initial production launch of KwakoPos SaaS platform with Multi-Tenant isolation, POS, Inventory, Stock Ledger, and Offline Sync Engine.',
         release_date: now - 30 * 24 * 60 * 60 * 1000,
         deployment_status: 'SUCCESS',
         build_number: 'build-20260701-001',
@@ -187,7 +187,7 @@ class ReleaseService {
    * Synthesizes AI Release Summary for display.
    */
   synthesizeReleaseNotes(version: string, commitCount: number): string {
-    return `DukaPos Version ${version} introduces production-grade Offline Sync Engine updates, strict SemVer automated CI/CD pipeline, price inheritance protections, advanced inventory valuation breakdown, enhanced security audit gates, and resolving key system items across ${commitCount} conventional commits.`;
+    return `KwakoPos Version ${version} introduces production-grade Offline Sync Engine updates, strict SemVer automated CI/CD pipeline, price inheritance protections, advanced inventory valuation breakdown, enhanced security audit gates, and resolving key system items across ${commitCount} conventional commits.`;
   }
 
   /**

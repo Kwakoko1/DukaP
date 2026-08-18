@@ -8,7 +8,7 @@ const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '..');
 
 /**
- * Enterprise Release Engine for DukaPos SaaS
+ * Enterprise Release Engine for KwakoPos SaaS
  * Calculates SemVer based on Conventional Commits, updates CHANGELOG.md,
  * and outputs release metadata for GitHub Releases and DB persistence.
  */
@@ -175,7 +175,7 @@ function run() {
     existingChangelog = fs.readFileSync(changelogPath, 'utf8');
   }
 
-  const newChangelog = `# DukaPos SaaS Changelog\n\n${changelogEntry}\n${existingChangelog.replace('# DukaPos SaaS Changelog\n\n', '')}`;
+  const newChangelog = `# KwakoPos SaaS Changelog\n\n${changelogEntry}\n${existingChangelog.replace('# KwakoPos SaaS Changelog\n\n', '').replace('# DukaPos SaaS Changelog\n\n', '')}`;
   fs.writeFileSync(changelogPath, newChangelog);
   console.log(`[Release Engine] Updated CHANGELOG.md`);
 

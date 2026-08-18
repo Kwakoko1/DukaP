@@ -1,4 +1,4 @@
-name: DukaPos SaaS Automated Release & CD Pipeline
+name: KwakoPos SaaS Automated Release & CD Pipeline
 
 on:
   push:
@@ -50,7 +50,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           tag_name: v${{ steps.release.outputs.version }}
-          name: Version ${{ steps.release.outputs.version }} — Automated DukaPos SaaS Release
+          name: Version ${{ steps.release.outputs.version }} — Automated KwakoPos SaaS Release
           body_path: CHANGELOG.md
           draft: false
           prerelease: false

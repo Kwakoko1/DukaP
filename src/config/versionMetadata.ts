@@ -5,6 +5,7 @@
  */
 
 import pkg from '../../package.json';
+import releaseManifest from '../../release-manifest.json';
 import releaseMeta from '../../release-metadata.json';
 
 export interface ApplicationMetadata {
@@ -26,29 +27,29 @@ const getEnvValue = (key: string, fallback: string): string => {
   return fallback;
 };
 
-// Return stable, deterministic build number from release-metadata or VITE_BUILD_NUMBER
+// Return stable, deterministic build number from release-manifest or release-metadata
 const generateBuildNumber = (): string => {
   const envBuild = getEnvValue('VITE_BUILD_NUMBER', '');
   if (envBuild) return envBuild;
+
+  if (releaseManifest && (releaseManifest as any).buildNumber) {
+    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    return `${dateStr}.${(releaseManifest as any).buildNumber}`;
+  }
 
   if (releaseMeta && (releaseMeta as any).buildNumber) {
     return (releaseMeta as any).buildNumber;
   }
 
-  if (releaseMeta && (releaseMeta as any).date && (releaseMeta as any).commitCount) {
-    const dateStr = (releaseMeta as any).date.replace(/-/g, '');
-    return `${dateStr}.${(releaseMeta as any).commitCount}`;
-  }
-
-  return '20260810.93';
+  return '20260818.361';
 };
 
 export const getVersionMetadata = (): ApplicationMetadata => {
   const currentYear = new Date().getFullYear();
-  const version = pkg.version || getEnvValue('VITE_APP_VERSION', '1.0.0');
+  const version = pkg.version || (releaseManifest as any)?.version || getEnvValue('VITE_APP_VERSION', '1.3.1');
   const buildNumber = generateBuildNumber();
-  const commitSha = getEnvValue('VITE_GIT_COMMIT', 'a1f89bc');
-  const buildDate = getEnvValue('VITE_BUILD_DATE', new Date().toISOString().split('T')[0]);
+  const commitSha = (releaseManifest as any)?.gitSha?.slice(0, 7) || getEnvValue('VITE_GIT_COMMIT', '0baae58');
+  const buildDate = (releaseManifest as any)?.buildTimestamp?.split('T')[0] || getEnvValue('VITE_BUILD_DATE', new Date().toISOString().split('T')[0]);
   const environment = getEnvValue('VITE_APP_ENV', 'production');
 
   return {

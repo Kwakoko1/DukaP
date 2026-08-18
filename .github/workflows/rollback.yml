@@ -1,4 +1,4 @@
-name: DukaPos SaaS Automated Rollback Engine
+name: KwakoPos SaaS Automated Rollback Engine
 
 on:
   workflow_dispatch:
@@ -47,4 +47,4 @@ jobs:
 
       - name: Dispatch Emergency System Alert
         run: |
-          echo "🚨 [AUTOMATED ROLLBACK EXECUTED] DukaPos SaaS rolled back to ${{ steps.previous_tag.outputs.previous_tag }}. Reason: ${{ github.event.inputs.reason }}"
+          echo "🚨 [AUTOMATED ROLLBACK EXECUTED] KwakoPos SaaS rolled back to ${{ steps.previous_tag.outputs.previous_tag }}. Reason: ${{ github.event.inputs.reason }}"

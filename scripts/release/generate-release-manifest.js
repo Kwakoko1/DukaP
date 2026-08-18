@@ -39,12 +39,16 @@ export function generateReleaseManifest() {
   const gitSha = getGitSha();
   const gitBranch = getGitBranch();
 
-  let buildNum = 174;
+  const pkgPath = path.join(rootDir, 'package.json');
+  const pkgData = fs.existsSync(pkgPath) ? JSON.parse(fs.readFileSync(pkgPath, 'utf8')) : {};
+  const currentVersion = pkgData.version || '1.3.1';
+
+  let buildNum = 361;
   const counterPath = path.join(rootDir, 'build-counter.json');
   if (fs.existsSync(counterPath)) {
     try {
       const counterData = JSON.parse(fs.readFileSync(counterPath, 'utf-8'));
-      buildNum = counterData.buildCount || 174;
+      buildNum = counterData.buildCount || 361;
     } catch (_) {}
   }
 
@@ -60,7 +64,7 @@ export function generateReleaseManifest() {
 
   const manifest = {
     application: 'KwakoPos',
-    version: '1.2.0',
+    version: currentVersion,
     buildNumber: buildNum,
     gitSha: gitSha,
     gitBranch: gitBranch,

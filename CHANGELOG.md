@@ -1,4 +1,4 @@
-# DukaPos SaaS Changelog
+# KwakoPos SaaS Changelog
 
 ## [1.3.2] - 2026-08-18
 
@@ -290,7 +290,7 @@
 - Fix:variants (dc36d0d) - @Kwakoko
 
 
-# DukaPos SaaS Changelog
+# KwakoPos SaaS Changelog
 
 ## [1.0.1] - 2026-08-02
 
