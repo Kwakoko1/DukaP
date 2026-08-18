@@ -1,5 +1,11 @@
 # KwakoPos SaaS Changelog
 
+## [1.3.3] - 2026-08-18
+
+### 🐛 Bug Fixes
+- fix(release-metadata): unify versioning to v1.3.1 and update branding to KwakoPos SaaS (77e6a87) - @Kwakoko
+
+
 ## [1.3.2] - 2026-08-18
 
 ### 📦 Maintenance & Other Changes
