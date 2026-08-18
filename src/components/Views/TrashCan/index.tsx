@@ -11,6 +11,7 @@ import { Badge } from '../../UI/custom-ui';
 import { productRepository } from '../../../db/repositories/productRepository';
 import { localWriteCoordinator } from '../../../db/persistence/localWriteCoordinator';
 import { broadcastMutation } from '../../../services/crossTabSyncService';
+import { getDeletedReceiptNumbers, purgeOrderAndReceipt } from '../../../services/receiptEngine';
 
 export const TrashCan: React.FC = () => {
   const { currentTenant, user } = useAuth();

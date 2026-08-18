@@ -98,8 +98,12 @@ async function sql(strings, ...values) {
     }
     if (queryText.includes('FROM products')) {
       const dbRows = result.rows || [];
-      const targetTenant = values.find(v => typeof v === 'string' && (v.startsWith('tenant-') || v.startsWith('demo-') || v.startsWith('runtime-')));
-      const memRows = Array.from(inMemoryStore.products.values()).filter(p => !targetTenant || (p.tenant_id || p.tenantId) === targetTenant);
+      const match = queryText.match(/tenant_id\s*=\s*\$(\d+)/i);
+      const tenantParamIdx = match ? parseInt(match[1], 10) - 1 : -1;
+      const targetTenant = tenantParamIdx >= 0 ? values[tenantParamIdx] : values.find(v => typeof v === 'string' && (v.startsWith('tenant-') || v.startsWith('demo-') || v.startsWith('runtime-') || v.includes('-')));
+      const memRows = targetTenant
+        ? Array.from(inMemoryStore.products.values()).filter(p => (p.tenant_id || p.tenantId) === targetTenant)
+        : Array.from(inMemoryStore.products.values());
       const combined = [...dbRows];
       for (const m of memRows) {
         if (!combined.some(r => r.id === m.id)) combined.push(m);
@@ -108,8 +112,12 @@ async function sql(strings, ...values) {
     }
     if (queryText.includes('FROM orders') || queryText.includes('FROM sales')) {
       const dbRows = result.rows || [];
-      const targetTenant = values.find(v => typeof v === 'string' && (v.startsWith('tenant-') || v.startsWith('demo-') || v.startsWith('runtime-')));
-      const memRows = Array.from(inMemoryStore.orders.values()).filter(p => !targetTenant || (p.tenant_id || p.tenantId) === targetTenant);
+      const match = queryText.match(/tenant_id\s*=\s*\$(\d+)/i);
+      const tenantParamIdx = match ? parseInt(match[1], 10) - 1 : -1;
+      const targetTenant = tenantParamIdx >= 0 ? values[tenantParamIdx] : values.find(v => typeof v === 'string' && (v.startsWith('tenant-') || v.startsWith('demo-') || v.startsWith('runtime-') || v.includes('-')));
+      const memRows = targetTenant
+        ? Array.from(inMemoryStore.orders.values()).filter(p => (p.tenant_id || p.tenantId) === targetTenant)
+        : Array.from(inMemoryStore.orders.values());
       const combined = [...dbRows];
       for (const m of memRows) {
         if (!combined.some(r => r.id === m.id)) combined.push(m);
@@ -145,16 +153,34 @@ async function sql(strings, ...values) {
       return [{ id: recordId }];
     }
     if (queryText.includes('FROM products')) {
+      const match = queryText.match(/tenant_id\s*=\s*\$(\d+)/i);
+      const tenantParamIdx = match ? parseInt(match[1], 10) - 1 : -1;
+      const targetTenant = tenantParamIdx >= 0 ? values[tenantParamIdx] : null;
+      if (targetTenant) {
+        return Array.from(inMemoryStore.products.values()).filter(p => (p.tenant_id || p.tenantId) === targetTenant);
+      }
       const targetId = values.find(v => typeof v === 'string' && v.startsWith('PROD-'));
       if (targetId && inMemoryStore.products.has(targetId)) return [inMemoryStore.products.get(targetId)];
       return Array.from(inMemoryStore.products.values());
     }
     if (queryText.includes('FROM orders')) {
+      const match = queryText.match(/tenant_id\s*=\s*\$(\d+)/i);
+      const tenantParamIdx = match ? parseInt(match[1], 10) - 1 : -1;
+      const targetTenant = tenantParamIdx >= 0 ? values[tenantParamIdx] : null;
+      if (targetTenant) {
+        return Array.from(inMemoryStore.orders.values()).filter(p => (p.tenant_id || p.tenantId) === targetTenant);
+      }
       const targetId = values.find(v => typeof v === 'string' && v.startsWith('SALE-'));
       if (targetId && inMemoryStore.orders.has(targetId)) return [inMemoryStore.orders.get(targetId)];
       return Array.from(inMemoryStore.orders.values());
     }
     if (queryText.includes('FROM stock_ledger')) {
+      const match = queryText.match(/tenant_id\s*=\s*\$(\d+)/i);
+      const tenantParamIdx = match ? parseInt(match[1], 10) - 1 : -1;
+      const targetTenant = tenantParamIdx >= 0 ? values[tenantParamIdx] : null;
+      if (targetTenant) {
+        return Array.from(inMemoryStore.stock_ledger.values()).filter(p => (p.tenant_id || p.tenantId) === targetTenant);
+      }
       return Array.from(inMemoryStore.stock_ledger.values());
     }
     return [];

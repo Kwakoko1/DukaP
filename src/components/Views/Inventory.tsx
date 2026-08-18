@@ -120,7 +120,7 @@ function fmtDateTime(ms: any): string {
 export const Inventory: React.FC = () => {
   const { activeModule, activeTab } = useModule();
   const { currentBranch, currentTenant, hasPermission, user, isSuperAdminView } = useAuth();
-  const { queueOperation, isOnline, syncFromServer, syncData } = useSyncState();
+  const { isOnline, syncFromServer, syncData } = useSyncState();
 
   // ── Top-level tab ──────────────────────────────────────────────────────────
   const [invTab, setInvTab] = useState<InventoryTab>('dashboard');

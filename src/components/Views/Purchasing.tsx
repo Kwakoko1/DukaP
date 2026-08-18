@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { db, recordStockMovement } from '../../db/dexie';
+import { localWriteCoordinator } from '../../db/persistence/localWriteCoordinator';
 import type { 
   Supplier, PurchaseOrder, Warehouse, POItem, 
   SupplierContact, GoodsReceipt, GRNItem, SupplierInvoice, 

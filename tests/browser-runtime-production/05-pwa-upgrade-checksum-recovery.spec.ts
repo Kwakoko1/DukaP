@@ -37,13 +37,13 @@ test.describe('Production Runtime Validation — 05. PWA Upgrade, Checksum & Per
       }
     }, upgradeProdId);
 
+    // Reconnect network before page reload to simulate online PWA update/reload
+    await context.setOffline(false);
+
     // Simulate PWA reload / version update
     await page.reload();
     await page.waitForLoadState('domcontentloaded');
     await page.waitForFunction(() => (window as any).db !== undefined);
-
-    // Reconnect network
-    await context.setOffline(false);
 
     // Trigger sync worker
     await page.evaluate(async () => {

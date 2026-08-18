@@ -5,6 +5,7 @@ import { cloudDb } from '../../db/supabaseMock';
 import { useAuth } from '../../context/AuthContext';
 import { useSyncState } from '../../context/SyncContext';
 import { ProductService } from '../../services/productService';
+import { productRepository } from '../../db/repositories/productRepository';
 import { productionSyncEngine } from '../../services/productionSyncEngine';
 import { stockLedgerSyncEngine } from '../../services/stockLedgerSyncEngine';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, Button, Badge } from '../UI/custom-ui';
