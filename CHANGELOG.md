@@ -1,5 +1,11 @@
 # DukaPos SaaS Changelog
 
+## [1.3.1] - 2026-08-18
+
+### 🐛 Bug Fixes
+- fix(production-sync): atomic catalog + inventory synchronization and production certification (1def33d) - @Kwakoko
+
+
 ## [1.3.0] - 2026-08-18
 
 ### 🚀 New Features
