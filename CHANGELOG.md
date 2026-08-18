@@ -1,5 +1,11 @@
 # DukaPos SaaS Changelog
 
+## [1.3.2] - 2026-08-18
+
+### 📦 Maintenance & Other Changes
+- docs(rules): update core architecture, data sync pillars, deployment oversight, and production standards to KwakoPos (0baae58) - @Kwakoko
+
+
 ## [1.3.1] - 2026-08-18
 
 ### 🐛 Bug Fixes
