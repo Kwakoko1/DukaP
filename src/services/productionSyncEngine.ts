@@ -74,35 +74,58 @@ class ProductionSyncEngine {
    * Replays Stock Ledger entries for a product/variant to recalculate accurate stock.
    * Business Guarantee: Never overwrite stock directly; stock is strictly derived from movements.
    */
-  async replayStockLedgerForProduct(productId: string): Promise<number> {
+  async replayStockLedgerForProduct(productId: string, tenantId?: string): Promise<number> {
     try {
+      if (!productId) {
+        console.warn('[ProductionSyncEngine] replayStockLedgerForProduct called with empty productId');
+        return 0;
+      }
+
       const product = await db.products.get(productId);
-      if (!product) return 0;
-      const tenantId = product.tenant_id || product.tenantId || 'tenant-101';
+      if (!product) {
+        console.warn(`[ProductionSyncEngine] Product ${productId} not found for stock replay`);
+        return 0;
+      }
+      
+      const resolvedTenantId = tenantId || product.tenant_id || product.tenantId || 'tenant-101';
       const branchId = product.branch_id || product.branchId || 'main-branch';
 
       const { stockLedgerSyncEngine } = await import('./stockLedgerSyncEngine');
 
       if (isParentProduct(product)) {
-        const variants = await db.productVariants.where('productId').equals(productId).toArray();
+        const variants = await db.productVariants
+          .where('productId')
+          .equals(productId)
+          .and(v => (!v.tenant_id || v.tenant_id === resolvedTenantId))
+          .toArray();
+        
         let totalStock = 0;
         for (const v of variants) {
-          const bal = await stockLedgerSyncEngine.recalculateStockFromEvents(tenantId, branchId, productId, v.id);
+          const bal = await stockLedgerSyncEngine.recalculateStockFromEvents(
+            resolvedTenantId,
+            branchId,
+            productId,
+            v.id
+          );
           totalStock += bal.current_quantity;
         }
         return totalStock;
       } else {
-        const bal = await stockLedgerSyncEngine.recalculateStockFromEvents(tenantId, branchId, productId);
+        const bal = await stockLedgerSyncEngine.recalculateStockFromEvents(
+          resolvedTenantId,
+          branchId,
+          productId
+        );
         return bal.current_quantity;
       }
-    } catch (err) {
-      console.error(`Stock Ledger Replay failed for product ${productId}:`, err);
+    } catch (err: any) {
+      console.error(`[ProductionSyncEngine] Stock Ledger Replay failed for product ${productId}:`, err);
       return 0;
     }
   }
 
   /**
-   * Priority-Ordered Queue Processor with Idempotency Protection
+   * Priority-Ordered Queue Processor with Idempotency Protection & Multi-Tenant Scoping
    */
   async processQueue(tenantId?: string): Promise<{ success: boolean; syncedItems: number; failedItems: number }> {
     if (this.isSyncing) {
@@ -115,8 +138,8 @@ class ProductionSyncEngine {
     let failedCount = 0;
 
     try {
-      // 1. Fetch pending/failed queue items
-      let rawQueue = await db.syncQueue.toArray();
+      // 1. Fetch pending/failed queue items, strictly scoped by tenant if provided
+      let rawQueue = await db.syncQueue.toArray().catch(() => []);
       if (tenantId) {
         rawQueue = rawQueue.filter(item => !item.tenant_id || item.tenant_id === tenantId);
       }
@@ -141,6 +164,13 @@ class ProductionSyncEngine {
         if (!item.id) continue;
 
         try {
+          // Security: Enforce tenant scoping on mutation
+          if (tenantId && item.tenant_id && item.tenant_id !== tenantId) {
+            console.warn(`[ProductionSyncEngine] SECURITY: Attempted cross-tenant sync for item ${item.id}. Skipping.`);
+            failedCount++;
+            continue;
+          }
+
           await db.syncQueue.update(item.id, {
             status: 'Processing' as SyncStatus,
             last_attempt: Date.now(),
@@ -161,7 +191,7 @@ class ProductionSyncEngine {
           };
           syncTelemetryService.recordSyncStart();
           if (import.meta.env?.DEV) {
-            console.debug('Sync Engine Request Headers:', headers);
+            console.debug('[ProductionSyncEngine] Sync Request Headers:', headers);
           }
 
           let opError: any = null;
@@ -191,6 +221,10 @@ class ProductionSyncEngine {
               } else {
                 opError = new Error(pushData.error || 'Sync push failed');
               }
+            } else if (pushRes.status === 409) {
+              // Idempotent: Operation already processed by server
+              opError = null;
+              console.info(`[ProductionSyncEngine] Operation ${item.id} already synced (409 Conflict). Marking as completed.`);
             } else {
               // 2. Fallback to direct Supabase RLS client call
               const targetTable = entityName === 'productVariants' ? 'product_variants' : (entityName === 'stockLedger' ? 'stock_ledger' : entityName);
@@ -208,15 +242,20 @@ class ProductionSyncEngine {
                 }
               }
             }
-          } catch (netErr) {
-            // Direct Supabase fallback
+          } catch (netErr: any) {
+            // Direct Supabase fallback on network error
+            console.warn(`[ProductionSyncEngine] Network error, falling back to Supabase: ${netErr.message}`);
             const targetTable = entityName === 'productVariants' ? 'product_variants' : (entityName === 'stockLedger' ? 'stock_ledger' : entityName);
-            const { error } = await supabase.from(targetTable).upsert(payload, { onConflict: 'id' });
-            opError = error;
+            try {
+              const { error } = await supabase.from(targetTable).upsert(payload, { onConflict: 'id' });
+              opError = error;
+            } catch (fallbackErr: any) {
+              opError = new Error(`Fallback failed: ${fallbackErr.message}`);
+            }
           }
 
           if (entityName === 'stock_ledger' && !opError && payload.product_id) {
-            await this.replayStockLedgerForProduct(payload.product_id);
+            await this.replayStockLedgerForProduct(payload.product_id, item.tenant_id || tenantId);
           }
 
           if (opError) {
@@ -237,7 +276,7 @@ class ProductionSyncEngine {
             retry_count: currentRetries,
             last_attempt: Date.now(),
             error: err?.message || 'Unknown error',
-          });
+          }).catch(() => {});
           if (isDeadLetter) {
             console.warn(`[ProductionSyncEngine] Item ${item.id} (${item.entity}) marked as DeadLetter after ${currentRetries} retries.`);
           }
@@ -249,8 +288,8 @@ class ProductionSyncEngine {
       syncTelemetryService.recordSyncComplete(this.apiLatencyMs, failedCount === 0);
       return { success: true, syncedItems: syncedCount, failedItems: failedCount };
 
-    } catch (err) {
-      console.error('ProductionSyncEngine execution error:', err);
+    } catch (err: any) {
+      console.error('[ProductionSyncEngine] Execution error:', err.message || err);
       syncTelemetryService.recordSyncComplete(Date.now() - startTime, false);
       return { success: false, syncedItems: syncedCount, failedItems: failedCount };
     } finally {
@@ -260,8 +299,7 @@ class ProductionSyncEngine {
 
   /**
    * Pulls incremental server updates from Neon PostgreSQL and bulk-puts them directly into Dexie local IDB.
-   * This bridges cross-browser / multi-device synchronization: updates committed by Browser A to Neon
-   * will be pulled by Browser B and immediately trigger Dexie's reactive useLiveQuery UI re-renders!
+   * Strictly scopes queries by tenant_id and branch_id.
    */
   async pullChanges(tenantId: string, branchId?: string): Promise<{ pulledCount: number }> {
     if (!tenantId || (typeof navigator !== 'undefined' && !navigator.onLine)) {
@@ -270,12 +308,15 @@ class ProductionSyncEngine {
 
     try {
       const syncKey = `dukapos_last_sync_${tenantId}`;
-      const lastSync = localStorage.getItem(syncKey) || '0';
-      const since = parseInt(lastSync, 10) || 0;
+      const lastSync = typeof localStorage !== 'undefined' ? localStorage.getItem(syncKey) : '0';
+      const since = parseInt(lastSync || '0', 10) || 0;
 
       const branchQuery = branchId ? `&branchId=${encodeURIComponent(branchId)}` : '';
       const res = await fetch(`/api/sync/pull?tenantId=${encodeURIComponent(tenantId)}&since=${since}${branchQuery}`);
-      if (!res.ok) return { pulledCount: 0 };
+      if (!res.ok) {
+        console.warn(`[ProductionSyncEngine] Pull failed: ${res.status}`);
+        return { pulledCount: 0 };
+      }
 
       const data = await res.json();
       const changes = data.changes || {};
@@ -287,6 +328,8 @@ class ProductionSyncEngine {
       ], async () => {
         if (Array.isArray(changes.products) && changes.products.length > 0) {
           for (const p of changes.products) {
+            // Enforce multi-tenant scoping
+            if (p.tenant_id && p.tenant_id !== tenantId) continue;
             if (p.deleted_at || p.deleted) {
               await db.products.delete(p.id);
             } else {
@@ -300,6 +343,7 @@ class ProductionSyncEngine {
         }
         if (Array.isArray(changes.productVariants) && changes.productVariants.length > 0) {
           for (const v of changes.productVariants) {
+            if (v.tenant_id && v.tenant_id !== tenantId) continue;
             if (v.deleted_at || v.deleted) {
               await db.productVariants.delete(v.id);
             } else {
@@ -313,6 +357,7 @@ class ProductionSyncEngine {
         }
         if (Array.isArray(changes.customers) && changes.customers.length > 0) {
           for (const c of changes.customers) {
+            if (c.tenant_id && c.tenant_id !== tenantId) continue;
             if (c.deleted_at || c.deleted) {
               await db.customers.delete(c.id);
             } else {
@@ -326,6 +371,7 @@ class ProductionSyncEngine {
         }
         if (Array.isArray(changes.orders) && changes.orders.length > 0) {
           for (const o of changes.orders) {
+            if (o.tenant_id && o.tenant_id !== tenantId) continue;
             if (o.deleted_at || o.deleted) {
               await db.orders.delete(o.id);
             } else {
@@ -339,6 +385,7 @@ class ProductionSyncEngine {
         }
         if (Array.isArray(changes.branches) && changes.branches.length > 0) {
           for (const b of changes.branches) {
+            if (b.tenant_id && b.tenant_id !== tenantId) continue;
             if (b.deleted_at || b.deleted) {
               await db.branches.delete(b.id);
             } else {
@@ -349,6 +396,7 @@ class ProductionSyncEngine {
         }
         if (Array.isArray(changes.categories) && changes.categories.length > 0) {
           for (const c of changes.categories) {
+            if (c.tenant_id && c.tenant_id !== tenantId) continue;
             if (c.deleted_at || c.deleted) {
               await db.categories.delete(c.id);
             } else {
@@ -359,6 +407,7 @@ class ProductionSyncEngine {
         }
         if (Array.isArray(changes.brands) && changes.brands.length > 0) {
           for (const b of changes.brands) {
+            if (b.tenant_id && b.tenant_id !== tenantId) continue;
             if (b.deleted_at || b.deleted) {
               await db.brands.delete(b.id);
             } else {
@@ -369,15 +418,18 @@ class ProductionSyncEngine {
         }
         if (Array.isArray(changes.stockLedger) && changes.stockLedger.length > 0) {
           for (const s of changes.stockLedger) {
+            if (s.tenant_id && s.tenant_id !== tenantId) continue;
             await db.stockLedger.put({ ...s, synced: true, sync_status: 'SYNCED' });
           }
         }
       });
 
-      localStorage.setItem(syncKey, String(data.serverTimestamp || Date.now()));
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(syncKey, String(data.serverTimestamp || Date.now()));
+      }
       return { pulledCount: totalPulled };
-    } catch (err) {
-      console.warn('[ProductionSyncEngine] Incremental delta pull notice:', err);
+    } catch (err: any) {
+      console.warn('[ProductionSyncEngine] Delta pull error:', err.message || err);
       return { pulledCount: 0 };
     }
   }
@@ -424,24 +476,40 @@ class ProductionSyncEngine {
    * Diagnostic Telemetry for Offline Sync Monitor
    */
   async getStatus(): Promise<SyncEngineStatus> {
-    const queue = await db.syncQueue.toArray();
-    const pendingCount = queue.filter(i => i.status === 'Pending' || i.status === 'Processing').length;
-    const completedCount = queue.filter(i => i.status === 'Completed').length;
-    const failedCount = queue.filter(i => i.status === 'Failed').length;
-    const totalRetries = queue.reduce((sum, i) => sum + (i.retry_count || 0), 0);
+    try {
+      const queue = await db.syncQueue.toArray().catch(() => []);
+      const pendingCount = queue.filter(i => i.status === 'Pending' || i.status === 'Processing').length;
+      const completedCount = queue.filter(i => i.status === 'Completed').length;
+      const failedCount = queue.filter(i => i.status === 'Failed').length;
+      const totalRetries = queue.reduce((sum, i) => sum + (i.retry_count || 0), 0);
 
-    return {
-      isSyncing: this.isSyncing,
-      online: typeof navigator !== 'undefined' ? navigator.onLine : true,
-      pendingSyncCount: pendingCount,
-      completedSyncCount: completedCount,
-      failedSyncCount: failedCount,
-      retryCountTotal: totalRetries,
-      lastSyncedAt: this.lastSyncedAt,
-      conflictsResolved: this.conflicts.length,
-      apiLatencyMs: this.apiLatencyMs,
-      deviceSyncId: getOrCreateDeviceId()
-    };
+      return {
+        isSyncing: this.isSyncing,
+        online: typeof navigator !== 'undefined' ? navigator.onLine : true,
+        pendingSyncCount: pendingCount,
+        completedSyncCount: completedCount,
+        failedSyncCount: failedCount,
+        retryCountTotal: totalRetries,
+        lastSyncedAt: this.lastSyncedAt,
+        conflictsResolved: this.conflicts.length,
+        apiLatencyMs: this.apiLatencyMs,
+        deviceSyncId: getOrCreateDeviceId()
+      };
+    } catch (err: any) {
+      console.error('[ProductionSyncEngine] getStatus error:', err.message || err);
+      return {
+        isSyncing: this.isSyncing,
+        online: false,
+        pendingSyncCount: 0,
+        completedSyncCount: 0,
+        failedSyncCount: 0,
+        retryCountTotal: 0,
+        lastSyncedAt: this.lastSyncedAt,
+        conflictsResolved: this.conflicts.length,
+        apiLatencyMs: this.apiLatencyMs,
+        deviceSyncId: getOrCreateDeviceId()
+      };
+    }
   }
 
   /**
@@ -465,15 +533,16 @@ class ProductionSyncEngine {
         prunedCount = await db.syncQueue
           .where('status').equals('Completed')
           .and(item => (item.created_at || item.timestamp || 0) < cutoff)
-          .delete();
+          .delete()
+          .catch(() => 0);
         if (prunedCount > 0) {
           console.info(`[ProductionSyncEngine] Storage Quota Guard pruned ${prunedCount} completed sync queue records.`);
         }
       }
 
       return { usageMb, quotaMb, prunedCount };
-    } catch (e) {
-      console.warn('[ProductionSyncEngine] Storage quota check warning:', e);
+    } catch (e: any) {
+      console.warn('[ProductionSyncEngine] Storage quota check warning:', e.message || e);
       return { usageMb: 0, quotaMb: 0, prunedCount: 0 };
     }
   }
