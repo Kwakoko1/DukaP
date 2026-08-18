@@ -1,5 +1,68 @@
 # DukaPos SaaS Changelog
 
+## [1.3.0] - 2026-08-18
+
+### 🚀 New Features
+- feat(release): KwakoPos Production Certification Gate v2 - Passed 6 Quality Gates, RLS Isolation, TS Fixes & Certified Release Candidate (8d667e9) - @Kwakoko
+- feat(release): Implement KwakoPos Production Release Certification Gate v2 (Fail-Closed CI/CD, GET /api/version, Immutable Image Digests, Build-Once Provenance, and Release Finalizer) (715b041) - @Kwakoko
+- feat(release): KwakoPos Release Candidate Validation & Production Certification Gate Pipeline with PWA Installation Progress UI (4342079) - @Kwakoko
+- feat(hardening): KwakoPos Hardening & Certification v2 - Real browser & architectural static guard validation (559a0d6) - @Kwakoko
+- feat: implement real Playwright E2E browser tests and production certification suite (4591db5) - @Kwakoko
+- feat(reliability): implement complete production runtime validation and reliability certification suite (75df92c) - @Kwakoko
+- feat(consistency): implement derivedProjectionRepository and atomic delta-checkpoint transaction (3450e0f) - @Kwakoko
+- feat(integrity): implement content-based deterministic SHA-256 replica checksum (82959a3) - @Kwakoko
+- feat(reliability): enforce production reliability spec, CI gate & implementation matrix (e4adf86) - @Kwakoko
+- feat(reliability): enterprise production hardening, replica management & zero-data-loss verification (ba9909c) - @Kwakoko
+- feat(data-reliability): establish canonical repository layer, atomic outbox persistence, delta sync repositories, and regression tests (5d5ec46) - @Kwakoko
+- feat(persistence): implement production-grade PWA upgrade data persistence, Web-Lock migration engine, startup data integrity manager, and bootstrap recovery (d7fc878) - @Kwakoko
+- feat(pwa): add persistent storage locking and automatic brand/category reconciliation across PWA upgrades (7ce49ba) - @Kwakoko
+- feat(ui): add peek-behind transparency mode and reset-to-center button to draggable Dialog (0897fa7) - @Kwakoko
+- feat(core): refine inventory, POS sync, reports and Dexie schema integrations (cca126f) - @Kwakoko
+- feat(arch): integrate HLC sync headers, session vault key derivation, and reactive ABAC evaluation (9e365e0) - @Kwakoko
+- feat(arch): implement 5-pillar enterprise offline-first multi-tenant architecture with HLC, CRDT, ABAC, WebCrypto Vault, and Sync Telemetry HUD (4eece0b) - @Kwakoko
+- feat(security): add configurable offline grace period options (24h, 36h, 72h) for owners and managers (92ad614) - @Kwakoko
+- feat(auth): implement production-grade hybrid online/offline session management system (7d012d8) - @Kwakoko
+- feat(security): enhance authentication pipeline with direct cloud login endpoint, seed script, and secret manager configuration (a6e3158) - @Kwakoko
+- feat(cpanel): format user IDs using Business Name and render all date/timestamp fields in DD/MM/YYYY format (b8be4ad) - @Kwakoko
+- feat(onboarding): capture preferred username during tenant onboarding across merchant wizard and super admin cpanel (290ea76) - @Kwakoko
+
+### 🐛 Bug Fixes
+- fix(quality): Resolve architectural, type safety, and data integrity issues (65a5bb6) - @Kwakoko
+- fix(ci): Remove all  (230e4af) - @
+- fix(pwa): Clean up unused imports and state spreading in PWA update service (7aa660a) - @Kwakoko
+- fix(sync-hud): bind dynamic versionMetadata, enable true two-way sync probe and prohibit simulated runtime validation tests (168aa7a) - @Kwakoko
+- fix(build): remove unused LocalDataSnapshot imports to resolve tsc -b strict compiler errors in cloud build pipeline (df310cc) - @Kwakoko
+- fix(ui): upgrade Dialog modal window drag-and-drop using HTML5 Pointer Events, setPointerCapture, and touch-none for smooth modal dragging (b4e92d2) - @Kwakoko
+- fix(brands): complete brand module wiring to inventory toolbar, POS search, reports, and fix instant brand disappearance on creation (82b82d4) - @Kwakoko
+- fix(sync): fully synchronize isOnline, isSyncing, and outboxCount between TopBar and SyncTelemetryHUD (3b431c4) - @Kwakoko
+- fix(server): safely extract tenantId in PATCH tenant modules endpoint (8ac98d3) - @Kwakoko
+- fix(sync): unify TopBar, SyncContext and SyncTelemetryHUD reactive network and queue state (82f07de) - @Kwakoko
+- fix(ui): mount SyncTelemetryHUD globally and ensure visibility on all authenticated screens (c362193) - @Kwakoko
+- fix(server): resolve duplicate JWT_SECRET declarations and syntax in server.js (30576cd) - @Kwakoko
+- fix(catalog): auto-reconcile product brands and resolve brand disappearance in CatalogManager (7919261) - @Kwakoko
+- fix(inventory): preserve parent product variant flag, auto-load variants in editor, and refine dashboard stats (f22c86b) - @Kwakoko
+- fix(auth): ensure valid business workspace auto-healing and seamless login hydration (680b886) - @Kwakoko
+- fix(users-roles): correctly render Super Admin role badge instead of defaulting to Cashier (b9ce90d) - @Kwakoko
+- fix(cpanel): enforce Business Name in id column across users and tenants tables (084a726) - @Kwakoko
+- fix(db): ensure production cloud host connects to live Neon PostgreSQL cluster and prevents local fallback ECONNREFUSED (1dc269b) - @Kwakoko
+- fix(users-roles): restrict Platform Central HQ strictly to Super Admins and resolve regional/district location for tenant owners and staff (a1797d9) - @Kwakoko
+
+### ⚡ Performance Improvements
+- perf(persistence): optimize outbox queries with compound indexes and bulk transaction batching (3631cce) - @Kwakoko
+- perf(persistence): optimize table count queries using concurrent Promise.all execution in migration and integrity engines (578f88a) - @Kwakoko
+- perf(auth): optimize multi-tenant login with parallel query execution and complete transactional cache rehydration (a600810) - @Kwakoko
+- perf(core): optimize connection pooling, add rate limiting, security headers, and granular vendor chunking (af444e3) - @Kwakoko
+
+### 🛠️ Refactoring & Architectural Updates
+- refactor(data-persistence): integrate data persistence test suite into readiness verifier & optimize batch atomic mutations (ab0e461) - @Kwakoko
+
+### 📦 Maintenance & Other Changes
+- docs: add KwakoPos Production Data Reliability & Distributed Consistency Engineering Specification (5220cee) - @Kwakoko
+- style(ui): add visual drag grip indicator to Dialog component header (86332ca) - @Kwakoko
+- style(ui): optimize SyncTelemetryHUD bottom offset for mobile & desktop navigation (3c4b2e6) - @Kwakoko
+- chore(build): adopt optimized vite configuration with clean api proxy and dynamic build metadata (1c4c88f) - @Kwakoko
+
+
 ## [1.2.0] - 2026-08-11
 
 ### 🚀 New Features
