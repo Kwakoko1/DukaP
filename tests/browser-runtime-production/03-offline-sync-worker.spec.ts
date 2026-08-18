@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { login, createRealBrowserProduct, queryPostgres, readOutbox, TEST_TENANT } from '../browser-runtime/helpers/runtime';
+import { login, createRealBrowserProduct, queryPostgres, readOutbox, readTenantId, TEST_TENANT } from '../browser-runtime/helpers/runtime';
 
 test.describe('Production Runtime Validation — 03. Offline & Production Sync Worker (Section 11 & 12)', () => {
 
@@ -13,9 +13,13 @@ test.describe('Production Runtime Validation — 03. Offline & Production Sync W
     // 1. Go Offline
     await context.setOffline(true);
 
+    const tId = await readTenantId(page);
+
     // 2. Perform real browser mutation into IndexedDB + outbox queue
-    await page.waitForFunction(() => (window as any).db !== undefined);
-    await page.evaluate(async (pid) => {
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        await page.waitForFunction(() => (window as any).db !== undefined);
+        await page.evaluate(async ({ pid, tId }) => {
       let db = (window as any).db;
       let attempts = 0;
       while (!db && attempts < 20) {
@@ -30,21 +34,26 @@ test.describe('Production Runtime Validation — 03. Offline & Production Sync W
           selling_price: 2500,
           price: 2500,
           stock: 50,
-          tenant_id: 'tenant-101',
+          tenant_id: tId,
           updatedAt: Date.now()
         });
         await db.syncQueue.put({
           id: `op-real-sync-${Date.now()}`,
-          tenantId: 'tenant-101',
-          tenant_id: 'tenant-101',
+          tenantId: tId,
+          tenant_id: tId,
           entityName: 'products',
           actionType: 'UPDATE',
           status: 'Pending',
-          payload: { id: pid, name: 'Real Sync Worker Product', selling_price: 2500, price: 2500, stock: 50, tenant_id: 'tenant-101' },
+          payload: { id: pid, name: 'Real Sync Worker Product', selling_price: 2500, price: 2500, stock: 50, tenant_id: tId },
           timestamp: Date.now()
         });
       }
-    }, testProdId);
+    }, { pid: testProdId, tId });
+        break;
+      } catch {
+        await page.waitForTimeout(300);
+      }
+    }
 
     // 3. Confirm local IndexedDB contains record and outbox is Pending
     const outboxOffline = await readOutbox(page);

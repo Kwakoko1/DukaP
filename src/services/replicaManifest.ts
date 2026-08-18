@@ -14,6 +14,7 @@ export type ReplicaHealthStatus =
   | 'HEALTHY'           // Operational with records and no critical issues
   | 'OUTBOX_DIRTY'      // Local mutations pending synchronization
   | 'NEEDS_BOOTSTRAP'   // Empty local state requiring server hydration
+  | 'DEGRADED'          // Parent temporarily unavailable / orphan variant present without deletion
   | 'CORRUPTED';        // Foreign key violations or unrecoverable inconsistencies
 
 export interface ReplicaEntityCounts {
@@ -123,11 +124,34 @@ export async function buildReplicaManifest(
   const schemaVersion = Number(schemaVersionMeta?.value || 27);
   const lastSuccessfulSyncAt = Number(lastSyncMeta?.updatedAt || 0);
 
-  // 4. Health status determination
+  // 4. Variant-parent validation for orphan detection (Quarantine check)
+  const allTenantVariants = await db.productVariants
+    .where('tenant_id')
+    .equals(tenantId)
+    .toArray()
+    .catch(() => []);
+
+  const allTenantProductIds = new Set(
+    (
+      await db.products
+        .where('tenant_id')
+        .equals(tenantId)
+        .toArray()
+        .catch(() => [])
+    ).map((p) => p.id)
+  );
+
+  const orphanVariants = allTenantVariants.filter(
+    (v) => !allTenantProductIds.has(v.productId)
+  );
+
+  // 5. Health status determination
   let healthStatus: ReplicaHealthStatus = 'HEALTHY';
   const totalCoreEntities = productsCount + categoriesCount + brandsCount;
 
-  if (totalCoreEntities === 0 && pendingOutboxCount === 0) {
+  if (orphanVariants.length > 0) {
+    healthStatus = 'DEGRADED';
+  } else if (totalCoreEntities === 0 && pendingOutboxCount === 0) {
     healthStatus = 'NEEDS_BOOTSTRAP';
   } else if (pendingOutboxCount > 0) {
     healthStatus = 'OUTBOX_DIRTY';

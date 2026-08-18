@@ -27,34 +27,29 @@ export const derivedProjectionRepository = {
     let updatedCount = 0;
 
     await db.transaction('rw', db.products, db.productVariants, async () => {
-      const parents = await db.products
+      const products = await db.products
         .where('tenant_id')
         .equals(tenantId)
-        .filter((product) => Boolean(product.hasVariants || (product as any).has_variants))
         .toArray();
 
-      for (const parent of parents) {
+      for (const product of products) {
         const variants = await db.productVariants
           .where('productId')
-          .equals(parent.id)
+          .equals(product.id)
           .toArray();
 
         if (variants.length === 0) {
           continue;
         }
 
-        const activeVariants = variants.filter(
-          (v) => (v.status as any) !== 'Inactive' && !(v as any).deletedAt && !(v as any).deleted_at
-        );
-
-        const derivedStock = activeVariants.reduce(
-          (sum, variant) => sum + (Number(variant.stock) || 0),
+        const total = variants.reduce(
+          (sum, v) => sum + Number(v.stock || 0),
           0
         );
 
-        if (Number(parent.stock) !== derivedStock) {
-          await db.products.update(parent.id, {
-            stock: derivedStock,
+        if (Number(product.stock) !== total) {
+          await db.products.update(product.id, {
+            stock: total,
           });
           updatedCount++;
         }

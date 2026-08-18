@@ -3,10 +3,12 @@
  * Single-request compressed bootstrap snapshot restoration & background delta sync.
  */
 
-import { db } from '../db/dexie';
+import { db, type StockLedgerEntry } from '../db/dexie';
 import { replicaManager } from './replicaManager';
 import { productionSyncEngine } from './productionSyncEngine';
 import { hlcEngine } from './hlcEngine';
+import { stockLedgerSyncEngine, sanitizeAndProcessLedgerEntry } from './stockLedgerSyncEngine';
+import { derivedProjectionRepository } from '../db/persistence/derivedProjectionRepository';
 
 export interface BootstrapSnapshotPayload {
   tenant: any;
@@ -35,6 +37,157 @@ export class BootstrapEngine {
     if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
       this.syncChannel = new BroadcastChannel('dukapos-sync-channel');
     }
+  }
+
+  /**
+   * Canonical Inbound Sync Pipeline.
+   * Single entry point for both Bootstrap & Delta sync payloads.
+   */
+  private async applyInboundSync(
+    tenantId: string,
+    payload: {
+      categories?: any[];
+      brands?: any[];
+      products?: any[];
+      productVariants?: any[];
+      variants?: any[];
+      stockLedger?: any[];
+      syncVersion: number;
+    }
+  ): Promise<number> {
+    const affectedPairs = new Map<string, { productId: string; variantId?: string; branchId: string }>();
+
+    const categories = Array.isArray(payload.categories) ? payload.categories : [];
+    const brands = Array.isArray(payload.brands) ? payload.brands : [];
+    const products = Array.isArray(payload.products) ? payload.products : [];
+    const rawVariants = Array.isArray(payload.productVariants)
+      ? payload.productVariants
+      : Array.isArray(payload.variants)
+      ? payload.variants
+      : [];
+    const ledger = Array.isArray(payload.stockLedger) ? payload.stockLedger : [];
+
+    await db.transaction(
+      'rw',
+      [
+        db.categories,
+        db.brands,
+        db.products,
+        db.productVariants,
+        db.stockLedger,
+        db.syncMetadata,
+      ],
+      async () => {
+        if (categories.length) {
+          const mappedCategories = categories.map((c) => ({
+            ...c,
+            tenant_id: c.tenant_id || tenantId,
+            sync_version: c.sync_version || payload.syncVersion,
+          }));
+          await db.categories.bulkPut(mappedCategories);
+        }
+
+        if (brands.length) {
+          const mappedBrands = brands.map((b) => ({
+            ...b,
+            tenant_id: b.tenant_id || tenantId,
+            sync_version: b.sync_version || payload.syncVersion,
+          }));
+          await db.brands.bulkPut(mappedBrands);
+        }
+
+        if (products.length) {
+          const mappedProducts = products.map((p) => ({
+            ...p,
+            tenant_id: p.tenant_id || tenantId,
+            price: Number(p.selling_price || p.price || 0),
+            buyingPrice: Number(p.buying_price || p.cost_price || 0),
+            sellingPrice: Number(p.selling_price || p.price || 0),
+            stock: Number(p.stock || 0),
+            hasVariants: Boolean(p.has_variants || p.hasVariants),
+            syncStatus: 'SYNCED',
+          }));
+          await db.products.bulkPut(mappedProducts);
+        }
+
+        if (rawVariants.length) {
+          const mappedVariants = rawVariants.map((v) => ({
+            ...v,
+            productId: v.product_id || v.productId,
+            tenant_id: v.tenant_id || tenantId,
+            buyingPrice: Number(v.buying_price || 0),
+            sellingPrice: Number(v.selling_price || 0),
+            stock: Number(v.stock || 0),
+            reservedStock: Number(v.reserved_stock || 0),
+            syncStatus: 'SYNCED',
+          }));
+          await db.productVariants.bulkPut(mappedVariants);
+        }
+
+        if (ledger.length) {
+          const sanitized = ledger.map((e) => sanitizeAndProcessLedgerEntry(e));
+
+          // Inbound Idempotency Verification
+          const uniqueEvents: StockLedgerEntry[] = [];
+          for (const event of sanitized) {
+            let exists = false;
+            if (event.idempotency_key) {
+              const found = await db.stockLedger
+                .where('idempotency_key')
+                .equals(event.idempotency_key)
+                .first();
+              if (found) exists = true;
+            }
+            if (!exists && event.id) {
+              const foundById = await db.stockLedger.get(event.id);
+              if (foundById) exists = true;
+            }
+            if (!exists) {
+              uniqueEvents.push(event);
+            }
+          }
+
+          if (uniqueEvents.length) {
+            await db.stockLedger.bulkPut(uniqueEvents);
+          }
+
+          for (const e of sanitized) {
+            const key = `${e.branch_id || 'branch-default'}:${e.product_id}:${e.variant_id || ''}`;
+            affectedPairs.set(key, {
+              productId: e.product_id,
+              variantId: e.variant_id === 'no-variant' ? undefined : e.variant_id,
+              branchId: e.branch_id || 'branch-default',
+            });
+          }
+        }
+
+        /**
+         * IMPORTANT
+         * checkpoint is written LAST.
+         */
+        await db.syncMetadata.put({
+          key: 'lastSyncVersion',
+          value: payload.syncVersion,
+          updatedAt: Date.now(),
+        });
+      }
+    );
+
+    /**
+     * Rebuild projections only after transaction commits.
+     */
+    for (const target of affectedPairs.values()) {
+      await stockLedgerSyncEngine.recalculateStockFromEvents(
+        tenantId,
+        target.branchId,
+        target.productId,
+        target.variantId
+      );
+    }
+
+    await derivedProjectionRepository.reconcileParentVariantStock(tenantId);
+
+    return affectedPairs.size;
   }
 
   /**
@@ -100,7 +253,7 @@ export class BootstrapEngine {
         `[BootstrapEngine] Snapshot received (${snapshot.syncVersion} watermark) in ${Date.now() - startTime}ms`
       );
 
-      // 3. Parallelized Bulk IndexedDB Restore via Single Dexie Transaction
+      // 3. Parallelized Bulk IndexedDB Restore via Canonical Inbound Sync Pipeline
       const restoredCounts = await this.bulkRestoreIndexedDB(snapshot, tenantId);
 
       // 4. Persist Monotonic Watermark Metadata
@@ -132,112 +285,28 @@ export class BootstrapEngine {
   }
 
   /**
-   * Bulk Atomic IndexedDB Restoration (Parallel Write Throughput)
+   * Bulk Atomic IndexedDB Restoration using canonical inbound sync pipeline
    */
   private async bulkRestoreIndexedDB(
     snapshot: BootstrapSnapshotPayload,
     tenantId: string
   ): Promise<Record<string, number>> {
-    const counts: Record<string, number> = {};
+    await this.applyInboundSync(tenantId, {
+      categories: snapshot.categories,
+      brands: snapshot.brands,
+      products: snapshot.products,
+      variants: snapshot.variants,
+      stockLedger: snapshot.stockLedger,
+      syncVersion: snapshot.syncVersion,
+    });
 
-    // Pre-map snapshot data arrays
-    const catsToPut = Array.isArray(snapshot.categories) ? snapshot.categories.map((c) => ({
-      id: c.id,
-      name: c.name,
-      code: c.code || '',
-      description: c.description || '',
-      tenant_id: c.tenant_id || tenantId,
-      parent_id: c.parent_id || null,
-      sync_version: c.sync_version || 1,
-      created_at: c.created_at || Date.now(),
-    })) : [];
-
-    const brandsToPut = Array.isArray(snapshot.brands) ? snapshot.brands.map((b) => ({
-      id: b.id,
-      name: b.name,
-      code: b.code || '',
-      description: b.description || '',
-      tenant_id: b.tenant_id || tenantId,
-      sync_version: b.sync_version || 1,
-      created_at: b.created_at || Date.now(),
-    })) : [];
-
-    const prodsToPut = Array.isArray(snapshot.products) ? snapshot.products.map((p) => ({
-      ...p,
-      tenant_id: p.tenant_id || tenantId,
-      price: Number(p.selling_price || p.price || 0),
-      buyingPrice: Number(p.buying_price || p.cost_price || 0),
-      sellingPrice: Number(p.selling_price || p.price || 0),
-      stock: Number(p.stock || 0),
-      hasVariants: Boolean(p.has_variants || p.hasVariants),
-      syncStatus: 'SYNCED',
-    })) : [];
-
-    const varsToPut = Array.isArray(snapshot.variants) ? snapshot.variants.map((v) => ({
-      ...v,
-      productId: v.product_id || v.productId,
-      tenant_id: v.tenant_id || tenantId,
-      buyingPrice: Number(v.buying_price || 0),
-      sellingPrice: Number(v.selling_price || 0),
-      stock: Number(v.stock || 0),
-      reservedStock: Number(v.reserved_stock || 0),
-      syncStatus: 'SYNCED',
-    })) : [];
-
-    await db.transaction(
-      'rw',
-      [
-        db.tenants,
-        db.branches,
-        db.categories,
-        db.brands,
-        db.products,
-        db.productVariants,
-        db.stockLedger,
-        db.customers,
-        db.suppliers,
-        db.subscriptionPlans,
-        db.syncMetadata,
-      ],
-      async () => {
-        const tasks: Promise<void>[] = [];
-
-        if (snapshot.tenant?.id) {
-          tasks.push(db.tenants.put(snapshot.tenant).then(() => { counts.tenants = 1; }));
-        }
-        if (Array.isArray(snapshot.branches) && snapshot.branches.length > 0) {
-          tasks.push(db.branches.bulkPut(snapshot.branches).then(() => { counts.branches = snapshot.branches.length; }));
-        }
-        if (catsToPut.length > 0) {
-          tasks.push(db.categories.bulkPut(catsToPut).then(() => { counts.categories = catsToPut.length; }));
-        }
-        if (brandsToPut.length > 0) {
-          tasks.push(db.brands.bulkPut(brandsToPut).then(() => { counts.brands = brandsToPut.length; }));
-        }
-        if (prodsToPut.length > 0) {
-          tasks.push(db.products.bulkPut(prodsToPut).then(() => { counts.products = prodsToPut.length; }));
-        }
-        if (varsToPut.length > 0) {
-          tasks.push(db.productVariants.bulkPut(varsToPut).then(() => { counts.variants = varsToPut.length; }));
-        }
-        if (Array.isArray(snapshot.stockLedger) && snapshot.stockLedger.length > 0) {
-          tasks.push(db.stockLedger.bulkPut(snapshot.stockLedger).then(() => { counts.stockLedger = snapshot.stockLedger.length; }));
-        }
-        if (Array.isArray(snapshot.customers) && snapshot.customers.length > 0) {
-          tasks.push(db.customers.bulkPut(snapshot.customers).then(() => { counts.customers = snapshot.customers.length; }));
-        }
-        if (Array.isArray((snapshot as any).suppliers) && (snapshot as any).suppliers.length > 0) {
-          tasks.push(db.suppliers.bulkPut((snapshot as any).suppliers).then(() => { counts.suppliers = (snapshot as any).suppliers.length; }));
-        }
-        if (Array.isArray(snapshot.subscriptionPlans) && snapshot.subscriptionPlans.length > 0) {
-          tasks.push(db.subscriptionPlans.bulkPut(snapshot.subscriptionPlans).then(() => { counts.subscriptionPlans = snapshot.subscriptionPlans.length; }));
-        }
-
-        await Promise.all(tasks);
-      }
-    );
-
-    return counts;
+    return {
+      categories: snapshot.categories?.length || 0,
+      brands: snapshot.brands?.length || 0,
+      products: snapshot.products?.length || 0,
+      variants: snapshot.variants?.length || 0,
+      stockLedger: snapshot.stockLedger?.length || 0,
+    };
   }
 
   /**
@@ -253,7 +322,7 @@ export class BootstrapEngine {
 
       const response = await fetch(`/api/sync?tenantId=${encodeURIComponent(tenantId)}&sinceVersion=${sinceVersion}`);
       if (!response.ok) {
-        throw new Error(`Delta sync failed with status ${response.status}`);
+        throw new Error('Delta sync failed');
       }
 
       const syncData = await response.json();
@@ -261,55 +330,27 @@ export class BootstrapEngine {
         hlcEngine.calibrateOffset(syncData.serverTimestamp || syncData.serverTime);
       }
       const changes = syncData?.changes || {};
-      let updatedCount = 0;
+      const nextVersion = Number(syncData.syncVersion || syncData.serverTimestamp || Date.now());
 
-      await db.transaction(
-        'rw',
-        [db.categories, db.brands, db.products, db.productVariants, db.stockLedger, db.syncMetadata],
-        async () => {
-          if (Array.isArray(changes.categories) && changes.categories.length > 0) {
-            await db.categories.bulkPut(changes.categories);
-            updatedCount += changes.categories.length;
-          }
-          if (Array.isArray(changes.brands) && changes.brands.length > 0) {
-            await db.brands.bulkPut(changes.brands);
-            updatedCount += changes.brands.length;
-          }
-          if (Array.isArray(changes.products) && changes.products.length > 0) {
-            const mappedProds = changes.products.map((p: any) => ({
-              ...p,
-              tenant_id: p.tenant_id || tenantId,
-              price: Number(p.selling_price || p.price || 0),
-              buyingPrice: Number(p.buying_price || p.cost_price || 0),
-              sellingPrice: Number(p.selling_price || p.price || 0),
-              stock: Number(p.stock || 0),
-              hasVariants: Boolean(p.has_variants || p.hasVariants),
-            }));
-            await db.products.bulkPut(mappedProds);
-            updatedCount += mappedProds.length;
-          }
-          if (Array.isArray(changes.productVariants) && changes.productVariants.length > 0) {
-            const mappedVars = changes.productVariants.map((v: any) => ({
-              ...v,
-              productId: v.product_id || v.productId,
-              tenant_id: v.tenant_id || tenantId,
-              stock: Number(v.stock || 0),
-              buyingPrice: Number(v.buying_price || 0),
-              sellingPrice: Number(v.selling_price || 0),
-            }));
-            await db.productVariants.bulkPut(mappedVars);
-            updatedCount += mappedVars.length;
-          }
+      const affected = await this.applyInboundSync(tenantId, {
+        categories: changes.categories,
+        brands: changes.brands,
+        products: changes.products,
+        productVariants: changes.productVariants || changes.variants,
+        stockLedger: changes.stockLedger,
+        syncVersion: nextVersion,
+      });
 
-          const newWatermark = syncData.serverTimestamp || Date.now();
-          await db.syncMetadata.put({ key: 'lastSyncVersion', value: newWatermark, updatedAt: Date.now() });
-        }
-      );
-
-      return { success: true, updatedCount };
-    } catch (err: any) {
-      console.warn(`[BootstrapEngine] Background delta sync error: ${err?.message}`);
-      return { success: false, updatedCount: 0 };
+      return {
+        success: true,
+        updatedCount: affected,
+      };
+    } catch (error) {
+      console.error(error);
+      return {
+        success: false,
+        updatedCount: 0,
+      };
     } finally {
       this.isSyncing = false;
     }

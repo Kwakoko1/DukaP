@@ -47,16 +47,30 @@ export class ReplicaManager {
     } catch (err: any) {
       console.error('[ReplicaManager] inspectReplica error:', err.message || err);
       return {
-        replicaId: `replica-${tenantId}-${branchId}`,
+        manifestVersion: 1,
         tenantId,
         branchId,
         deviceId,
-        entityCounts: { products: 0, categories: 0, brands: 0 },
+        schemaVersion: 41,
+        lastSyncVersion: 0,
+        lastBootstrapAt: 0,
+        lastSuccessfulSyncAt: 0,
+        entityCounts: {
+          products: 0,
+          productVariants: 0,
+          categories: 0,
+          brands: 0,
+          stockLedger: 0,
+          orders: 0,
+          customers: 0,
+          suppliers: 0,
+        },
         pendingOutboxCount: 0,
         failedOutboxCount: 0,
+        outboxPendingByEntity: {},
         healthStatus: 'CORRUPTED',
-        checksumMd5: '',
-        lastUpdatedAt: Date.now()
+        integrityChecksum: 'sha256:corrupted',
+        generatedAt: Date.now(),
       };
     }
   }

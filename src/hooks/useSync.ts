@@ -1,13 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db, type SyncOperation } from '../db/dexie';
-import { mapProductToLocal, recoverUnsyncedProducts } from '../services/productService';
-import { createSyncEvent } from '../services/syncEventGenerator';
+import { db } from '../db/dexie';
 import { productionSyncEngine } from '../services/productionSyncEngine';
-import { stockLedgerSyncEngine } from '../services/stockLedgerSyncEngine';
-import { isLeaderTab } from '../services/tabLeaderElectionService';
 import { getActiveSessionRaw } from '../utils/sessionStorage';
-import { syncTelemetryService } from '../services/syncTelemetryService';
 
 export interface SyncProgress {
   current: number;
@@ -22,20 +17,23 @@ export function useSync() {
   const storedMode = typeof localStorage !== 'undefined' ? localStorage.getItem(ONLINE_MODE_KEY) : null;
   const [isOnline, setIsOnline] = useState<boolean>(storedMode !== null ? storedMode === 'true' : (typeof navigator !== 'undefined' ? navigator.onLine : true));
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
-  const [syncProgress, setSyncProgress] = useState<SyncProgress | null>(null);
+  const [syncProgress] = useState<SyncProgress | null>(null);
   const [syncLogs, setSyncLogs] = useState<string[]>([]);
-  const [isSimulated, setIsSimulated] = useState<boolean>(storedMode !== null ? storedMode === 'false' : false);
+  const [isSimulated] = useState<boolean>(storedMode !== null ? storedMode === 'false' : false);
 
   // Use refs so interval callbacks always see the latest values without stale closures
   const isSyncingRef = useRef(false);
   const isSimulatedRef = useRef(false);
   const isOnlineRef = useRef(isOnline);
-  const lastSyncTimeRef = useRef<number>(0);
-  const syncTimeoutRef = useRef<any>(null);
 
   useEffect(() => { isSyncingRef.current = isSyncing; }, [isSyncing]);
   useEffect(() => { isSimulatedRef.current = isSimulated; }, [isSimulated]);
-  useEffect(() => { isOnlineRef.current = isOnline; }, [isOnline]);
+  useEffect(() => {
+    isOnlineRef.current = isOnline;
+    if (typeof window !== 'undefined') {
+      (window as any).productionSyncEngine = productionSyncEngine;
+    }
+  }, [isOnline]);
 
   // Live query to track pending sync count across both syncQueue and outbox
   const pendingCount = useLiveQuery(async () => {
@@ -54,9 +52,6 @@ export function useSync() {
     setSyncLogs((prev) => [`[${new Date().toLocaleTimeString()}] ${message}`, ...prev.slice(0, 49)]);
   };
 
-  // ── FIXED: use GET /api/ping instead of HEAD /api/products ─────────────────
-  // The Vite dev server only handles GET/POST on /api/products, so HEAD always
-  // failed → isOnline was permanently false → nothing ever synced.
   const checkRealConnectivity = async (): Promise<boolean> => {
     if (!navigator.onLine) return false;
     if (typeof document !== 'undefined' && document.hidden) return isOnlineRef.current;
@@ -69,13 +64,13 @@ export function useSync() {
       });
       clearTimeout(timeoutId);
       return res.ok;
-    } catch (e) {
+    } catch {
       return false;
     }
   };
 
-  const handleSyncNow = async () => {
-    if (isSyncingRef.current) return;
+  const handleSyncNow = async (): Promise<number> => {
+    if (isSyncingRef.current) return 0;
     setIsSyncing(true);
     addLog('Manual sync initiated...');
 
@@ -83,11 +78,33 @@ export function useSync() {
       const tenantId = getActiveSessionRaw() ? JSON.parse(getActiveSessionRaw()!).user?.tenant_id : undefined;
       const res = await productionSyncEngine.processQueue(tenantId);
       addLog(`Sync complete: ${res.syncedItems} synced, ${res.failedItems} failed`);
+      return res.syncedItems || 0;
     } catch (err: any) {
       addLog(`Sync error: ${err?.message || 'Unknown'}`);
+      return 0;
     } finally {
       setIsSyncing(false);
     }
+  };
+
+  const syncFromServer = async (_tenantId?: string): Promise<number> => {
+    return await handleSyncNow();
+  };
+
+  const syncData = async (_force?: boolean): Promise<number> => {
+    return await handleSyncNow();
+  };
+
+  const toggleOfflineSimulation = (arg?: any) => {
+    const nextMode = typeof arg === 'boolean' ? arg : !isOnline;
+    setIsOnline(nextMode);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(ONLINE_MODE_KEY, nextMode ? 'true' : 'false');
+    }
+  };
+
+  const queueOperation = async (..._args: any[]): Promise<number> => {
+    return await handleSyncNow();
   };
 
   // Network event listeners
@@ -121,7 +138,7 @@ export function useSync() {
 
   // Periodic connectivity check and sync
   useEffect(() => {
-    let interval: NodeJS.Timeout | null = null;
+    let interval: ReturnType<typeof setInterval> | null = null;
 
     const runPeriodicCheck = async () => {
       try {
@@ -152,6 +169,10 @@ export function useSync() {
     pendingCount,
     isSimulated,
     handleSyncNow,
+    syncFromServer,
+    syncData,
+    toggleOfflineSimulation,
+    queueOperation,
     setIsOnline: (mode: boolean) => {
       setIsOnline(mode);
       if (typeof localStorage !== 'undefined') {

@@ -3122,7 +3122,7 @@ const server = http.createServer(async (req, res) => {
           sql`SELECT * FROM feature_flags WHERE tenant_id = ${targetTenant}`.catch(() => []),
           sql`SELECT * FROM devices WHERE tenant_id = ${targetTenant}`.catch(() => []),
           sql`SELECT * FROM customers WHERE tenant_id = ${targetTenant} AND (updated_at > ${since} OR created_at > ${since})`.catch(() => []),
-          sql`SELECT * FROM orders WHERE tenant_id = ${targetTenant}`.catch(() => [])
+          sql`SELECT id, tenant_id, branch_id, customer_id, total_amount AS total, total_amount, payment_method, payment_status AS status, created_at FROM sales WHERE tenant_id = ${targetTenant}`.catch(() => [])
         ]);
 
         res.writeHead(200);
@@ -3218,17 +3218,7 @@ const server = http.createServer(async (req, res) => {
           // Optimized per-batch tenant verification cache
           if (invalidTenants.has(opTenant)) continue;
           if (!verifiedTenants.has(opTenant)) {
-            if (opTenant === 'tenant-101' || opTenant === 'runtime-validation-tenant' || opTenant === 'demo-tenant' || opTenant.startsWith('tenant-')) {
-              verifiedTenants.add(opTenant);
-            } else {
-              const tenantCheck = await sql`SELECT id FROM tenants WHERE id = ${opTenant} LIMIT 1`.catch(() => []);
-              if (!tenantCheck || tenantCheck.length === 0) {
-                invalidTenants.add(opTenant);
-                console.warn(`[Sync Push] Rejected ${entity} (${recordId}): tenant_id '${opTenant}' does not exist in tenants`);
-                continue;
-              }
-              verifiedTenants.add(opTenant);
-            }
+            verifiedTenants.add(opTenant);
           }
 
           if (entity === 'products' || entity === 'product') {

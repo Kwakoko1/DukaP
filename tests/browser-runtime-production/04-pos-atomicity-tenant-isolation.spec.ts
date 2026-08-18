@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { login, queryPostgres, TEST_TENANT } from '../browser-runtime/helpers/runtime';
+import { login, queryPostgres, readTenantId, TEST_TENANT } from '../browser-runtime/helpers/runtime';
 
 test.describe('Production Runtime Validation — 04. POS Atomicity & Tenant Isolation (Section 15, 16 & 20)', () => {
 
@@ -10,29 +10,29 @@ test.describe('Production Runtime Validation — 04. POS Atomicity & Tenant Isol
 
     const saleId = `SALE-PROD-ATOMIC-${Date.now()}`;
     const prodId = `PROD-POS-ATOMIC-${Date.now()}`;
+    const tId = await readTenantId(page);
 
     // Execute atomic sale mutation in IndexedDB
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        await page.evaluate(async ({ sId, pId }) => {
-          const db = (window as any).db;
-          if (!db || !db.products) return;
-          const tId = 'tenant-101';
+        await page.evaluate(async ({ sId, pId, tId }) => {
           await db.products.put({ id: pId, name: 'Atomic Sale Product', price: 5000, stock: 20, tenant_id: tId });
           await db.orders.put({ id: sId, total: 5000, items: [{ id: pId, qty: 2, price: 5000 }], syncStatus: 'Pending', tenant_id: tId });
           await db.stockLedger.put({ id: `ledger-${sId}`, product_id: pId, quantity_change: -2, movement_type: 'SALE', reference_id: sId, tenant_id: tId });
           await db.syncQueue.put({
             id: `op-sale-${sId}`,
             tenantId: tId,
+            tenant_id: tId,
             entityName: 'orders',
             actionType: 'INSERT',
             status: 'Pending',
-            payload: { id: sId, total: 5000, tenant_id: tId },
+            payload: { id: sId, total: 5000, total_amount: 5000, tenant_id: tId },
             timestamp: Date.now()
           });
           await db.syncQueue.put({
             id: `op-ledger-${sId}`,
             tenantId: tId,
+            tenant_id: tId,
             entityName: 'stock_ledger',
             actionType: 'INSERT',
             status: 'Pending',
@@ -40,10 +40,11 @@ test.describe('Production Runtime Validation — 04. POS Atomicity & Tenant Isol
             timestamp: Date.now() + 10
           });
 
+          window.dispatchEvent(new Event('online'));
           if ((window as any).productionSyncEngine) {
-            await (window as any).productionSyncEngine.processQueue();
+            await (window as any).productionSyncEngine.processQueue(tId);
           }
-        }, { sId: saleId, pId: prodId });
+        }, { sId: saleId, pId: prodId, tId });
         break;
       } catch {
         await page.waitForTimeout(500);
@@ -52,11 +53,12 @@ test.describe('Production Runtime Validation — 04. POS Atomicity & Tenant Isol
 
     // Poll PostgreSQL to verify atomic presence
     await expect.poll(async () => {
-      await page.evaluate(async () => {
+      await page.evaluate(async (tenantId) => {
+        window.dispatchEvent(new Event('online'));
         if ((window as any).productionSyncEngine) {
-          await (window as any).productionSyncEngine.processQueue().catch(() => {});
+          await (window as any).productionSyncEngine.processQueue(tenantId).catch(() => {});
         }
-      }).catch(() => {});
+      }, tId).catch(() => {});
       const rows = await queryPostgres('SELECT id FROM orders WHERE id = $1', [saleId]);
       return rows.length;
     }, { timeout: 15_000, intervals: [1000] }).toBe(1);

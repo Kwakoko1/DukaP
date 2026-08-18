@@ -56,35 +56,44 @@ function generateUUID(prefix: string = 'evt'): string {
  * Prevents division by zero, variant_id key loss, and quantity sign ambiquity
  */
 export function sanitizeAndProcessLedgerEntry(entry: any): StockLedgerEntry {
-  // A. variant_id Key Resolution Protection
-  // If coming from API as null/undefined, preserve Dexie compound index standard 'no-variant'
-  const sanitizedVariantId = (!entry.variant_id || entry.variant_id === 'null' || entry.variant_id === 'undefined') 
-    ? 'no-variant' 
-    : entry.variant_id;
+  const hasExplicitVariant =
+    entry.variant_id !== undefined &&
+    entry.variant_id !== null &&
+    entry.variant_id !== '' &&
+    entry.variant_id !== 'null' &&
+    entry.variant_id !== 'undefined';
 
-  // B. Weighted Average Cost (WAC) Protection
-  // Prevent division by zero and total cost dropouts by parsing numeric fields cleanly
-  const unitCost = Number(entry.unit_cost || entry.unitCost) >= 0 ? Number(entry.unit_cost || entry.unitCost) : 0;
-  const rawQtyChange = Number(entry.quantity_change || entry.quantityChange || entry.qty) || 0;
-  
-  // C. quantity_change Sign Ambiguity Resolution
-  // Strictly assign sign polarity based on the immutable transaction movement type
-  let structuredQuantity = Math.abs(rawQtyChange);
+  const variantId = hasExplicitVariant
+    ? String(entry.variant_id)
+    : 'no-variant';
+
+  if (hasExplicitVariant && variantId === 'no-variant') {
+    throw new Error('Invalid variant identity');
+  }
+
+  const qty = Number(
+    entry.quantity_change ?? entry.quantityChange ?? entry.qty ?? 0
+  );
+
+  const unitCost = Number(entry.unit_cost ?? entry.unitCost ?? 0);
+
+  // Preserve movement type sign polarity if needed, or compute total_cost
+  let structuredQuantity = qty;
   const outboundTypes = ['SALE', 'TRANSFER_OUT', 'DAMAGE', 'EXPIRY', 'SUPPLIER_RETURN', 'ADJUSTMENT_LOSS', 'PRODUCTION_USAGE', 'WASTAGE'];
   const inboundTypes = ['PURCHASE_RECEIVE', 'CUSTOMER_RETURN', 'TRANSFER_IN', 'PRODUCTION_OUTPUT', 'OPENING_STOCK', 'ADJUSTMENT_GAIN'];
 
   if (outboundTypes.includes(entry.movement_type)) {
-    structuredQuantity = -Math.abs(structuredQuantity); // Enforce negative integer
+    structuredQuantity = -Math.abs(qty);
   } else if (inboundTypes.includes(entry.movement_type)) {
-    structuredQuantity = Math.abs(structuredQuantity);  // Enforce positive integer
+    structuredQuantity = Math.abs(qty);
   }
 
   return {
     ...entry,
-    variant_id: sanitizedVariantId,
-    unit_cost: unitCost,
+    variant_id: variantId,
     quantity_change: structuredQuantity,
-    total_cost: Math.abs(structuredQuantity) * unitCost
+    unit_cost: unitCost,
+    total_cost: Math.abs(structuredQuantity) * unitCost,
   };
 }
 
@@ -280,12 +289,24 @@ export const stockLedgerSyncEngine = {
       }
     }
 
-    // 3. Clean up orphaned product variants whose parent product no longer exists or is deleted
-    const allVariants = await db.productVariants.where('tenant_id').equals(tenantId).toArray();
-    for (const v of allVariants) {
-      if (!activeProductIds.has(v.productId)) {
-        await db.productVariants.delete(v.id);
-      }
+    // 3. Quarantine validation for variants whose parent product is temporarily unavailable
+    const unresolvedVariants = await db.productVariants
+      .where('tenant_id')
+      .equals(tenantId)
+      .filter(v => !activeProductIds.has(v.productId))
+      .toArray();
+
+    for (const variant of unresolvedVariants) {
+      console.warn(
+        '[VariantIntegrity] Parent temporarily unavailable',
+        variant.id,
+        variant.productId
+      );
+      /**
+       * DO NOT DELETE.
+       * Leave variant intact.
+       * Bootstrap or next delta may contain parent.
+       */
     }
 
     // 4. Fetch ledger events and filter strictly for active products

@@ -118,12 +118,12 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 277,
+                      "duration": 117,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-08-18T14:33:02.979Z",
+                      "startTime": "2026-08-18T16:48:04.998Z",
                       "annotations": [],
                       "attachments": [
                         {
@@ -158,12 +158,12 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 98,
+                      "duration": 66,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-08-18T14:33:03.427Z",
+                      "startTime": "2026-08-18T16:48:05.226Z",
                       "annotations": [],
                       "attachments": [
                         {
@@ -203,7 +203,7 @@
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-08-18T14:33:03.633Z",
+                      "startTime": "2026-08-18T16:48:05.406Z",
                       "annotations": [],
                       "attachments": [
                         {
@@ -238,12 +238,12 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 5483,
+                      "duration": 5711,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-08-18T14:33:03.743Z",
+                      "startTime": "2026-08-18T16:48:05.527Z",
                       "annotations": [],
                       "attachments": [
                         {
@@ -300,12 +300,12 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 11857,
+                      "duration": 9978,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-08-18T14:33:09.552Z",
+                      "startTime": "2026-08-18T16:48:11.542Z",
                       "annotations": [],
                       "attachments": [
                         {
@@ -362,12 +362,12 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 9313,
+                      "duration": 10329,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-08-18T14:33:22.064Z",
+                      "startTime": "2026-08-18T16:48:22.093Z",
                       "annotations": [],
                       "attachments": [
                         {
@@ -424,12 +424,12 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 8559,
+                      "duration": 6597,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-08-18T14:33:31.825Z",
+                      "startTime": "2026-08-18T16:48:32.826Z",
                       "annotations": [],
                       "attachments": [
                         {
@@ -469,12 +469,12 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 52,
+                      "duration": 127,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-08-18T14:33:40.894Z",
+                      "startTime": "2026-08-18T16:48:39.764Z",
                       "annotations": [],
                       "attachments": [
                         {
@@ -490,7 +490,7 @@
               ],
               "id": "423c6368b741d4b3ae69-82d41f5b4756c42be593",
               "file": "04-pos-atomicity-tenant-isolation.spec.ts",
-              "line": 69,
+              "line": 71,
               "column": 3
             }
           ]
@@ -526,19 +526,14 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 9462,
+                      "duration": 12486,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-08-18T14:33:40.984Z",
+                      "startTime": "2026-08-18T16:48:39.974Z",
                       "annotations": [],
                       "attachments": [
-                        {
-                          "name": "screenshot",
-                          "contentType": "image/png",
-                          "path": "C:\\Users\\Administrator\\Desktop\\Project\\test-results\\05-pwa-upgrade-checksum-re-289a8-d-local-storage-Section-18--chromium-production\\test-finished-1.png"
-                        },
                         {
                           "name": "trace",
                           "contentType": "application/zip",
@@ -571,12 +566,12 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 7208,
+                      "duration": 10525,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-08-18T14:33:51.149Z",
+                      "startTime": "2026-08-18T16:48:52.799Z",
                       "annotations": [],
                       "attachments": [
                         {
@@ -597,7 +592,7 @@
               ],
               "id": "152948afb997715d615a-820a321bd08f18a722a8",
               "file": "05-pwa-upgrade-checksum-recovery.spec.ts",
-              "line": 68,
+              "line": 69,
               "column": 3
             }
           ]
@@ -607,8 +602,8 @@
   ],
   "errors": [],
   "stats": {
-    "startTime": "2026-08-18T14:33:01.870Z",
-    "duration": 56979.665,
+    "startTime": "2026-08-18T16:48:04.004Z",
+    "duration": 59857.504,
     "expected": 10,
     "skipped": 0,
     "unexpected": 0,

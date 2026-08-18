@@ -1,11 +1,11 @@
 {
   "product": "KwakoPos",
   "release": "1.2.0",
-  "gitSha": "715b041e99ffd76123b3b6ed787bda94968516c1",
+  "gitSha": "8d667e9739d6ffcf213569e386076b1174188948",
   "gitBranch": "main",
-  "buildNumber": 359,
+  "buildNumber": 361,
   "schemaVersion": 41,
-  "artifactSha256": "29ba77774e5bd1d55e0a09047163a10b3b4d2e17d663f15b098c0249e14e6531",
+  "artifactSha256": "4e86582b72a23340635a20b990d3ad463fee09e07e5464184f1aca672ec4043b",
   "productionUrl": "http://127.0.0.1:8080",
   "mode": "LOCAL_VALIDATION",
   "cloudRunRevision": "kwakopos-rev-001",
@@ -16,42 +16,42 @@
   "databaseVerification": "PASS",
   "checksumConvergence": "PASS",
   "status": "CERTIFIED",
-  "timestamp": "2026-08-18T14:33:59.314Z",
+  "timestamp": "2026-08-18T16:49:04.536Z",
   "gateResults": [
     {
       "name": "01_release_manifest_and_artifact",
       "status": "PASS",
-      "durationMs": 1996,
+      "durationMs": 827,
       "error": null
     },
     {
       "name": "02_architecture_guard_audit",
       "status": "PASS",
-      "durationMs": 280,
+      "durationMs": 348,
       "error": null
     },
     {
       "name": "03_production_preflight_identity",
       "status": "PASS",
-      "durationMs": 72,
+      "durationMs": 134,
       "error": null
     },
     {
       "name": "04_production_smoke_suite",
       "status": "PASS",
-      "durationMs": 10349,
+      "durationMs": 10653,
       "error": null
     },
     {
       "name": "05_rollback_recovery_drill",
       "status": "PASS",
-      "durationMs": 574,
+      "durationMs": 945,
       "error": null
     },
     {
       "name": "06_production_browser_e2e_playwright",
       "status": "PASS",
-      "durationMs": 60062,
+      "durationMs": 64079,
       "error": null
     }
   ]

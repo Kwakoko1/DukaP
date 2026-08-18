@@ -66,7 +66,7 @@ const DukaPosAppContent: React.FC = () => {
   // from the server. This is the key fix for Device B seeing nothing on login.
   useEffect(() => {
     if (user && user.tenant_id && user.role !== 'Super Admin') {
-      syncFromServer(user.tenant_id).catch(err =>
+      syncFromServer(user.tenant_id).catch((err: any) =>
         console.warn('[SyncBootstrap] Initial server pull failed:', err)
       );
 
