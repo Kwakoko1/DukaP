@@ -7,6 +7,12 @@ import pg from 'pg';
 import { runMigrations } from './scripts/migrate.js';
 import { performance } from 'perf_hooks';
 
+// Canonical helpers
+import { upsertProduct, deleteProduct, applyProductFromSync } from './server-helpers/db-writes.js';
+import { upsertVariant } from './server-helpers/variants.js';
+import { insertLedger, reconcileStock } from './server-helpers/ledger.js';
+import { applyOrder } from './server-helpers/orders.js';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -114,14 +120,13 @@ async function persistOutboxOperations(ops = [], tenantId) {
     // Ensure tenant arg
     const tId = tenantId || (ops[0] && (ops[0].tenant || ops[0].payload?.tenant_id || ops[0].payload?.tenantId)) || 'tenant-unknown';
 
-    const insertSql = `INSERT INTO outbox (id, tenant_id, entity, action, payload, idempotency_key, status, created_at) VALUES ($1,$2,$3,$4,$5,$6,'PENDING',$7) ON CONFLICT (tenant_id, idempotency_key) DO UPDATE SET payload = EXCLUDED.payload RETURNING id`;
+    const insertSql = `INSERT INTO outbox (tenant_id, op_type, payload, idempotency_key, created_at) VALUES ($1,$2,$3,$4,to_timestamp($5::double precision / 1000.0)) RETURNING id`;
 
     for (const op of ops) {
-      const outId = op.id || `out-${Date.now()}-${Math.random().toString(36).substring(2,7)}`;
       const idempotency = op.idempotency_key || op.id || null;
       const tenant = op.tenant || op.payload?.tenant_id || op.payload?.tenantId || tId;
       try {
-        const r = await execQuery(client, insertSql, [outId, tenant, op.entity || op.entityName || 'unknown', op.action || op.operation || 'UPSERT', JSON.stringify(op.payload || {}), idempotency, now]);
+        const r = await execQuery(client, insertSql, [tenant, (op.entity || op.entityName || op.opType || 'UNKNOWN').toString(), JSON.stringify(op.payload || {}), idempotency, now]);
         if (r && r.rows && r.rows[0]) processedIds.push(r.rows[0].id);
       } catch (e) {
         console.error('[persistOutboxOperations] failed to persist op:', e.message, op);
@@ -131,7 +136,7 @@ async function persistOutboxOperations(ops = [], tenantId) {
 
     // Update tenant checkpoint (acceptance marker) atomically inside same transaction.
     // last_seq uses timestamp for simplicity; last_sync_version should be updated by worker that applies outbox entries to canonical tables.
-    await execQuery(client, `INSERT INTO tenant_sync_checkpoints (tenant_id, last_seq, last_sync_version, updated_at) VALUES ($1,$2,$3,$4) ON CONFLICT (tenant_id) DO UPDATE SET last_seq = GREATEST(tenant_sync_checkpoints.last_seq, EXCLUDED.last_seq), updated_at = EXCLUDED.updated_at`, [tId, now, 0, now]);
+    await execQuery(client, `INSERT INTO tenant_sync_checkpoints (tenant_id, last_seq, last_sync_version, updated_at) VALUES ($1,$2,$3,to_timestamp($4::double precision / 1000.0)) ON CONFLICT (tenant_id) DO UPDATE SET last_seq = GREATEST(tenant_sync_checkpoints.last_seq, EXCLUDED.last_seq), updated_at = EXCLUDED.updated_at`, [tId, now, 0, now]);
 
     await client.query('COMMIT');
     return processedIds;
@@ -651,6 +656,92 @@ const server = http.createServer(async (req, res) => {
 
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify(responseObj));
+      return;
+    }
+
+    // New: Product endpoints (use canonical helpers)
+    if (pathname === '/api/products' && req.method === 'POST') {
+      const body = await parseRequestBody(req);
+      const tenantId = body.tenant_id || body.tenant || req.headers['x-tenant-id'] || 'tenant-unknown';
+      try {
+        const r = await upsertProduct(pool, body);
+        // write an outbox record for audit (apply-first semantics)
+        try {
+          await execQuery(pool, 'INSERT INTO outbox (tenant_id, op_type, payload, idempotency_key, created_at) VALUES($1,$2,$3,$4,now())', [tenantId, 'UPSERT_PRODUCT', JSON.stringify(body), body.idempotency_key || null]);
+        } catch (e) {
+          // non-fatal for the API response; log and continue
+          console.warn('[Outbox] failed to record outbox for product upsert:', e.message);
+        }
+        invalidateTenantBootstrapCache(tenantId);
+        res.writeHead(200);
+        res.end(JSON.stringify({ success: true, rows: r.rows }));
+      } catch (err) {
+        console.error('[API /api/products] upsert error:', err.message);
+        res.writeHead(500);
+        res.end(JSON.stringify({ error: err.message }));
+      }
+      return;
+    }
+
+    if (pathname === '/api/products' && req.method === 'DELETE') {
+      const body = await parseRequestBody(req);
+      const id = body.id || fullUrl.searchParams.get('id');
+      const tenantId = body.tenant_id || body.tenant || req.headers['x-tenant-id'] || 'tenant-unknown';
+      if (!id) {
+        res.writeHead(400);
+        res.end(JSON.stringify({ error: 'missing id' }));
+        return;
+      }
+      try {
+        const r = await deleteProduct(pool, id, tenantId, true);
+        // record outbox for deletion
+        try {
+          await execQuery(pool, 'INSERT INTO outbox (tenant_id, op_type, payload, created_at) VALUES($1,$2,$3,now())', [tenantId, 'DELETE_PRODUCT', JSON.stringify({ id }), ]);
+        } catch (e) {
+          console.warn('[Outbox] failed to record outbox for product delete:', e.message);
+        }
+        invalidateTenantBootstrapCache(tenantId);
+        res.writeHead(200);
+        res.end(JSON.stringify({ success: true, rows: r.rows }));
+      } catch (err) {
+        console.error('[API /api/products] delete error:', err.message);
+        res.writeHead(500);
+        res.end(JSON.stringify({ error: err.message }));
+      }
+      return;
+    }
+
+    // Sync-batch endpoint for durable ingestion (clients/offline sync)
+    if (pathname === '/api/products/sync-batch' && req.method === 'POST') {
+      const body = await parseRequestBody(req);
+      const ops = body.ops || body.operations || [];
+      const tenantId = body.tenant_id || body.tenant || req.headers['x-tenant-id'] || (ops[0] && (ops[0].tenant || ops[0].payload?.tenant_id)) || 'tenant-unknown';
+      try {
+        const processed = await persistOutboxOperations(ops, tenantId);
+        res.writeHead(200);
+        res.end(JSON.stringify({ success: true, processedCount: processed.length, processedIds: processed }));
+      } catch (err) {
+        console.error('[API /api/products/sync-batch] persist error:', err.message);
+        res.writeHead(500);
+        res.end(JSON.stringify({ error: err.message }));
+      }
+      return;
+    }
+
+    // Generic sync push (durable-acceptance-first for all incoming ops)
+    if (pathname === '/api/sync/push' && req.method === 'POST') {
+      const body = await parseRequestBody(req);
+      const ops = body.ops || body.operations || [];
+      const tenantId = body.tenant_id || body.tenant || req.headers['x-tenant-id'] || (ops[0] && (ops[0].tenant || ops[0].payload?.tenant_id)) || 'tenant-unknown';
+      try {
+        const processed = await persistOutboxOperations(ops, tenantId);
+        res.writeHead(200);
+        res.end(JSON.stringify({ success: true, processedCount: processed.length }));
+      } catch (err) {
+        console.error('[API /api/sync/push] persist error:', err.message);
+        res.writeHead(500);
+        res.end(JSON.stringify({ error: err.message }));
+      }
       return;
     }
 
