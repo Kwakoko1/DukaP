@@ -20,7 +20,7 @@ function normalizeVariantPayload(p) {
   };
 }
 
-exports.upsertVariant = async function upsertVariant(clientOrPool, raw) {
+export async function upsertVariant(clientOrPool, raw) {
   const v = normalizeVariantPayload(raw || {});
   const now = new Date();
   if (!v.product_id) throw new Error('variant requires product_id');
@@ -39,9 +39,9 @@ exports.upsertVariant = async function upsertVariant(clientOrPool, raw) {
   const params = [v.id, v.product_id, v.tenant_id, v.sku, JSON.stringify(v.attributes), v.price, v.stock_balance, v.status, v.version, now, now];
   const res = await execQuery(clientOrPool, text, params);
   return { rowCount: res.rowCount, rows: res.rows };
-};
+}
 
-exports.deleteVariant = async function deleteVariant(clientOrPool, id, tenantId, soft = true) {
+export async function deleteVariant(clientOrPool, id, tenantId, soft = true) {
   if (!id) throw new Error('missing variant id');
   const now = new Date();
   if (soft) {
@@ -53,10 +53,10 @@ exports.deleteVariant = async function deleteVariant(clientOrPool, id, tenantId,
     const res = await execQuery(clientOrPool, text, [id, tenantId]);
     return { rowCount: res.rowCount, rows: res.rows };
   }
-};
+}
 
-exports.getVariantForUpdate = async function getVariantForUpdate(client, variantId) {
+export async function getVariantForUpdate(client, variantId) {
   const text = `SELECT * FROM variants WHERE id = $1 FOR UPDATE`;
   const res = await client.query(text, [variantId]);
   return res.rows[0];
-};
+}
