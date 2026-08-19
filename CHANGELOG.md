@@ -1,5 +1,13 @@
 # KwakoPos SaaS Changelog
 
+## [1.3.5] - 2026-08-19
+
+### 🐛 Bug Fixes
+- fix: convert variants.js to ES6 export syntax (fc8d213) - @Kwakoko1
+- fix: convert ledger.js to ES6 export syntax (26de701) - @Kwakoko1
+- fix: convert orders.js to ES6 export syntax (a916e0a) - @Kwakoko1
+
+
 ## [1.3.4] - 2026-08-19
 
 ### 📦 Maintenance & Other Changes
