@@ -1,5 +1,19 @@
 # KwakoPos SaaS Changelog
 
+## [1.3.4] - 2026-08-19
+
+### 📦 Maintenance & Other Changes
+- Merge pull request #1 from Kwakoko1/feature/durable-sync (a6665e2) - @Kwakoko1
+- Refactor endpoints: use canonical helpers for product endpoints and durable sync ingestion (c78bcd4) - @Kwakoko1
+- Add variants, ledger, orders, categories, users migrations, helpers, and integration tests (268a8ca) - @Kwakoko1
+- Add DB migration for outbox + tenant checkpoints and integration tests (product helpers + outbox smoke) (9f0f0b2) - @Kwakoko1
+- Create PR description placeholder for feature/durable-sync (01d9024) - @Kwakoko1
+- Update product helpers to use local execQuery (avoid circular import) (391dc03) - @Kwakoko1
+- Add canonical product write helpers (upsertProduct, deleteProduct, applyProductFromSync) (e127f5e) - @Kwakoko1
+- Fixes: import performance, robust sql (rethrow), execQuery, persistOutboxOperations; alias JWT functions; safe recordSessionAudit; fix archive-logs cutoff reference; prepare durable-sync branch (86f7593) - @Kwakoko1
+- Add migration for outbox and checkpoints; provide patch instructions and helper snippets for server.js (5f4a747) - @Kwakoko1
+
+
 ## [1.3.3] - 2026-08-18
 
 ### 🐛 Bug Fixes
