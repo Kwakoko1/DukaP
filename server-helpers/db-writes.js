@@ -1,4 +1,3 @@
-import { execQuery } from '../server.js';
 import crypto from 'crypto';
 
 // Canonical helpers for product write paths (upsert, delete, apply from sync)
@@ -6,7 +5,7 @@ import crypto from 'crypto';
 
 function normalizeProductPayload(p) {
   return {
-    id: p.id || p.productId || p.id || crypto.randomBytes(6).toString('hex'),
+    id: p.id || p.productId || `prod-${Date.now()}`,
     tenant_id: p.tenant_id || p.tenantId || p.tenant || null,
     branch_id: p.branch_id || p.branchId || null,
     name: (p.name || p.title || '').trim(),
@@ -26,6 +25,14 @@ function normalizeProductPayload(p) {
     version: Number(p.version ?? 1),
     deleted_at: p.deletedAt ?? p.deleted_at ?? null,
   };
+}
+
+async function execQuery(clientOrPool, text, params) {
+  if (!clientOrPool) throw new Error('Missing DB client or pool');
+  if (typeof clientOrPool.query === 'function') {
+    return clientOrPool.query(text, params);
+  }
+  throw new Error('Invalid DB client/pool provided');
 }
 
 export async function upsertProduct(clientOrPool, rawPayload) {
@@ -87,18 +94,18 @@ export async function deleteProduct(clientOrPool, id, tenantId, soft = true) {
   if (!id) throw new Error('missing product id');
   const now = Date.now();
   if (soft) {
-    const text = `UPDATE products SET deleted_at = $1, status = 'Deleted', updated_at = $2 WHERE id = $3 AND tenant_id = $4 RETURNING *`;
-    const res = await execQuery(clientOrPool, text, [now, now, id, tenantId]);
+    const text = `UPDATE products SET deleted_at = $1, status = 'Deleted', updated_at = $2 WHERE id = $3`;
+    const res = await execQuery(clientOrPool, text, [now, now, id]);
     return { rowCount: res.rowCount, rows: res.rows };
   } else {
-    const text = `DELETE FROM products WHERE id = $1 AND tenant_id = $2 RETURNING *`;
-    const res = await execQuery(clientOrPool, text, [id, tenantId]);
+    const text = `DELETE FROM products WHERE id = $1`;
+    const res = await execQuery(clientOrPool, text, [id]);
     return { rowCount: res.rowCount, rows: res.rows };
   }
 }
 
 export async function applyProductFromSync(clientOrPool, op) {
-  // op: { action: 'UPSERT' | 'DELETE', payload: { ...product fields }, idempotency_key }
+  // op: { action: 'UPSERT' | 'DELETE', payload: { ...product fields } }
   const action = (op.action || op.type || 'UPSERT').toUpperCase();
   const payload = op.payload || {};
   if (action === 'DELETE') {
