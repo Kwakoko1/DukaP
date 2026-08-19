@@ -7,7 +7,7 @@ async function execQuery(clientOrPool, text, params) {
 }
 
 // Expects orderOp: { tenant_id, external_order_id?, customer_id?, items: [{ variant_id, quantity, unit_price }], idempotency_key }
-exports.applyOrder = async function applyOrder(client, orderOp) {
+export async function applyOrder(client, orderOp) {
   // This helper expects an active transaction (client acquired with client = await pool.connect(); await client.query('BEGIN'))
   if (!client) throw new Error('applyOrder requires a DB client (transaction)');
   const { tenant_id, external_order_id, customer_id, items, idempotency_key } = orderOp;
@@ -30,7 +30,7 @@ exports.applyOrder = async function applyOrder(client, orderOp) {
   }
 
   // Insert order
-  const orderRes = await client.query('INSERT INTO orders (tenant_id, customer_id, status, total_amount, external_order_id, created_at, updated_at) VALUES($1,$2,$3,$4,$5,now(),now()) RETURNING *', [tenant_id, customer_id || null, 'Completed', total, external_order_id || null]);
+  const orderRes = await client.query('INSERT INTO orders (tenant_id, customer_id, status, total_amount, external_order_id, created_at, updated_at) VALUES($1,$2,$3,$4,$5,now(),now()) RETURNING *', [tenant_id, customer_id || null, 'pending', total, external_order_id || null]);
   const orderId = orderRes.rows[0].id;
 
   // Insert items and ledger entries and update variants
@@ -38,26 +38,26 @@ exports.applyOrder = async function applyOrder(client, orderOp) {
     const itemTotal = Number(it.unit_price) * Number(it.quantity);
     await client.query('INSERT INTO order_items (order_id, variant_id, quantity, unit_price, total_price) VALUES($1,$2,$3,$4,$5)', [orderId, it.variant_id, it.quantity, it.unit_price, itemTotal]);
     // Insert ledger entry (negative delta)
-    await client.query('INSERT INTO ledger (tenant_id, variant_id, delta, reason, source_type, source_id, idempotency_key) VALUES($1,$2,$3,$4,$5,$6,$7)', [tenant_id, it.variant_id, -Math.abs(Number(it.quantity)), 'sale', 'order', orderId, idempotency_key || null]);
+    await client.query('INSERT INTO ledger (tenant_id, variant_id, delta, reason, source_type, source_id, idempotency_key) VALUES($1,$2,$3,$4,$5,$6,$7)', [tenant_id, it.variant_id, -Math.abs(Number(it.quantity)), 'order', 'order', orderId, idempotency_key || null]);
     // Update variant balance
     await client.query('UPDATE variants SET stock_balance = stock_balance - $1, updated_at = now() WHERE id = $2', [it.quantity, it.variant_id]);
   }
 
   return { rowCount: 1, orderId };
-};
+}
 
-exports.upsertSale = async function upsertSale(clientOrPool, sale) {
+export async function upsertSale(clientOrPool, sale) {
   // Simplified: treat as applyOrder when inserting a sale record
   // If a transaction client is provided, use it
   if (!sale) throw new Error('missing sale payload');
   const client = clientOrPool;
   await client.query('BEGIN');
   try {
-    const res = await exports.applyOrder(client, sale);
+    const res = await applyOrder(client, sale);
     await client.query('COMMIT');
     return res;
   } catch (err) {
     await client.query('ROLLBACK').catch(()=>{});
     throw err;
   }
-};
+}
