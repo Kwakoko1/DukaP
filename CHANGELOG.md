@@ -1,5 +1,11 @@
 # KwakoPos SaaS Changelog
 
+## [1.4.0] - 2026-08-20
+
+### 🚀 New Features
+- feat: (4230f03) - @Kwakoko1
+
+
 ## [1.3.5] - 2026-08-19
 
 ### 🐛 Bug Fixes
